@@ -282,13 +282,19 @@ static void ble_link_handle_command(const char *payload)
     }
     else if (strcmp(argv[0], "status") == 0)
     {
+        watch_settings_snapshot_t settings;
+
         ble_ios_services_get_snapshot(&ios);
-        rt_snprintf(rsp, sizeof(rsp), "st:ble=%d,bt=%d,str=%d,an=%lu,am=%lu",
+        watch_settings_get_snapshot(&settings);
+        rt_snprintf(rsp, sizeof(rsp), "st:ble=%d,bt=%d,str=%d,an=%lu,am=%lu,lv=%d,bv=%d,rt=%d",
                     env->is_connected,
                     bt_audio_sink_is_connected(),
                     bt_audio_sink_is_streaming(),
                     (unsigned long)ios.ancs_count,
-                    (unsigned long)ios.ams_count);
+                    (unsigned long)ios.ams_count,
+                    settings.local_volume,
+                    settings.bt_volume,
+                    settings.route);
         ble_link_notify(rsp);
     }
     else if (strcmp(argv[0], "settings") == 0)
@@ -320,6 +326,13 @@ static void ble_link_handle_command(const char *payload)
         }
 
         rt_snprintf(rsp, sizeof(rsp), "set:%s:%d", argv[1], ret);
+        ble_link_notify(rsp);
+    }
+    else if (strcmp(argv[0], "reset") == 0 && argc >= 2 && strcmp(argv[1], "settings") == 0)
+    {
+        int ret = watch_settings_reset();
+
+        rt_snprintf(rsp, sizeof(rsp), "reset:settings:%d", ret);
         ble_link_notify(rsp);
     }
     else if (strcmp(argv[0], "local") == 0 && argc >= 2)
@@ -576,7 +589,7 @@ __ROM_USED void blelink(int argc, char **argv)
                    (unsigned long)env->rx_count,
                    (unsigned long)env->tx_count,
                    env->last_payload);
-        rt_kprintf("BLE writes: ping | status | settings | set localvol|btvol <0-15> | set route speaker | local play|stop|pause|resume | ams play|pause|toggle|next|prev|volup|voldown\n");
+        rt_kprintf("BLE writes: ping | status | settings | set localvol|btvol <0-15> | set route speaker | reset settings | local play|stop|pause|resume | ams play|pause|toggle|next|prev|volup|voldown\n");
     }
     else if (strcmp(argv[1], "adv") == 0)
     {

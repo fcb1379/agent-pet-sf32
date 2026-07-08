@@ -180,6 +180,36 @@ rt_err_t watch_settings_set_route(watch_audio_route_t route)
     return ret == RT_EOK ? RT_EOK : ret;
 }
 
+rt_err_t watch_settings_reset(void)
+{
+    watch_settings_snapshot_t defaults;
+    rt_err_t ret = RT_EOK;
+
+    watch_settings_load_defaults(&defaults);
+
+    rt_mutex_take(&g_watch_settings.lock, RT_WAITING_FOREVER);
+    g_watch_settings.value = defaults;
+    if (g_watch_settings.storage_ready && g_watch_settings.prefs)
+    {
+        share_prefs_remove(g_watch_settings.prefs, WATCH_SETTINGS_KEY_LOCAL_VOL);
+        share_prefs_remove(g_watch_settings.prefs, WATCH_SETTINGS_KEY_BT_VOL);
+        share_prefs_remove(g_watch_settings.prefs, WATCH_SETTINGS_KEY_ROUTE);
+    }
+    else
+    {
+        ret = -RT_ERROR;
+    }
+    rt_mutex_release(&g_watch_settings.lock);
+
+    watch_settings_apply_audio();
+    LOG_I("reset ret=%d local=%d bt=%d route=%d",
+          ret,
+          defaults.local_volume,
+          defaults.bt_volume,
+          defaults.route);
+    return ret;
+}
+
 static int watch_settings_init(void)
 {
     watch_settings_snapshot_t defaults;
@@ -238,7 +268,7 @@ static void wsettings(int argc, char **argv)
                    snapshot.local_volume,
                    snapshot.bt_volume,
                    snapshot.route);
-        rt_kprintf("usage: wsettings localvol <0-15> | btvol <0-15> | route speaker | apply\n");
+        rt_kprintf("usage: wsettings localvol <0-15> | btvol <0-15> | route speaker | apply | reset\n");
         return;
     }
 
@@ -257,6 +287,10 @@ static void wsettings(int argc, char **argv)
     else if (strcmp(argv[1], "apply") == 0)
     {
         rt_kprintf("apply ret=%d\n", watch_settings_apply_audio());
+    }
+    else if (strcmp(argv[1], "reset") == 0)
+    {
+        rt_kprintf("reset ret=%d\n", watch_settings_reset());
     }
     else
     {

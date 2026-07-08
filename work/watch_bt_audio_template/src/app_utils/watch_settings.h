@@ -27,5 +27,6 @@ rt_err_t watch_settings_set_local_volume(uint8_t volume);
 rt_err_t watch_settings_set_bt_volume(uint8_t volume);
 rt_err_t watch_settings_set_route(watch_audio_route_t route);
 rt_err_t watch_settings_apply_audio(void);
+rt_err_t watch_settings_reset(void);
 
 #endif /* WATCH_SETTINGS_H */

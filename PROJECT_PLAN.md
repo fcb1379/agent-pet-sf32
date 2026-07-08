@@ -549,6 +549,13 @@ Result update on 2026-07-08:
   - `set localvol <0-15>`
   - `set btvol <0-15>`
   - `set route speaker`
+- Extended BLE `status` response to include settings fields:
+  - `lv=<local volume>`
+  - `bv=<Bluetooth music volume>`
+  - `rt=<route mode>`
+- Added reset commands:
+  - BLE write `reset settings` -> notify `reset:settings:<ret>`
+  - finsh `wsettings reset`
 - Build verification passed with project-local board overlay:
   - `scons --board=sf32lb52-lchspi-ulp --board_search_path=../boards -j8`
   - Generated `ptab.h` contains `KVDB_PREF_REGION_START_ADDR (0x12DA8000)` and `KVDB_PREF_REGION_SIZE (0x00004000)`.
@@ -563,4 +570,14 @@ Result update on 2026-07-08:
   - Run `wsettings btvol 6`, reboot, then `wsettings status`; expected `bt_vol=6`.
   - Connect to `Huangshan-Watch-BLE`, enable notify, write `settings`; expected `settings:` response with the persisted values.
   - Write `set localvol 4` and `set btvol 7` over BLE, reboot, then confirm both persist.
+  - Write `reset settings` over BLE, reboot, then confirm defaults are restored.
   - Confirm existing BLE pairing/bonding still survives independently of product settings because `prefdb` is separate from the `ble` partition.
+
+Result update after reset/status extension on 2026-07-08:
+
+- Rebuilt successfully for `sf32lb52-lchspi-ulp` with `--board_search_path=../boards`.
+- Flashed through `/dev/cu.usbserial-110`.
+- Readback verification passed:
+  - `FTAB_CMP_EXIT=0`
+  - `MAIN_CMP_EXIT=0`
+  - `FS_ROOT_CMP_EXIT=0`
