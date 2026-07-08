@@ -1,0 +1,35 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+
+# SiFli/RT-Thread build outputs
+build_*/
+*.elf
+*.bin
+*.hex
+*.asm
+*.map
+*.o
+*.a
+*.d
+*.lst
+*.su
+*.sconsign.dblite
+.sconsign.dblite
+compile_commands.json
+cppdefines.txt
+cconfig.h
+link_copy.lds
+download.sh
+download.bat
+uart_download.sh
+sftool_param.json
+ImgBurnList.ini
+
+# Local diagnostics and temporary artifacts
+work/diagnostics/
+work/sifli-check/
+*.log
