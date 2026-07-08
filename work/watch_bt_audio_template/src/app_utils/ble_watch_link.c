@@ -21,6 +21,7 @@
 #include "ble_ios_services.h"
 #include "bt_audio_sink.h"
 #include "local_music_player.h"
+#include "watch_settings.h"
 
 #define LOG_TAG "ble_link"
 #include "log.h"
@@ -290,6 +291,37 @@ static void ble_link_handle_command(const char *payload)
                     (unsigned long)ios.ams_count);
         ble_link_notify(rsp);
     }
+    else if (strcmp(argv[0], "settings") == 0)
+    {
+        watch_settings_snapshot_t settings;
+
+        watch_settings_get_snapshot(&settings);
+        rt_snprintf(rsp, sizeof(rsp), "settings:local=%d,bt=%d,route=%d",
+                    settings.local_volume,
+                    settings.bt_volume,
+                    settings.route);
+        ble_link_notify(rsp);
+    }
+    else if (strcmp(argv[0], "set") == 0 && argc >= 3)
+    {
+        int ret = -RT_ERROR;
+
+        if (strcmp(argv[1], "localvol") == 0)
+        {
+            ret = watch_settings_set_local_volume((uint8_t)atoi(argv[2]));
+        }
+        else if (strcmp(argv[1], "btvol") == 0)
+        {
+            ret = watch_settings_set_bt_volume((uint8_t)atoi(argv[2]));
+        }
+        else if (strcmp(argv[1], "route") == 0 && strcmp(argv[2], "speaker") == 0)
+        {
+            ret = watch_settings_set_route(WATCH_AUDIO_ROUTE_SPEAKER_ONLY);
+        }
+
+        rt_snprintf(rsp, sizeof(rsp), "set:%s:%d", argv[1], ret);
+        ble_link_notify(rsp);
+    }
     else if (strcmp(argv[0], "local") == 0 && argc >= 2)
     {
         int ret = -RT_ERROR;
@@ -544,7 +576,7 @@ __ROM_USED void blelink(int argc, char **argv)
                    (unsigned long)env->rx_count,
                    (unsigned long)env->tx_count,
                    env->last_payload);
-        rt_kprintf("BLE writes: ping | status | local play|stop|pause|resume | ams play|pause|toggle|next|prev|volup|voldown\n");
+        rt_kprintf("BLE writes: ping | status | settings | set localvol|btvol <0-15> | set route speaker | local play|stop|pause|resume | ams play|pause|toggle|next|prev|volup|voldown\n");
     }
     else if (strcmp(argv[1], "adv") == 0)
     {

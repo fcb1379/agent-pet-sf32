@@ -1,0 +1,7 @@
+from building import *
+
+# This project-local board overlay only carries ptab/custom_mem_map changes.
+# Board source files still come from the SDK customer board package.
+group = []
+
+Return('group')

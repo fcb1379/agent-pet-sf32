@@ -23,6 +23,9 @@ Build a smartwatch-style application for the LCSC/OSHWHub Huangshan SF32LB52 dev
 - Local working template: `work/watch_bt_audio_template`
 - Base UI: LVGL v8 watch demo
 - Alternative candidate for later evaluation: `/Users/reus/sifli-sdk/example/multimedia/lvgl/watch_v9`
+- Build command after adding the project-local Huangshan board overlay:
+  - `cd work/watch_bt_audio_template/project`
+  - `source /Users/reus/sifli-sdk/export.sh >/tmp/sifli-export.log && scons --board=sf32lb52-lchspi-ulp --board_search_path=../boards -j8`
 
 Reason for current baseline: the LVGL v8 `watch` demo supports SF32LB52 LCD-class boards and also builds successfully for the Huangshan board target `sf32lb52-lchspi-ulp`.
 
@@ -482,7 +485,7 @@ Result on 2026-07-08:
 
 ### T10 - Product UI and Persistence
 
-Status: BLE command control path started; UI and persistence still pending
+Status: BLE command control path and first persistent settings layer integrated; richer UI controls still pending
 
 - Replace finsh-only controls with watch UI controls.
 - Persist paired devices, routing mode, volume, and reconnect preferences.
@@ -517,3 +520,47 @@ Result on 2026-07-08:
   - Write `local stop`; expected local playback to stop.
   - Pair/bond iPhone for AMS, start phone music, then write `ams next` or `ams toggle`; expected iPhone media control action if AMS is connected and authorized.
   - Confirm unknown text still returns `echo:<payload>`.
+
+Result update on 2026-07-08:
+
+- Added a project-local board overlay at `work/watch_bt_audio_template/boards/sf32lb52-lchspi-ulp` so product-specific partition changes are tracked in this repository rather than patched into the SDK.
+- Added a dedicated FlashDB preference partition:
+  - FAL partition name: `prefdb`
+  - Start address: `0x12DA8000`
+  - Size: `0x00004000`
+  - Purpose: product settings only; keep it separate from BLE bonding/NVDS partition `ble` and DFU partition `dfu`.
+- Enabled persistent preference support:
+  - `CONFIG_BSP_SHARE_PREFS=y`
+  - `CONFIG_PKG_FDB_USING_FAL_MODE=y`
+- Added `work/watch_bt_audio_template/src/app_utils/watch_settings.c/.h` as the single product settings API.
+- Persisted settings in this first layer:
+  - local music volume, default `8`
+  - Bluetooth music volume, default `8`
+  - route mode, currently `speaker-only`
+- Updated `localmusic vol <0-15>` and `btaudio vol <0-15>` to save through `watch_settings`.
+- Added `wsettings` finsh command:
+  - `wsettings status`
+  - `wsettings localvol <0-15>`
+  - `wsettings btvol <0-15>`
+  - `wsettings route speaker`
+  - `wsettings apply`
+- Extended BLE custom characteristic write commands:
+  - `settings` -> notify `settings:local=<n>,bt=<n>,route=<n>`
+  - `set localvol <0-15>`
+  - `set btvol <0-15>`
+  - `set route speaker`
+- Build verification passed with project-local board overlay:
+  - `scons --board=sf32lb52-lchspi-ulp --board_search_path=../boards -j8`
+  - Generated `ptab.h` contains `KVDB_PREF_REGION_START_ADDR (0x12DA8000)` and `KVDB_PREF_REGION_SIZE (0x00004000)`.
+- Flashed through `/dev/cu.usbserial-110`.
+- Readback verification passed:
+  - `FTAB_CMP_EXIT=0`
+  - `MAIN_CMP_EXIT=0`
+  - `FS_ROOT_CMP_EXIT=0`
+- Manual verification to run later:
+  - `wsettings status` should report `storage=1` after boot.
+  - Run `wsettings localvol 5`, reboot, then `wsettings status`; expected `local_vol=5`.
+  - Run `wsettings btvol 6`, reboot, then `wsettings status`; expected `bt_vol=6`.
+  - Connect to `Huangshan-Watch-BLE`, enable notify, write `settings`; expected `settings:` response with the persisted values.
+  - Write `set localvol 4` and `set btvol 7` over BLE, reboot, then confirm both persist.
+  - Confirm existing BLE pairing/bonding still survives independently of product settings because `prefdb` is separate from the `ble` partition.

@@ -19,6 +19,7 @@
 #include "audio_mp3ctrl.h"
 #include "bt_audio_sink.h"
 #include "local_music_player.h"
+#include "watch_settings.h"
 
 #define DBG_TAG "local.music"
 #define DBG_LVL DBG_INFO
@@ -291,6 +292,7 @@ static int local_music_player_init(void)
     RT_ASSERT(g_music_thread);
     rt_thread_startup(g_music_thread);
 
+    watch_settings_apply_audio();
     LOG_I("ready, default=%s", LOCAL_MUSIC_DEFAULT_PATH);
     return RT_EOK;
 }
@@ -305,6 +307,9 @@ static void localmusic(int argc, char **argv)
                    g_music_path,
                    g_music_last_callback,
                    local_music_file_exists(g_music_path));
+        rt_kprintf("localmusic volume=%d/%d\n",
+                   watch_settings_get_local_volume(),
+                   audio_server_get_max_volume());
         rt_kprintf("usage: localmusic play [path] [loop] | stop | pause | resume | vol <0-15>\n");
         return;
     }
@@ -332,13 +337,10 @@ static void localmusic(int argc, char **argv)
     }
     else if (strcmp(argv[1], "vol") == 0 && argc >= 3)
     {
-        uint8_t vol = (uint8_t)atoi(argv[2]);
-        if (vol > audio_server_get_max_volume())
-        {
-            vol = audio_server_get_max_volume();
-        }
-        audio_server_set_private_volume(AUDIO_TYPE_LOCAL_MUSIC, vol);
-        rt_kprintf("localmusic volume=%d/%d\n", vol, audio_server_get_max_volume());
+        watch_settings_set_local_volume((uint8_t)atoi(argv[2]));
+        rt_kprintf("localmusic volume=%d/%d\n",
+                   watch_settings_get_local_volume(),
+                   audio_server_get_max_volume());
     }
     else
     {

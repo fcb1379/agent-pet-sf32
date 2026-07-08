@@ -14,6 +14,7 @@
 #include "bts2_app_inc.h"
 #include "bt_audio_sink.h"
 #include "local_music_player.h"
+#include "watch_settings.h"
 #include "ulog.h"
 
 #ifdef AUDIO_USING_MANAGER
@@ -145,6 +146,7 @@ static void watch_bt_audio_thread(void *parameter)
         bt_interface_register_av_snk_sdp();
         bt_av_snk_open();
         bt_interface_open_avrcp();
+        watch_settings_apply_audio();
         bt_open_bt_request();
         LOG_I("watch bt audio: stack ready, name=%s", local_name);
     }
@@ -201,6 +203,9 @@ __ROM_USED void btaudio(int argc, char **argv)
                    g_watch_bt_audio.is_a2dp_connected ? "connected" : "disconnected",
                    g_watch_bt_audio.is_a2dp_streaming ? "started" : "stopped",
                    g_watch_bt_audio.is_abs_enabled ? "enabled" : "disabled");
+        rt_kprintf("BT music volume=%d/%d\n",
+                   watch_settings_get_bt_volume(),
+                   audio_server_get_max_volume());
     }
     else if (strcmp(argv[1], "discover") == 0)
     {
@@ -231,7 +236,7 @@ __ROM_USED void btaudio(int argc, char **argv)
         {
             local_vol = max_vol;
         }
-        audio_server_set_private_volume(AUDIO_TYPE_BT_MUSIC, local_vol);
+        watch_settings_set_bt_volume(local_vol);
         if (g_watch_bt_audio.is_abs_enabled)
         {
             uint8_t abs_vol = bt_interface_avrcp_local_vol_2_abs_vol(local_vol, max_vol);
