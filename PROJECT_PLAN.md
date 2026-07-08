@@ -118,10 +118,10 @@ Baseline build note: the copied watch template builds successfully for `sf32lb52
 
 ### M1 - Audio Bring-Up
 
-Status: pending
+Status: local playback path integrated; speaker runtime verification pending
 
-- Enable audio codec/process/speaker options in the watch template.
-- Add minimal local music asset and local playback path.
+- Enable audio codec/process/speaker options in the watch template. Done for first local playback path.
+- Add minimal local music asset and local playback path. Done: `/16k.wav` in `fs_root`.
 - Verify audio output through the connected speaker.
 
 ### M2 - BLE Foundation
@@ -232,12 +232,41 @@ Result on 2026-07-07:
 
 ### T03 - Local Speaker Playback
 
-Status: pending
+Status: integrated and build-verified; speaker runtime verification pending
 
 - Enable minimum audio stack in the watch template.
 - Add or reuse a small bundled local audio asset.
 - Add a minimal finsh command or boot-time test hook to play local audio.
 - Build, flash, and verify speaker output.
+
+Result on 2026-07-08:
+
+- Enabled SDK local music stack in `work/watch_bt_audio_template/project/proj.conf`:
+  - `CONFIG_AUDIO_LOCAL_MUSIC=y`
+  - this selects `CONFIG_PKG_USING_LIBHELIX=y` for MP3/WAV decode support.
+- Added bundled local audio asset:
+  - `work/watch_bt_audio_template/disk/16k.wav`
+  - generated into `fs_root.bin` by the project build.
+- Updated `work/watch_bt_audio_template/project/SConstruct` to build and flash `fs_root` from `../disk`.
+- Updated `work/watch_bt_audio_template/src/app_utils/main.c` so the `FS_REGION` flash partition is registered and mounted at `/` during init.
+- Added local playback module:
+  - `work/watch_bt_audio_template/src/app_utils/local_music_player.c`
+  - command: `localmusic status`
+  - command: `localmusic play [path] [loop]`
+  - command: `localmusic stop`
+  - command: `localmusic pause`
+  - command: `localmusic resume`
+  - command: `localmusic vol <0-15>`
+- Updated `work/watch_bt_audio_template/src/app_utils/SConscript` to compile the module when `AUDIO_LOCAL_MUSIC` is enabled.
+- Build verification passed for `sf32lb52-lchspi-ulp`.
+- Build generated `fs_root.bin` at 4 MB with one bundled file, `16k.wav`; `sftool_param.json` places it at `0x129A0000`.
+- Manual verification to run later:
+  - Boot firmware.
+  - If console access is available, run `localmusic status`; expected `exists=1` for `/16k.wav`.
+  - Run `localmusic vol 10`.
+  - Run `localmusic play`; expected local WAV playback through the board speaker.
+  - Run `localmusic pause`, `localmusic resume`, and `localmusic stop`.
+  - Confirm local playback does not break the already verified A2DP sink path after reboot.
 
 ### T04 - BLE Foundation
 
@@ -419,11 +448,37 @@ Status: pending
 
 ### T09 - Coexistence and Routing Policy
 
-Status: pending
+Status: first one-active-speaker-route policy integrated; runtime verification pending
 
 - Validate BLE + Classic BT coexistence.
 - Validate A2DP source + sink role coexistence.
 - Implement one-active-route policy unless simultaneous streams are proven stable.
+
+Result on 2026-07-08:
+
+- A2DP source remains intentionally deferred per product planning; this step only covers the already integrated local speaker routes:
+  - local WAV playback through `AUDIO_TYPE_LOCAL_MUSIC`
+  - phone/computer A2DP sink playback through `AUDIO_TYPE_BT_MUSIC`
+- Added `work/watch_bt_audio_template/src/app_utils/bt_audio_sink.h`.
+- Added `work/watch_bt_audio_template/src/app_utils/local_music_player.h`.
+- Updated `bt_audio_sink.c` to track A2DP stream state via:
+  - `BT_NOTIFY_A2DP_START_IND`
+  - `BT_NOTIFY_A2DP_SUSPEND_IND`
+  - profile disconnect
+- Updated `bt_audio_sink.c` to stop local music when A2DP sink streaming starts.
+- Updated `local_music_player.c` so `local_music_play_file()` returns `-RT_EBUSY` if A2DP sink is currently streaming, preventing local playback from stealing the speaker while a phone/computer is playing over Bluetooth.
+- Updated `btaudio status` to report A2DP streaming state.
+- Rebuilt successfully for `sf32lb52-lchspi-ulp`.
+- Flashed through `/dev/cu.usbserial-110`.
+- Readback verification passed:
+  - `FTAB_CMP_EXIT=0`
+  - `MAIN_CMP_EXIT=0`
+  - `FS_ROOT_CMP_EXIT=0`
+- Manual verification to run later:
+  - Start A2DP sink playback from phone/computer, then run or trigger local music playback; expected local playback to be denied or stopped while A2DP is streaming.
+  - Start local music first, then start A2DP playback from phone/computer; expected local music to stop and Bluetooth audio to take speaker ownership.
+  - Pause/suspend Bluetooth playback, then start local music; expected local playback to be allowed.
+  - Confirm BLE advertising/connection remains stable while Classic BT A2DP sink is connected and while local playback is idle/active.
 
 ### T10 - Product UI and Persistence
 

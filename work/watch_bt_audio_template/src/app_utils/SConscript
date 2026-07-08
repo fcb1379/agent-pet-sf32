@@ -15,6 +15,9 @@ if GetDepend('BSP_BT_APP') and os.path.exists(os.path.join(cwd, 'bt_app.c')):
 if GetDepend('CFG_AV_SNK'):
     src+=['bt_audio_sink.c']
 
+if GetDepend('AUDIO_LOCAL_MUSIC'):
+    src+=['local_music_player.c']
+
 if GetDepend('BSP_BLE_SIBLES'):
     src+=['ble_watch_link.c']
 

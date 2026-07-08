@@ -87,6 +87,14 @@ int auto_mnt_init(void)
 
     memset(name, 0, sizeof(name));
 
+#if defined(FS_REGION_START_ADDR)
+    name[1] = "flash0";
+    register_mtd_device(FS_REGION_START_ADDR, FS_REGION_SIZE, name[1]);
+#elif defined(FS_ROOT_START_ADDR)
+    name[1] = "flash0";
+    register_mtd_device(FS_ROOT_START_ADDR, FS_ROOT_SIZE, name[1]);
+#endif
+
 #ifdef RT_USING_SDIO
     //Waitting for SD Card detection done.
     int sd_state = mmcsd_wait_cd_changed(3000);
@@ -100,14 +108,6 @@ int auto_mnt_init(void)
         rt_kprintf("No SD-Card detected, state: %d\n", sd_state);
     }
 #endif /* RT_USING_SDIO */
-
-
-#ifdef FS_ROOT_START_ADDR
-    name[1] = "flash0";
-    register_mtd_device(FS_ROOT_START_ADDR, FS_ROOT_SIZE, name[1]);
-#endif /* FS_ROOT_START_ADDR */
-
-
 
     for (uint32_t i = 0; i < sizeof(name) / sizeof(name[0]); i++)
     {
@@ -126,6 +126,7 @@ int auto_mnt_init(void)
 
     return RT_EOK;
 }
+INIT_ENV_EXPORT(auto_mnt_init);
 #endif /* RT_USING_DFS */
 
 
@@ -251,4 +252,3 @@ int mod_free(int argc, char **argv)
 MSH_CMD_EXPORT(mod_free, Free module);
 
 #endif
-

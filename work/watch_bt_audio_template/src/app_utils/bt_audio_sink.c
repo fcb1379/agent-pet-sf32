@@ -12,6 +12,8 @@
 #include "bf0_sibles.h"
 #include "bt_connection_manager.h"
 #include "bts2_app_inc.h"
+#include "bt_audio_sink.h"
+#include "local_music_player.h"
 #include "ulog.h"
 
 #ifdef AUDIO_USING_MANAGER
@@ -24,6 +26,7 @@ typedef struct
 {
     bt_notify_device_mac_t addr;
     uint8_t is_a2dp_connected;
+    uint8_t is_a2dp_streaming;
     uint8_t is_abs_enabled;
 } watch_bt_audio_t;
 
@@ -55,6 +58,7 @@ static int watch_bt_audio_event_handle(uint16_t type, uint16_t event_id, uint8_t
             {
                 g_watch_bt_audio.addr = profile_info->mac;
                 g_watch_bt_audio.is_a2dp_connected = 1;
+                g_watch_bt_audio.is_a2dp_streaming = 0;
             }
             LOG_I("watch bt audio: A2DP connected");
             break;
@@ -63,9 +67,19 @@ static int watch_bt_audio_event_handle(uint16_t type, uint16_t event_id, uint8_t
         {
             bt_notify_profile_state_info_t *info = (bt_notify_profile_state_info_t *)data;
             g_watch_bt_audio.is_a2dp_connected = 0;
+            g_watch_bt_audio.is_a2dp_streaming = 0;
             LOG_I("watch bt audio: A2DP disconnected %d", info ? info->res : -1);
             break;
         }
+        case BT_NOTIFY_A2DP_START_IND:
+            g_watch_bt_audio.is_a2dp_streaming = 1;
+            local_music_stop();
+            LOG_I("watch bt audio: A2DP stream started, local music stopped");
+            break;
+        case BT_NOTIFY_A2DP_SUSPEND_IND:
+            g_watch_bt_audio.is_a2dp_streaming = 0;
+            LOG_I("watch bt audio: A2DP stream suspended");
+            break;
         default:
             break;
         }
@@ -163,6 +177,16 @@ static int watch_bt_audio_init(void)
 }
 INIT_APP_EXPORT(watch_bt_audio_init);
 
+rt_bool_t bt_audio_sink_is_connected(void)
+{
+    return g_watch_bt_audio.is_a2dp_connected ? RT_TRUE : RT_FALSE;
+}
+
+rt_bool_t bt_audio_sink_is_streaming(void)
+{
+    return g_watch_bt_audio.is_a2dp_streaming ? RT_TRUE : RT_FALSE;
+}
+
 __ROM_USED void btaudio(int argc, char **argv)
 {
     if (argc < 2)
@@ -173,8 +197,9 @@ __ROM_USED void btaudio(int argc, char **argv)
 
     if (strcmp(argv[1], "status") == 0)
     {
-        rt_kprintf("A2DP: %s, abs_vol: %s\n",
+        rt_kprintf("A2DP: %s, stream: %s, abs_vol: %s\n",
                    g_watch_bt_audio.is_a2dp_connected ? "connected" : "disconnected",
+                   g_watch_bt_audio.is_a2dp_streaming ? "started" : "stopped",
                    g_watch_bt_audio.is_abs_enabled ? "enabled" : "disabled");
     }
     else if (strcmp(argv[1], "discover") == 0)
