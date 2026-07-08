@@ -482,8 +482,38 @@ Result on 2026-07-08:
 
 ### T10 - Product UI and Persistence
 
-Status: pending
+Status: BLE command control path started; UI and persistence still pending
 
 - Replace finsh-only controls with watch UI controls.
 - Persist paired devices, routing mode, volume, and reconnect preferences.
 - Add user-visible states for connection, playback, and errors.
+
+Result on 2026-07-08:
+
+- Began replacing finsh-only controls with a BLE-accessible text command path over the custom `Huangshan-Watch-BLE` service.
+- Updated `work/watch_bt_audio_template/src/app_utils/ble_watch_link.c` so writes to the custom characteristic are parsed as commands. Unknown payloads still return `echo:<payload>` for backward-compatible bring-up testing.
+- Supported BLE write commands:
+  - `ping` -> notify `ok:pong`
+  - `status` -> notify compact state including BLE connected, A2DP connected, A2DP streaming, ANCS count, and AMS count
+  - `local play`
+  - `local stop`
+  - `local pause`
+  - `local resume`
+  - `ams play`
+  - `ams pause`
+  - `ams toggle`
+  - `ams next`
+  - `ams prev`
+  - `ams volup`
+  - `ams voldown`
+- Updated `work/watch_bt_audio_template/src/app_utils/ble_ios_services.c` and `.h` to expose `ble_ios_services_send_ams_cmd()` for the BLE command layer.
+- Build verification passed for `sf32lb52-lchspi-ulp`.
+- Manual verification to run later:
+  - Connect to `Huangshan-Watch-BLE`.
+  - Enable notifications on the custom characteristic.
+  - Write `ping`; expected notification `ok:pong`.
+  - Write `status`; expected notification beginning `st:`.
+  - Write `local play`; expected local playback if A2DP sink is not streaming.
+  - Write `local stop`; expected local playback to stop.
+  - Pair/bond iPhone for AMS, start phone music, then write `ams next` or `ams toggle`; expected iPhone media control action if AMS is connected and authorized.
+  - Confirm unknown text still returns `echo:<payload>`.

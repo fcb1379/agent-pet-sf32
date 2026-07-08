@@ -305,7 +305,7 @@ static int ble_ios_ams_callback(data_callback_arg_t *arg)
     return 0;
 }
 
-static rt_err_t ble_ios_send_ams_cmd(ble_ams_cmd_t cmd)
+rt_err_t ble_ios_services_send_ams_cmd(uint8_t cmd)
 {
     ble_ios_env_t *env = ble_ios_env();
     ams_service_config_t config;
@@ -317,7 +317,7 @@ static rt_err_t ble_ios_send_ams_cmd(ble_ams_cmd_t cmd)
 
     rt_memset(&config, 0, sizeof(config));
     config.command = AMS_SERVICE_SEND_REMOTE_COMMAND;
-    config.data.remote_cmd = cmd;
+    config.data.remote_cmd = (ble_ams_cmd_t)cmd;
     return datac_config(env->ams_handle, sizeof(config), (uint8_t *)&config);
 }
 #endif
@@ -370,38 +370,38 @@ __ROM_USED void iossvc(int argc, char **argv)
 #ifdef BSP_USING_AMS_SVC
     else if (strcmp(argv[1], "play") == 0)
     {
-        rt_kprintf("AMS play ret:%d\n", ble_ios_send_ams_cmd(BLE_AMS_CMD_PLAY));
+        rt_kprintf("AMS play ret:%d\n", ble_ios_services_send_ams_cmd(BLE_AMS_CMD_PLAY));
     }
     else if (strcmp(argv[1], "pause") == 0)
     {
-        rt_kprintf("AMS pause ret:%d\n", ble_ios_send_ams_cmd(BLE_AMS_CMD_PAUSE));
+        rt_kprintf("AMS pause ret:%d\n", ble_ios_services_send_ams_cmd(BLE_AMS_CMD_PAUSE));
     }
     else if (strcmp(argv[1], "toggle") == 0)
     {
-        rt_kprintf("AMS toggle ret:%d\n", ble_ios_send_ams_cmd(BLE_AMS_CMD_TOGGLE_PLAY_PAUSE));
+        rt_kprintf("AMS toggle ret:%d\n", ble_ios_services_send_ams_cmd(BLE_AMS_CMD_TOGGLE_PLAY_PAUSE));
     }
     else if (strcmp(argv[1], "next") == 0)
     {
-        rt_kprintf("AMS next ret:%d\n", ble_ios_send_ams_cmd(BLE_AMS_CMD_NEXT));
+        rt_kprintf("AMS next ret:%d\n", ble_ios_services_send_ams_cmd(BLE_AMS_CMD_NEXT));
     }
     else if (strcmp(argv[1], "prev") == 0)
     {
-        rt_kprintf("AMS prev ret:%d\n", ble_ios_send_ams_cmd(BLE_AMS_CMD_PREV));
+        rt_kprintf("AMS prev ret:%d\n", ble_ios_services_send_ams_cmd(BLE_AMS_CMD_PREV));
     }
     else if (strcmp(argv[1], "volup") == 0)
     {
-        rt_kprintf("AMS volup ret:%d\n", ble_ios_send_ams_cmd(BLE_AMS_CMD_VOL_UP));
+        rt_kprintf("AMS volup ret:%d\n", ble_ios_services_send_ams_cmd(BLE_AMS_CMD_VOL_UP));
     }
     else if (strcmp(argv[1], "voldown") == 0)
     {
-        rt_kprintf("AMS voldown ret:%d\n", ble_ios_send_ams_cmd(BLE_AMS_CMD_VOL_DOWN));
+        rt_kprintf("AMS voldown ret:%d\n", ble_ios_services_send_ams_cmd(BLE_AMS_CMD_VOL_DOWN));
     }
     else if (strcmp(argv[1], "cmd") == 0 && argc >= 3)
     {
         int cmd = atoi(argv[2]);
         if (cmd >= 0 && cmd < BLE_AMS_CMD_TOTAL)
         {
-            rt_kprintf("AMS cmd %d ret:%d\n", cmd, ble_ios_send_ams_cmd((ble_ams_cmd_t)cmd));
+            rt_kprintf("AMS cmd %d ret:%d\n", cmd, ble_ios_services_send_ams_cmd((uint8_t)cmd));
         }
         else
         {

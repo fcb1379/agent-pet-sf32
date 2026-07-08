@@ -13,10 +13,14 @@
 #include <stdlib.h>
 
 #include "bf0_ble_gap.h"
+#include "bf0_ble_ams.h"
 #include "bf0_sibles.h"
 #include "bf0_sibles_internal.h"
 #include "bf0_sibles_advertising.h"
 #include "ble_connection_manager.h"
+#include "ble_ios_services.h"
+#include "bt_audio_sink.h"
+#include "local_music_player.h"
 
 #define LOG_TAG "ble_link"
 #include "log.h"
@@ -206,6 +210,133 @@ static void ble_link_notify(const char *text)
     }
 }
 
+static int ble_link_ams_cmd_from_name(const char *name, uint8_t *cmd)
+{
+    if (strcmp(name, "play") == 0)
+    {
+        *cmd = BLE_AMS_CMD_PLAY;
+    }
+    else if (strcmp(name, "pause") == 0)
+    {
+        *cmd = BLE_AMS_CMD_PAUSE;
+    }
+    else if (strcmp(name, "toggle") == 0)
+    {
+        *cmd = BLE_AMS_CMD_TOGGLE_PLAY_PAUSE;
+    }
+    else if (strcmp(name, "next") == 0)
+    {
+        *cmd = BLE_AMS_CMD_NEXT;
+    }
+    else if (strcmp(name, "prev") == 0)
+    {
+        *cmd = BLE_AMS_CMD_PREV;
+    }
+    else if (strcmp(name, "volup") == 0)
+    {
+        *cmd = BLE_AMS_CMD_VOL_UP;
+    }
+    else if (strcmp(name, "voldown") == 0)
+    {
+        *cmd = BLE_AMS_CMD_VOL_DOWN;
+    }
+    else
+    {
+        return -RT_ERROR;
+    }
+
+    return RT_EOK;
+}
+
+static void ble_link_handle_command(const char *payload)
+{
+    ble_link_env_t *env = ble_link_env();
+    ble_ios_services_snapshot_t ios;
+    char cmd[64];
+    char *argv[4];
+    char *token;
+    char *saveptr = NULL;
+    int argc = 0;
+    char rsp[96];
+
+    rt_strncpy(cmd, payload, sizeof(cmd) - 1);
+    cmd[sizeof(cmd) - 1] = '\0';
+
+    token = strtok_r(cmd, " \r\n\t", &saveptr);
+    while (token && argc < (int)(sizeof(argv) / sizeof(argv[0])))
+    {
+        argv[argc++] = token;
+        token = strtok_r(NULL, " \r\n\t", &saveptr);
+    }
+
+    if (argc == 0)
+    {
+        ble_link_notify("err:empty");
+        return;
+    }
+
+    if (strcmp(argv[0], "ping") == 0)
+    {
+        ble_link_notify("ok:pong");
+    }
+    else if (strcmp(argv[0], "status") == 0)
+    {
+        ble_ios_services_get_snapshot(&ios);
+        rt_snprintf(rsp, sizeof(rsp), "st:ble=%d,bt=%d,str=%d,an=%lu,am=%lu",
+                    env->is_connected,
+                    bt_audio_sink_is_connected(),
+                    bt_audio_sink_is_streaming(),
+                    (unsigned long)ios.ancs_count,
+                    (unsigned long)ios.ams_count);
+        ble_link_notify(rsp);
+    }
+    else if (strcmp(argv[0], "local") == 0 && argc >= 2)
+    {
+        int ret = -RT_ERROR;
+
+        if (strcmp(argv[1], "play") == 0)
+        {
+            ret = local_music_play_file(argc >= 3 ? argv[2] : NULL, 0);
+        }
+        else if (strcmp(argv[1], "stop") == 0)
+        {
+            ret = local_music_stop();
+        }
+        else if (strcmp(argv[1], "pause") == 0)
+        {
+            ret = local_music_pause();
+        }
+        else if (strcmp(argv[1], "resume") == 0)
+        {
+            ret = local_music_resume();
+        }
+
+        rt_snprintf(rsp, sizeof(rsp), "local:%s:%d", argv[1], ret);
+        ble_link_notify(rsp);
+    }
+    else if (strcmp(argv[0], "ams") == 0 && argc >= 2)
+    {
+        uint8_t ams_cmd;
+        int ret;
+
+        if (ble_link_ams_cmd_from_name(argv[1], &ams_cmd) == RT_EOK)
+        {
+            ret = ble_ios_services_send_ams_cmd(ams_cmd);
+            rt_snprintf(rsp, sizeof(rsp), "ams:%s:%d", argv[1], ret);
+        }
+        else
+        {
+            rt_snprintf(rsp, sizeof(rsp), "err:ams:%s", argv[1]);
+        }
+        ble_link_notify(rsp);
+    }
+    else
+    {
+        rt_snprintf(rsp, sizeof(rsp), "echo:%s", payload);
+        ble_link_notify(rsp);
+    }
+}
+
 static uint8_t ble_link_gatts_set_cbk(uint8_t conn_idx, sibles_set_cbk_t *para)
 {
     ble_link_env_t *env = ble_link_env();
@@ -225,7 +356,7 @@ static uint8_t ble_link_gatts_set_cbk(uint8_t conn_idx, sibles_set_cbk_t *para)
         env->rx_count++;
         LOG_I("BLE write conn=%d len=%d payload=%s", conn_idx, para->len, env->last_payload);
 
-        ble_link_notify(env->last_payload);
+        ble_link_handle_command(env->last_payload);
         break;
     }
     case BLE_LINK_CCCD:
@@ -413,6 +544,7 @@ __ROM_USED void blelink(int argc, char **argv)
                    (unsigned long)env->rx_count,
                    (unsigned long)env->tx_count,
                    env->last_payload);
+        rt_kprintf("BLE writes: ping | status | local play|stop|pause|resume | ams play|pause|toggle|next|prev|volup|voldown\n");
     }
     else if (strcmp(argv[1], "adv") == 0)
     {

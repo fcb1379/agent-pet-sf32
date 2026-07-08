@@ -25,5 +25,6 @@ typedef struct
 } ble_ios_services_snapshot_t;
 
 void ble_ios_services_get_snapshot(ble_ios_services_snapshot_t *snapshot);
+rt_err_t ble_ios_services_send_ams_cmd(uint8_t cmd);
 
 #endif
