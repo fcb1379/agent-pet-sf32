@@ -13,19 +13,49 @@ typedef struct
     lv_obj_t *message;
     lv_timer_t *refresh_timer;
     uint32_t generation;
+    uint32_t received;
+    uint32_t total;
+    int16_t last_error;
+    badge_transfer_state_t state;
     uint8_t image_available;
 } badge_ui_t;
 
 static badge_ui_t g_badge_ui;
+
+static const char *badge_ui_message(const badge_transfer_snapshot_t *snapshot,
+                                    char *buffer,
+                                    uint32_t buffer_len)
+{
+    if (snapshot->state == BADGE_TRANSFER_RECEIVING)
+    {
+        uint32_t percent = snapshot->total ? snapshot->received * 100 / snapshot->total : 0;
+
+        rt_snprintf(buffer, buffer_len, "Receiving %lu%%\n%lu / %lu",
+                    (unsigned long)percent,
+                    (unsigned long)snapshot->received,
+                    (unsigned long)snapshot->total);
+        return buffer;
+    }
+
+    if (snapshot->state == BADGE_TRANSFER_ERROR)
+    {
+        rt_snprintf(buffer, buffer_len, "Transfer failed\nerr %d", snapshot->last_error);
+        return buffer;
+    }
+
+    return "BLE image pending";
+}
 
 static void badge_ui_refresh(void)
 {
     badge_transfer_snapshot_t snapshot;
     lv_img_header_t header;
     uint16_t zoom = LV_IMG_ZOOM_NONE;
+    char message[64];
 
     badge_transfer_get_snapshot(&snapshot);
-    if (snapshot.image_available)
+    if (snapshot.image_available && snapshot.state != BADGE_TRANSFER_RECEIVING &&
+            snapshot.state != BADGE_TRANSFER_ERROR)
     {
         lv_img_cache_invalidate_src(BADGE_LVGL_IMAGE_PATH);
         lv_img_set_src(g_badge_ui.image, BADGE_LVGL_IMAGE_PATH);
@@ -43,11 +73,18 @@ static void badge_ui_refresh(void)
     }
     else
     {
+        lv_label_set_text(g_badge_ui.message,
+                          badge_ui_message(&snapshot, message, sizeof(message)));
+        lv_obj_center(g_badge_ui.message);
         lv_obj_add_flag(g_badge_ui.image, LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(g_badge_ui.message, LV_OBJ_FLAG_HIDDEN);
     }
 
     g_badge_ui.generation = snapshot.generation;
+    g_badge_ui.received = snapshot.received;
+    g_badge_ui.total = snapshot.total;
+    g_badge_ui.last_error = snapshot.last_error;
+    g_badge_ui.state = snapshot.state;
     g_badge_ui.image_available = snapshot.image_available;
 }
 
@@ -58,6 +95,10 @@ static void badge_refresh_timer_cb(lv_timer_t *timer)
     (void)timer;
     badge_transfer_get_snapshot(&snapshot);
     if (snapshot.generation != g_badge_ui.generation ||
+            snapshot.received != g_badge_ui.received ||
+            snapshot.total != g_badge_ui.total ||
+            snapshot.last_error != g_badge_ui.last_error ||
+            snapshot.state != g_badge_ui.state ||
             snapshot.image_available != g_badge_ui.image_available)
     {
         badge_ui_refresh();
@@ -81,8 +122,11 @@ static void badge_on_start(void)
 
     g_badge_ui.message = lv_label_create(g_badge_ui.root);
     lv_label_set_text(g_badge_ui.message, "BLE image pending");
+    lv_obj_set_width(g_badge_ui.message, LV_HOR_RES_MAX - 32);
+    lv_label_set_long_mode(g_badge_ui.message, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_font(g_badge_ui.message, &lv_font_montserrat_24, 0);
     lv_obj_set_style_text_color(g_badge_ui.message, lv_color_white(), 0);
+    lv_obj_set_style_text_align(g_badge_ui.message, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_center(g_badge_ui.message);
 
     badge_ui_refresh();

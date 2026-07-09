@@ -269,6 +269,35 @@ void badge_transfer_get_snapshot(badge_transfer_snapshot_t *snapshot)
     snapshot->image_available = g_badge.image_available || stat(BADGE_IMAGE_PATH, &st) == 0;
 }
 
+int badge_transfer_clear(void)
+{
+    int ret = RT_EOK;
+
+    badge_close_temp();
+    if (access(BADGE_TEMP_PATH, 0) == 0 && unlink(BADGE_TEMP_PATH) != 0)
+    {
+        ret = -RT_ERROR;
+    }
+    if (access(BADGE_BACKUP_PATH, 0) == 0 && unlink(BADGE_BACKUP_PATH) != 0)
+    {
+        ret = -RT_ERROR;
+    }
+    if (access(BADGE_IMAGE_PATH, 0) == 0 && unlink(BADGE_IMAGE_PATH) != 0)
+    {
+        ret = -RT_ERROR;
+    }
+
+    g_badge.total = 0;
+    g_badge.received = 0;
+    g_badge.all_files_total = 0;
+    g_badge.crc = BADGE_CRC_INIT;
+    g_badge.generation++;
+    g_badge.last_error = (ret == RT_EOK) ? 0 : BLE_WATCHFACE_STATUS_FILE_WRITE_ERROR;
+    g_badge.state = (ret == RT_EOK) ? BADGE_TRANSFER_IDLE : BADGE_TRANSFER_ERROR;
+    g_badge.image_available = 0;
+    return ret;
+}
+
 static int badge_transfer_init(void)
 {
     struct stat st;
@@ -291,8 +320,12 @@ __ROM_USED void badge(int argc, char **argv)
 {
     badge_transfer_snapshot_t snapshot;
 
-    (void)argc;
-    (void)argv;
+    if (argc >= 2 && strcmp(argv[1], "clear") == 0)
+    {
+        rt_kprintf("badge clear ret=%d\n", badge_transfer_clear());
+        return;
+    }
+
     badge_transfer_get_snapshot(&snapshot);
     rt_kprintf("badge state=%d image=%d received=%lu/%lu generation=%lu error=%d path=%s\n",
                snapshot.state,
@@ -303,4 +336,4 @@ __ROM_USED void badge(int argc, char **argv)
                snapshot.last_error,
                BADGE_IMAGE_PATH);
 }
-MSH_CMD_EXPORT(badge, electronic badge transfer status);
+MSH_CMD_EXPORT(badge, electronic badge transfer status and clear);

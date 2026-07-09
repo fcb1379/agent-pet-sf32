@@ -24,5 +24,6 @@ typedef struct
 } badge_transfer_snapshot_t;
 
 void badge_transfer_get_snapshot(badge_transfer_snapshot_t *snapshot);
+int badge_transfer_clear(void);
 
 #endif /* BADGE_TRANSFER_H */

@@ -327,6 +327,15 @@ static void ble_link_handle_command(const char *payload)
     {
         badge_transfer_snapshot_t badge;
 
+        if (argc >= 2 && strcmp(argv[1], "clear") == 0)
+        {
+            int ret = badge_transfer_clear();
+
+            rt_snprintf(rsp, sizeof(rsp), "badge:clear:%d", ret);
+            ble_link_notify(rsp);
+            return;
+        }
+
         badge_transfer_get_snapshot(&badge);
         rt_snprintf(rsp, sizeof(rsp), "badge:s=%d,img=%d,rx=%lu,total=%lu,gen=%lu,err=%d",
                     badge.state,
@@ -626,7 +635,7 @@ __ROM_USED void blelink(int argc, char **argv)
                    (unsigned long)env->rx_count,
                    (unsigned long)env->tx_count,
                    env->last_payload);
-        rt_kprintf("BLE writes: ping | status | health | badge | recover bt | settings | set localvol|btvol <0-15> | set route speaker | reset settings | local play|stop|pause|resume | ams play|pause|toggle|next|prev|volup|voldown\n");
+        rt_kprintf("BLE writes: ping | status | health | badge [clear] | recover bt | settings | set localvol|btvol <0-15> | set route speaker | reset settings | local play|stop|pause|resume | ams play|pause|toggle|next|prev|volup|voldown\n");
     }
     else if (strcmp(argv[1], "adv") == 0)
     {

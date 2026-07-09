@@ -265,6 +265,21 @@ UI cleanup on 2026-07-09:
   - Open the main menu and confirm no dimmed placeholder icons remain.
   - Tap each remaining icon and confirm it opens a registered application.
 
+Badge transfer usability update on 2026-07-09:
+
+- Added `badge clear` on the finsh console to delete `/badge.jpg`, `/badge.tmp`,
+  and `/badge.bak`, reset the transfer state, and bump the UI generation.
+- Added BLE text command `badge clear`, returning `badge:clear:<ret>`, so phone-side
+  tests can reset the badge image without opening a serial shell.
+- The `电子吧唧` / `Badge` app now shows transfer progress while receiving and an
+  error code after failed transfers. Existing images are hidden during active
+  transfer so progress is visible.
+- Manual verification to run later:
+  - Send `badge clear` over BLE and confirm a `badge:clear:0` notification.
+  - Reopen `电子吧唧`; expected `BLE image pending` after clearing.
+  - Start a JPEG transfer while the app is open; expected `Receiving <percent>%`.
+  - Force an invalid transfer; expected `Transfer failed` with a non-zero error.
+
 ### T01 - Flash and Verify Watch Baseline
 
 Status: flashed, binary-verified, and visually confirmed
