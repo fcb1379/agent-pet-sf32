@@ -254,6 +254,17 @@ Result on 2026-07-09:
   - Interrupt a second transfer and confirm the previous image remains available.
   - Send a file with invalid CRC or a non-JPEG payload and confirm it is rejected.
 
+UI cleanup on 2026-07-09:
+
+- Removed the watch demo's hard-coded main-menu filler block, which created 60
+  dimmed icons with the invalid application command `none`.
+- The main menu now lists only applications exported through
+  `BUILTIN_APP_EXPORT`, currently including the working Clock, Rotation 3D, and
+  Electronic Badge applications.
+- Manual verification to run later:
+  - Open the main menu and confirm no dimmed placeholder icons remain.
+  - Tap each remaining icon and confirm it opens a registered application.
+
 ### T01 - Flash and Verify Watch Baseline
 
 Status: flashed, binary-verified, and visually confirmed
