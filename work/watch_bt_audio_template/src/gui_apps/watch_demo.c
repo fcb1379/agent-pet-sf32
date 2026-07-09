@@ -12,6 +12,7 @@
 #include "app_mem.h"
 #include "log.h"
 #include "lv_freetype.h"
+#include <string.h>
 
 #ifdef BSP_USING_PM
     #include "bf0_pm.h"
@@ -52,6 +53,31 @@ extern void ui_datac_init(void);
 #ifdef BSP_USING_PM
     extern bool lv_refreshing_done(void);
 #endif /* BSP_USING_PM */
+
+#if LV_USE_GPU
+extern void lv_gpu_set_enable(bool en);
+extern bool lv_gpu_is_enabled(void);
+#endif
+
+static void watch_ui_gpu_set(bool enable)
+{
+#if LV_USE_GPU
+    lv_gpu_set_enable(enable);
+    LOG_I("watch UI EPIC GPU %s", lv_gpu_is_enabled() ? "on" : "off");
+#else
+    (void)enable;
+    LOG_I("watch UI EPIC GPU unavailable");
+#endif
+}
+
+static bool watch_ui_gpu_is_enabled(void)
+{
+#if LV_USE_GPU
+    return lv_gpu_is_enabled();
+#else
+    return false;
+#endif
+}
 /**
  * return to MAIN_APP or CLOCK_APP
  * \n
@@ -464,6 +490,10 @@ void app_watch_entry(void *parameter)
         RT_ASSERT(RT_EOK == r);
     }
 
+#ifdef WATCH_UI_DISABLE_EPIC_GPU
+    watch_ui_gpu_set(false);
+#endif
+
     lv_ex_data_pool_init();
     resource_init();
 #if LV_USING_FREETYPE_ENGINE
@@ -579,3 +609,31 @@ void cxx_mem_free(void *ptr)
 #endif
 
 INIT_APP_EXPORT(app_watch_init);
+
+static void watch_ui_mode_cmd(int argc, char **argv)
+{
+    if (argc < 2 || strcmp(argv[1], "status") == 0)
+    {
+        rt_kprintf("uimode: gpu=%s\n", watch_ui_gpu_is_enabled() ? "on" : "off");
+        return;
+    }
+
+    if (strcmp(argv[1], "gpu") == 0)
+    {
+        if (argc >= 3 && strcmp(argv[2], "on") == 0)
+        {
+            watch_ui_gpu_set(true);
+            rt_kprintf("uimode: gpu=on\n");
+            return;
+        }
+        if (argc >= 3 && strcmp(argv[2], "off") == 0)
+        {
+            watch_ui_gpu_set(false);
+            rt_kprintf("uimode: gpu=off\n");
+            return;
+        }
+    }
+
+    rt_kprintf("Usage: uimode status | gpu on | gpu off\n");
+}
+MSH_CMD_EXPORT_ALIAS(watch_ui_mode_cmd, uimode, watch UI render mode command);

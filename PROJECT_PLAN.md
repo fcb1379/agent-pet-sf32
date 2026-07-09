@@ -369,6 +369,35 @@ Text ghosting mitigation, display-buffer pass on 2026-07-09:
   - If residual text still appears, next step should inspect the LCD framebuffer
     copy/flush area and CO5300 TE/VSYNC timing, not individual label allocation.
 
+Text rendering diagnostic on 2026-07-09:
+
+- User asked whether the abnormal text could be caused by anti-aliasing.
+- Current finding: `LV_USE_FONT_SUBPX` is disabled, so it is not subpixel AA.
+  However, normal grayscale font AA still uses alpha masks for glyph edges, and
+  SiFli's LVGL port routes text through the EPIC `draw_letter` / `letter_blend`
+  path.
+- Added project option `WATCH_UI_DISABLE_EPIC_GPU`, enabled by default for this
+  diagnostic build. After `littlevgl2rtt_init()`, the watch UI calls
+  `lv_gpu_set_enable(false)` so LVGL uses software rendering for text/blending.
+- Added finsh command for A/B comparison:
+  - `uimode status`
+  - `uimode gpu off`
+  - `uimode gpu on`
+- Build verification passed for `sf32lb52-lchspi-ulp`:
+  - `WATCH_UI_DISABLE_EPIC_GPU=1`
+  - RAM usage is about 63%; PSRAM usage is about 19%.
+- Flashed through `/dev/cu.usbserial-110`.
+- Readback verification passed:
+  - `FTAB_CMP_EXIT=0`
+  - `MAIN_CMP_EXIT=0`
+  - `FS_ROOT_CMP_EXIT=0`
+- Manual verification to run now:
+  - Check text-heavy pages with the default `gpu=off` state.
+  - Run `uimode status` over finsh; expected `gpu=off`.
+  - If text is clean with GPU off, run `uimode gpu on` and confirm whether the
+    abnormal text returns. That would isolate the issue to EPIC accelerated text
+    alpha blending rather than LVGL label memory.
+
 ### T01 - Flash and Verify Watch Baseline
 
 Status: flashed, binary-verified, and visually confirmed
