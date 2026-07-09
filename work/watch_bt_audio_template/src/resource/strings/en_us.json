@@ -48,5 +48,6 @@
     "rotation3d":"Rotation 3D",
     "badge":"Badge",
     "status":"Status",
+    "music":"Music",
     "lvgl_demos":"LVGL demos"
 }

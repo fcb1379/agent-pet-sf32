@@ -300,6 +300,24 @@ Status app update on 2026-07-09:
   - Tap `BT recover` and confirm the action result label changes.
   - Tap `Clear badge` and confirm the badge app returns to the pending state.
 
+Music control app update on 2026-07-09:
+
+- Added a main-menu application named `音乐` / `Music` using the existing iTunes
+  icon.
+- The page provides table-side controls for the current implemented audio paths:
+  - Local `/16k.wav` play, pause, resume, and stop.
+  - AMS previous, play/pause toggle, next, volume up, and volume down.
+- The page refreshes once per second and displays the latest AMS player, playback,
+  track, artist, and album strings when iOS provides them.
+- Full build passed for `sf32lb52-lchspi-ulp`; RAM remains about 78%.
+- Manual verification to run later:
+  - Open the main menu and confirm `音乐` appears as a valid clickable icon.
+  - Tap `Local play` and confirm the connected speaker plays `/16k.wav`.
+  - Tap `Pause`, `Resume`, and `Local stop`; confirm the speaker follows.
+  - With iPhone AMS connected, tap `Prev`, `Play/Pause`, `Next`, `Vol +`, and
+    `Vol -`; confirm the phone player responds.
+  - Confirm long track metadata wraps and the page can scroll vertically.
+
 ### T01 - Flash and Verify Watch Baseline
 
 Status: flashed, binary-verified, and visually confirmed
