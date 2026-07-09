@@ -22,6 +22,8 @@
 #endif
 
 #define BT_AUDIO_READY 1
+#define BT_AUDIO_RECOVER 2
+#define BT_AUDIO_READY_WAIT_MS 8000
 
 typedef struct
 {
@@ -29,6 +31,11 @@ typedef struct
     uint8_t is_a2dp_connected;
     uint8_t is_a2dp_streaming;
     uint8_t is_abs_enabled;
+    uint8_t stack_ready;
+    int16_t last_error;
+    uint32_t disconnect_count;
+    uint32_t recovery_count;
+    uint32_t last_event_tick;
 } watch_bt_audio_t;
 
 static watch_bt_audio_t g_watch_bt_audio;
@@ -60,6 +67,8 @@ static int watch_bt_audio_event_handle(uint16_t type, uint16_t event_id, uint8_t
                 g_watch_bt_audio.addr = profile_info->mac;
                 g_watch_bt_audio.is_a2dp_connected = 1;
                 g_watch_bt_audio.is_a2dp_streaming = 0;
+                g_watch_bt_audio.last_error = 0;
+                g_watch_bt_audio.last_event_tick = rt_tick_get();
             }
             LOG_I("watch bt audio: A2DP connected");
             break;
@@ -69,16 +78,25 @@ static int watch_bt_audio_event_handle(uint16_t type, uint16_t event_id, uint8_t
             bt_notify_profile_state_info_t *info = (bt_notify_profile_state_info_t *)data;
             g_watch_bt_audio.is_a2dp_connected = 0;
             g_watch_bt_audio.is_a2dp_streaming = 0;
+            g_watch_bt_audio.disconnect_count++;
+            g_watch_bt_audio.last_error = info ? info->res : -RT_ERROR;
+            g_watch_bt_audio.last_event_tick = rt_tick_get();
+            if (g_watch_bt_audio_mb)
+            {
+                rt_mb_send(g_watch_bt_audio_mb, BT_AUDIO_RECOVER);
+            }
             LOG_I("watch bt audio: A2DP disconnected %d", info ? info->res : -1);
             break;
         }
         case BT_NOTIFY_A2DP_START_IND:
             g_watch_bt_audio.is_a2dp_streaming = 1;
+            g_watch_bt_audio.last_event_tick = rt_tick_get();
             local_music_stop();
             LOG_I("watch bt audio: A2DP stream started, local music stopped");
             break;
         case BT_NOTIFY_A2DP_SUSPEND_IND:
             g_watch_bt_audio.is_a2dp_streaming = 0;
+            g_watch_bt_audio.last_event_tick = rt_tick_get();
             LOG_I("watch bt audio: A2DP stream suspended");
             break;
         default:
@@ -139,25 +157,46 @@ static void watch_bt_audio_thread(void *parameter)
 
     sifli_ble_enable();
 
-    if (RT_EOK == rt_mb_recv(g_watch_bt_audio_mb, (rt_uint32_t *)&value, 8000) && value == BT_AUDIO_READY)
-    {
-        const char *local_name = "Huangshan-Watch";
-        bt_interface_set_local_name(strlen(local_name), (void *)local_name);
-        bt_interface_register_av_snk_sdp();
-        bt_av_snk_open();
-        bt_interface_open_avrcp();
-        watch_settings_apply_audio();
-        bt_open_bt_request();
-        LOG_I("watch bt audio: stack ready, name=%s", local_name);
-    }
-    else
-    {
-        LOG_E("watch bt audio: stack init timeout");
-    }
-
     while (1)
     {
-        rt_thread_mdelay(15000);
+        rt_err_t ret = rt_mb_recv(g_watch_bt_audio_mb,
+                                  (rt_uint32_t *)&value,
+                                  rt_tick_from_millisecond(BT_AUDIO_READY_WAIT_MS));
+
+        if (ret != RT_EOK)
+        {
+            if (!g_watch_bt_audio.stack_ready)
+            {
+                g_watch_bt_audio.last_error = -RT_ETIMEOUT;
+                g_watch_bt_audio.last_event_tick = rt_tick_get();
+                LOG_E("watch bt audio: stack init still waiting");
+            }
+            continue;
+        }
+
+        if (value == BT_AUDIO_READY && !g_watch_bt_audio.stack_ready)
+        {
+            const char *local_name = "Huangshan-Watch";
+
+            g_watch_bt_audio.stack_ready = 1;
+            g_watch_bt_audio.last_error = 0;
+            g_watch_bt_audio.last_event_tick = rt_tick_get();
+            bt_interface_set_local_name(strlen(local_name), (void *)local_name);
+            bt_interface_register_av_snk_sdp();
+            bt_av_snk_open();
+            bt_interface_open_avrcp();
+            watch_settings_apply_audio();
+            bt_open_bt_request();
+            LOG_I("watch bt audio: stack ready, name=%s", local_name);
+        }
+        else if (value == BT_AUDIO_RECOVER && g_watch_bt_audio.stack_ready)
+        {
+            g_watch_bt_audio.recovery_count++;
+            g_watch_bt_audio.last_event_tick = rt_tick_get();
+            bt_open_bt_request();
+            LOG_I("watch bt audio: recovery scan requested, count=%lu",
+                  (unsigned long)g_watch_bt_audio.recovery_count);
+        }
     }
 }
 
@@ -189,16 +228,63 @@ rt_bool_t bt_audio_sink_is_streaming(void)
     return g_watch_bt_audio.is_a2dp_streaming ? RT_TRUE : RT_FALSE;
 }
 
+void bt_audio_sink_get_health(bt_audio_sink_health_t *health)
+{
+    if (!health)
+    {
+        return;
+    }
+
+    health->last_error = g_watch_bt_audio.last_error;
+    health->disconnect_count = g_watch_bt_audio.disconnect_count;
+    health->recovery_count = g_watch_bt_audio.recovery_count;
+    health->last_event_tick = g_watch_bt_audio.last_event_tick;
+
+    if (g_watch_bt_audio.is_a2dp_streaming)
+    {
+        health->state = BT_AUDIO_SINK_STATE_STREAMING;
+    }
+    else if (g_watch_bt_audio.is_a2dp_connected)
+    {
+        health->state = BT_AUDIO_SINK_STATE_CONNECTED;
+    }
+    else if (g_watch_bt_audio.stack_ready)
+    {
+        health->state = BT_AUDIO_SINK_STATE_READY;
+    }
+    else if (g_watch_bt_audio.last_error)
+    {
+        health->state = BT_AUDIO_SINK_STATE_ERROR;
+    }
+    else
+    {
+        health->state = BT_AUDIO_SINK_STATE_STARTING;
+    }
+}
+
+int bt_audio_sink_request_recovery(void)
+{
+    if (!g_watch_bt_audio_mb || !g_watch_bt_audio.stack_ready)
+    {
+        return -RT_EBUSY;
+    }
+
+    return rt_mb_send(g_watch_bt_audio_mb, BT_AUDIO_RECOVER);
+}
+
 __ROM_USED void btaudio(int argc, char **argv)
 {
     if (argc < 2)
     {
-        rt_kprintf("btaudio status|discover|open|clear|vol <0-15>\n");
+        rt_kprintf("btaudio status|recover|discover|open|clear|vol <0-15>\n");
         return;
     }
 
     if (strcmp(argv[1], "status") == 0)
     {
+        bt_audio_sink_health_t health;
+
+        bt_audio_sink_get_health(&health);
         rt_kprintf("A2DP: %s, stream: %s, abs_vol: %s\n",
                    g_watch_bt_audio.is_a2dp_connected ? "connected" : "disconnected",
                    g_watch_bt_audio.is_a2dp_streaming ? "started" : "stopped",
@@ -206,6 +292,16 @@ __ROM_USED void btaudio(int argc, char **argv)
         rt_kprintf("BT music volume=%d/%d\n",
                    watch_settings_get_bt_volume(),
                    audio_server_get_max_volume());
+        rt_kprintf("health state=%d err=%d disconnects=%lu recoveries=%lu last_tick=%lu\n",
+                   health.state,
+                   health.last_error,
+                   (unsigned long)health.disconnect_count,
+                   (unsigned long)health.recovery_count,
+                   (unsigned long)health.last_event_tick);
+    }
+    else if (strcmp(argv[1], "recover") == 0)
+    {
+        rt_kprintf("BT recovery request=%d\n", bt_audio_sink_request_recovery());
     }
     else if (strcmp(argv[1], "discover") == 0)
     {

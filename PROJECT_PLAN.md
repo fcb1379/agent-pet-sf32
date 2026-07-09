@@ -581,3 +581,26 @@ Result update after reset/status extension on 2026-07-08:
   - `FTAB_CMP_EXIT=0`
   - `MAIN_CMP_EXIT=0`
   - `FS_ROOT_CMP_EXIT=0`
+
+Result update on 2026-07-09:
+
+- Added an A2DP sink health snapshot with lifecycle state, last error, disconnect count,
+  recovery count, and last-event tick.
+- Changed the BT startup worker so an 8-second stack-ready timeout is diagnostic only;
+  it keeps waiting and can finish initialization when the delayed ready event arrives.
+- A2DP disconnection now queues a recovery request in the BT worker, which reopens
+  Classic BT inquiry/page scan without doing stack work directly in the event callback.
+- Added manual recovery and diagnostics:
+  - finsh `btaudio recover`
+  - finsh `btaudio status` includes health counters
+  - BLE write `health`
+  - BLE write `recover bt`
+- Rebuilt successfully for `sf32lb52-lchspi-ulp` with the project-local board
+  overlay; RAM usage remains about 78%.
+- Flashed through `/dev/cu.usbserial-110`.
+- Manual verification to run later:
+  - Pair and play A2DP audio, disconnect from the phone, and confirm the watch becomes
+    discoverable/connectable again without rebooting.
+  - BLE write `health`; expected response starts with `health:bt=` and recovery count
+    increases after an A2DP disconnect or `recover bt`.
+  - BLE write `recover bt`; expected `recover:bt:0` after the BT stack is ready.

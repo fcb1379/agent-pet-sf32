@@ -308,6 +308,26 @@ static void ble_link_handle_command(const char *payload)
                     settings.route);
         ble_link_notify(rsp);
     }
+    else if (strcmp(argv[0], "health") == 0)
+    {
+        bt_audio_sink_health_t health;
+
+        bt_audio_sink_get_health(&health);
+        rt_snprintf(rsp, sizeof(rsp), "health:bt=%d,err=%d,dc=%lu,rc=%lu,t=%lu",
+                    health.state,
+                    health.last_error,
+                    (unsigned long)health.disconnect_count,
+                    (unsigned long)health.recovery_count,
+                    (unsigned long)health.last_event_tick);
+        ble_link_notify(rsp);
+    }
+    else if (strcmp(argv[0], "recover") == 0 && argc >= 2 && strcmp(argv[1], "bt") == 0)
+    {
+        int ret = bt_audio_sink_request_recovery();
+
+        rt_snprintf(rsp, sizeof(rsp), "recover:bt:%d", ret);
+        ble_link_notify(rsp);
+    }
     else if (strcmp(argv[0], "set") == 0 && argc >= 3)
     {
         int ret = -RT_ERROR;
@@ -589,7 +609,7 @@ __ROM_USED void blelink(int argc, char **argv)
                    (unsigned long)env->rx_count,
                    (unsigned long)env->tx_count,
                    env->last_payload);
-        rt_kprintf("BLE writes: ping | status | settings | set localvol|btvol <0-15> | set route speaker | reset settings | local play|stop|pause|resume | ams play|pause|toggle|next|prev|volup|voldown\n");
+        rt_kprintf("BLE writes: ping | status | health | recover bt | settings | set localvol|btvol <0-15> | set route speaker | reset settings | local play|stop|pause|resume | ams play|pause|toggle|next|prev|volup|voldown\n");
     }
     else if (strcmp(argv[1], "adv") == 0)
     {
