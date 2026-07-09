@@ -25,6 +25,7 @@ typedef struct
     lv_obj_t *last_action;
     lv_timer_t *refresh_timer;
     char last_action_text[48];
+    char content_text[768];
 } status_ui_t;
 
 static status_ui_t g_status_ui;
@@ -39,7 +40,9 @@ static void status_update_action_text(const char *text)
     rt_snprintf(g_status_ui.last_action_text, sizeof(g_status_ui.last_action_text), "%s", text);
     if (g_status_ui.last_action)
     {
+        lv_obj_invalidate(g_status_ui.last_action);
         lv_label_set_text(g_status_ui.last_action, g_status_ui.last_action_text);
+        lv_obj_invalidate(g_status_ui.last_action);
     }
 }
 
@@ -49,7 +52,7 @@ static void status_refresh(void)
     ble_ios_services_snapshot_t ios;
     watch_settings_snapshot_t settings;
     badge_transfer_snapshot_t badge;
-    char text[768];
+    char text[sizeof(g_status_ui.content_text)];
 
     bt_audio_sink_get_health(&bt);
     ble_ios_services_get_snapshot(&ios);
@@ -93,7 +96,13 @@ static void status_refresh(void)
                 (unsigned long)badge.generation,
                 badge.last_error);
 
-    lv_label_set_text(g_status_ui.content, text);
+    if (rt_strncmp(g_status_ui.content_text, text, sizeof(g_status_ui.content_text)) != 0)
+    {
+        rt_snprintf(g_status_ui.content_text, sizeof(g_status_ui.content_text), "%s", text);
+        lv_obj_invalidate(g_status_ui.content);
+        lv_label_set_text(g_status_ui.content, g_status_ui.content_text);
+        lv_obj_invalidate(g_status_ui.content);
+    }
 }
 
 static void status_timer_cb(lv_timer_t *timer)
@@ -189,16 +198,21 @@ static void status_on_start(void)
 
     g_status_ui.last_action = lv_label_create(g_status_ui.root);
     lv_label_set_text(g_status_ui.last_action, g_status_ui.last_action_text);
-    lv_obj_set_width(g_status_ui.last_action, LV_HOR_RES_MAX - 32);
+    lv_obj_set_size(g_status_ui.last_action, LV_HOR_RES_MAX - 32, 28);
+    lv_label_set_long_mode(g_status_ui.last_action, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_font(g_status_ui.last_action, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(g_status_ui.last_action, lv_color_hex(0x9bd3ff), 0);
+    lv_obj_set_style_bg_color(g_status_ui.last_action, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(g_status_ui.last_action, LV_OPA_COVER, 0);
     lv_obj_set_pos(g_status_ui.last_action, 16, 114);
 
     g_status_ui.content = lv_label_create(g_status_ui.root);
     lv_label_set_long_mode(g_status_ui.content, LV_LABEL_LONG_WRAP);
-    lv_obj_set_width(g_status_ui.content, LV_HOR_RES_MAX - 32);
+    lv_obj_set_size(g_status_ui.content, LV_HOR_RES_MAX - 32, LV_VER_RES_MAX + 180);
     lv_obj_set_style_text_font(g_status_ui.content, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(g_status_ui.content, lv_color_white(), 0);
+    lv_obj_set_style_bg_color(g_status_ui.content, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(g_status_ui.content, LV_OPA_COVER, 0);
     lv_obj_set_pos(g_status_ui.content, 16, 148);
 
     status_refresh();

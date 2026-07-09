@@ -31,6 +31,7 @@ typedef struct
     lv_obj_t *last_action;
     lv_timer_t *refresh_timer;
     char last_action_text[48];
+    char status_text[384];
 } music_ui_t;
 
 static music_ui_t g_music_ui;
@@ -45,14 +46,16 @@ static void music_update_action_text(const char *text)
     rt_snprintf(g_music_ui.last_action_text, sizeof(g_music_ui.last_action_text), "%s", text);
     if (g_music_ui.last_action)
     {
+        lv_obj_invalidate(g_music_ui.last_action);
         lv_label_set_text(g_music_ui.last_action, g_music_ui.last_action_text);
+        lv_obj_invalidate(g_music_ui.last_action);
     }
 }
 
 static void music_refresh(void)
 {
     ble_ios_services_snapshot_t ios;
-    char text[384];
+    char text[sizeof(g_music_ui.status_text)];
 
     ble_ios_services_get_snapshot(&ios);
     rt_snprintf(text, sizeof(text),
@@ -69,7 +72,13 @@ static void music_refresh(void)
                 music_text_or_dash(ios.track),
                 music_text_or_dash(ios.artist),
                 music_text_or_dash(ios.album));
-    lv_label_set_text(g_music_ui.status, text);
+    if (rt_strncmp(g_music_ui.status_text, text, sizeof(g_music_ui.status_text)) != 0)
+    {
+        rt_snprintf(g_music_ui.status_text, sizeof(g_music_ui.status_text), "%s", text);
+        lv_obj_invalidate(g_music_ui.status);
+        lv_label_set_text(g_music_ui.status, g_music_ui.status_text);
+        lv_obj_invalidate(g_music_ui.status);
+    }
 }
 
 static int music_run_action(music_action_t action)
@@ -224,16 +233,21 @@ static void music_on_start(void)
 
     g_music_ui.last_action = lv_label_create(g_music_ui.root);
     lv_label_set_text(g_music_ui.last_action, g_music_ui.last_action_text);
-    lv_obj_set_width(g_music_ui.last_action, LV_HOR_RES_MAX - 32);
+    lv_obj_set_size(g_music_ui.last_action, LV_HOR_RES_MAX - 32, 28);
+    lv_label_set_long_mode(g_music_ui.last_action, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_font(g_music_ui.last_action, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(g_music_ui.last_action, lv_color_hex(0xb8e8c2), 0);
+    lv_obj_set_style_bg_color(g_music_ui.last_action, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(g_music_ui.last_action, LV_OPA_COVER, 0);
     lv_obj_set_pos(g_music_ui.last_action, 16, 320);
 
     g_music_ui.status = lv_label_create(g_music_ui.root);
     lv_label_set_long_mode(g_music_ui.status, LV_LABEL_LONG_WRAP);
-    lv_obj_set_width(g_music_ui.status, LV_HOR_RES_MAX - 32);
+    lv_obj_set_size(g_music_ui.status, LV_HOR_RES_MAX - 32, LV_VER_RES_MAX);
     lv_obj_set_style_text_font(g_music_ui.status, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(g_music_ui.status, lv_color_white(), 0);
+    lv_obj_set_style_bg_color(g_music_ui.status, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(g_music_ui.status, LV_OPA_COVER, 0);
     lv_obj_set_pos(g_music_ui.status, 16, 356);
 
     music_refresh();

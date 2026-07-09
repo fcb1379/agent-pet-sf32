@@ -73,9 +73,11 @@ static void badge_ui_refresh(void)
     }
     else
     {
+        lv_obj_invalidate(g_badge_ui.message);
         lv_label_set_text(g_badge_ui.message,
                           badge_ui_message(&snapshot, message, sizeof(message)));
         lv_obj_center(g_badge_ui.message);
+        lv_obj_invalidate(g_badge_ui.message);
         lv_obj_add_flag(g_badge_ui.image, LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(g_badge_ui.message, LV_OBJ_FLAG_HIDDEN);
     }
@@ -127,6 +129,8 @@ static void badge_on_start(void)
     lv_obj_set_style_text_font(g_badge_ui.message, &lv_font_montserrat_24, 0);
     lv_obj_set_style_text_color(g_badge_ui.message, lv_color_white(), 0);
     lv_obj_set_style_text_align(g_badge_ui.message, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_bg_color(g_badge_ui.message, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(g_badge_ui.message, LV_OPA_COVER, 0);
     lv_obj_center(g_badge_ui.message);
 
     badge_ui_refresh();

@@ -318,6 +318,31 @@ Music control app update on 2026-07-09:
     `Vol -`; confirm the phone player responds.
   - Confirm long track metadata wraps and the page can scroll vertically.
 
+Text ghosting mitigation on 2026-07-09:
+
+- User reported that text still had trailing/ghost artifacts, similar to an
+  incorrect text-widget memory region.
+- First mitigation treats it as a partial-refresh/transparent-label redraw issue:
+  - Dynamic labels in the `状态` / `Status` app now use fixed-size opaque black
+    backgrounds.
+  - Dynamic labels in the `音乐` / `Music` app now use fixed-size opaque black
+    backgrounds.
+  - The `电子吧唧` / `Badge` progress/error label now uses an opaque black
+    background and explicit invalidation around text updates.
+  - Status and music pages now cache the previously rendered text and call
+    `lv_label_set_text()` only when the content actually changes, reducing
+    unnecessary redraws.
+- Full build passed for `sf32lb52-lchspi-ulp`; RAM remains about 78%.
+- Manual verification to run later:
+  - Open `状态`, leave it running for at least 30 seconds, and confirm refreshed
+    counters do not leave old glyphs behind.
+  - Open `音乐`, connect AMS or change playback state, and confirm text changes
+    erase cleanly.
+  - Start a badge image transfer and confirm progress percentages do not leave
+    residual digits.
+  - If residual text remains, next investigation should move down to LVGL draw
+    buffer stride/color-format/flush-area handling rather than label allocation.
+
 ### T01 - Flash and Verify Watch Baseline
 
 Status: flashed, binary-verified, and visually confirmed
