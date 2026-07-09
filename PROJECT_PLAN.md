@@ -280,6 +280,26 @@ Badge transfer usability update on 2026-07-09:
   - Start a JPEG transfer while the app is open; expected `Receiving <percent>%`.
   - Force an invalid transfer; expected `Transfer failed` with a non-zero error.
 
+Status app update on 2026-07-09:
+
+- Added a main-menu application named `状态` / `Status` using the existing Settings
+  icon.
+- The page refreshes once per second and displays:
+  - A2DP sink state, connected/streaming flags, last error, disconnect and recovery
+    counts.
+  - ANCS and AMS counters plus current iOS player/track strings when available.
+  - Persisted local and Bluetooth volume settings.
+  - Electronic badge transfer/image state.
+- Added two table-side action buttons for low-risk recovery/testing:
+  - `BT recover` calls `bt_audio_sink_request_recovery()`.
+  - `Clear badge` calls `badge_transfer_clear()`.
+- Full build passed for `sf32lb52-lchspi-ulp`; RAM remains about 78%.
+- Manual verification to run later:
+  - Open the main menu and confirm `状态` appears as a valid clickable icon.
+  - Confirm the page opens, scrolls vertically, and refreshes changing values.
+  - Tap `BT recover` and confirm the action result label changes.
+  - Tap `Clear badge` and confirm the badge app returns to the pending state.
+
 ### T01 - Flash and Verify Watch Baseline
 
 Status: flashed, binary-verified, and visually confirmed

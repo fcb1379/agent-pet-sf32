@@ -47,5 +47,6 @@
     "py_app5": "Python应用5",
     "rotation3d":"3D旋转",
     "badge":"电子吧唧",
+    "status":"状态",
     "lvgl_demos":"LVGL示例DEMO"
 }

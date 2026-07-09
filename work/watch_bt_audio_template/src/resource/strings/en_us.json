@@ -47,5 +47,6 @@
     "py_app5": "PythonApp5",
     "rotation3d":"Rotation 3D",
     "badge":"Badge",
+    "status":"Status",
     "lvgl_demos":"LVGL demos"
 }
