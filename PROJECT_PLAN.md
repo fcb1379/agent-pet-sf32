@@ -343,6 +343,32 @@ Text ghosting mitigation on 2026-07-09:
   - If residual text remains, next investigation should move down to LVGL draw
     buffer stride/color-format/flush-area handling rather than label allocation.
 
+Text ghosting mitigation, display-buffer pass on 2026-07-09:
+
+- User reported that text ghosting still remained after the opaque-label changes.
+- A full-screen direct LCD flush attempt was investigated but rejected for now:
+  `LCD_FB_USING_NONE` is not compatible with the current SDK's `DRV_EPIC_NEW_API`
+  path without patching `/Users/reus/sifli-sdk/middleware/lvgl/lv_drivers/lv_lcd.c`.
+- Kept the proven LCD framebuffer path and increased the LVGL partial draw buffer
+  height from 50 lines to 152 lines, matching several SDK LVGL examples. This
+  reduces how often text updates are split across small strips.
+- Added project-local `FRAME_BUFFER_IN_PSRAM` Kconfig support so the larger LVGL
+  double buffer is placed in PSRAM instead of HCPU SRAM.
+- Build verification passed for `sf32lb52-lchspi-ulp`:
+  - `LV_FB_LINE_NUM=152`
+  - `FRAME_BUFFER_IN_PSRAM=1`
+  - RAM usage is about 63%; PSRAM usage is about 19%.
+- Flashed through `/dev/cu.usbserial-110`.
+- Readback verification passed:
+  - `FTAB_CMP_EXIT=0`
+  - `MAIN_CMP_EXIT=0`
+  - `FS_ROOT_CMP_EXIT=0`
+- Manual verification to run later:
+  - Open the clock/status bar, `状态`, `音乐`, and `电子吧唧` pages and confirm
+    refreshed text no longer leaves trailing glyphs.
+  - If residual text still appears, next step should inspect the LCD framebuffer
+    copy/flush area and CO5300 TE/VSYNC timing, not individual label allocation.
+
 ### T01 - Flash and Verify Watch Baseline
 
 Status: flashed, binary-verified, and visually confirmed

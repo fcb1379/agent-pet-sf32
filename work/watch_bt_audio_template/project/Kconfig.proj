@@ -12,6 +12,11 @@ config FREETYPE_TINY_FONT_FULL
     bool
     default y
 
+config FRAME_BUFFER_IN_PSRAM
+    bool
+    depends on BSP_USING_PSRAM
+    default y
+
 menu "app cache Memory configuration"   
 
 choice
@@ -85,4 +90,3 @@ config MESSAGE_CACHE_SIZE
 
 
 endmenu
-
