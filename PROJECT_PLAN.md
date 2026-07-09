@@ -31,6 +31,13 @@ Reason for current baseline: the LVGL v8 `watch` demo supports SF32LB52 LCD-clas
 
 ## Required Features
 
+### Electronic Badge
+
+- Receive a user-selected image from a phone over BLE.
+- Validate and persist the image without corrupting the previous image on interruption.
+- Display the selected image as an electronic badge.
+- Later support image library management and switching from the watch UI.
+
 1. Watch UI
    - Use the existing SDK watch demo as the application UI template.
    - Keep the project buildable and flashable on `sf32lb52-lchspi-ulp`.
@@ -198,6 +205,54 @@ Status: pending
 5. After BLE/ANCS/AMS runtime verification, route notification/media state into the watch UI.
 
 ## Execution Task Breakdown
+
+### T11 - Electronic Badge and BLE Image Transfer
+
+Status: phase 1 receiver and viewer implemented; phone transfer verification pending
+
+- Use the SDK BLE serial transport and watch-face transfer protocol so the official
+  SiFli Android/iOS tooling can send files.
+- Receive one JPEG with CRC validation into `/badge.tmp`, then atomically replace
+  `/badge.jpg` only after a complete valid transfer.
+- Limit the first implementation to 2 MB and reject non-JPEG payloads.
+- Expose transfer status through the `badge` finsh command.
+- Add a badge viewer UI that refreshes when a new image generation is committed.
+- Follow-up: image library, deletion, selection, and a dedicated phone experience.
+
+Result on 2026-07-09:
+
+- Enabled the SDK BLE serial transport and watch-face transfer protocol:
+  - `CONFIG_BSP_BLE_SERIAL_TRANSMISSION=y`
+  - `CONFIG_BSP_BLE_WATCH_FACE=y`
+- The serial transfer GATT service is initialized alongside the existing custom BLE,
+  ANCS, and AMS services after BLE power-on.
+- Added `badge_transfer.c/.h`:
+  - accepts one JPEG up to 2 MB
+  - validates SDK watch-face CRC32 and JPEG SOI bytes
+  - writes to `/badge.tmp`
+  - preserves `/badge.jpg` through `/badge.bak` during replacement and restores the
+    backup after an interrupted commit
+  - exposes `badge` finsh status and a snapshot API
+- Added a main-menu application named `电子吧唧` / `Badge`:
+  - displays `/badge.jpg` full-screen on a black background
+  - keeps image aspect ratio and avoids upscaling
+  - refreshes automatically after a successful new transfer
+  - uses the existing Photos icon
+- Added custom BLE text command `badge`, returning state, image availability,
+  received/total bytes, generation, and last error.
+- Full build passed for `sf32lb52-lchspi-ulp`; RAM remains about 78%.
+- Flashed through `/dev/cu.usbserial-110`.
+- Manual verification to run later:
+  - Connect `Huangshan-Watch-BLE` using the SiFli BLE app.
+  - Open `WFPUSH2`, choose a JPEG prepared as required by the SDK file-transfer
+    tool, select file type `3`, enable byte alignment, and start transfer.
+  - Open the watch main menu and select `电子吧唧`; expected the uploaded image to
+    fill the display while preserving its aspect ratio.
+  - Write `badge` to the custom BLE characteristic; expected `img=1`, `gen>=1`,
+    and `err=0`.
+  - Reboot and confirm the image remains available.
+  - Interrupt a second transfer and confirm the previous image remains available.
+  - Send a file with invalid CRC or a non-JPEG payload and confirm it is rejected.
 
 ### T01 - Flash and Verify Watch Baseline
 

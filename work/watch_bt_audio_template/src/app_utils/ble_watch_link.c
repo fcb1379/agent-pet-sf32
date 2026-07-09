@@ -17,8 +17,10 @@
 #include "bf0_sibles.h"
 #include "bf0_sibles_internal.h"
 #include "bf0_sibles_advertising.h"
+#include "bf0_sibles_serial_trans_service.h"
 #include "ble_connection_manager.h"
 #include "ble_ios_services.h"
+#include "badge_transfer.h"
 #include "bt_audio_sink.h"
 #include "local_music_player.h"
 #include "watch_settings.h"
@@ -321,6 +323,20 @@ static void ble_link_handle_command(const char *payload)
                     (unsigned long)health.last_event_tick);
         ble_link_notify(rsp);
     }
+    else if (strcmp(argv[0], "badge") == 0)
+    {
+        badge_transfer_snapshot_t badge;
+
+        badge_transfer_get_snapshot(&badge);
+        rt_snprintf(rsp, sizeof(rsp), "badge:s=%d,img=%d,rx=%lu,total=%lu,gen=%lu,err=%d",
+                    badge.state,
+                    badge.image_available,
+                    (unsigned long)badge.received,
+                    (unsigned long)badge.total,
+                    (unsigned long)badge.generation,
+                    badge.last_error);
+        ble_link_notify(rsp);
+    }
     else if (strcmp(argv[0], "recover") == 0 && argc >= 2 && strcmp(argv[1], "bt") == 0)
     {
         int ret = bt_audio_sink_request_recovery();
@@ -557,6 +573,7 @@ static void ble_link_thread(void *parameter)
             connection_manager_set_bond_ack(BOND_PENDING);
             connection_manager_set_bond_cnf_iocap(GAP_IO_CAP_NO_INPUT_NO_OUTPUT);
             ble_link_service_init();
+            ble_serial_tran_init();
             ble_link_advertising_start();
             LOG_I("BLE link ready name=%s", BLE_LINK_ADV_NAME);
         }
@@ -609,7 +626,7 @@ __ROM_USED void blelink(int argc, char **argv)
                    (unsigned long)env->rx_count,
                    (unsigned long)env->tx_count,
                    env->last_payload);
-        rt_kprintf("BLE writes: ping | status | health | recover bt | settings | set localvol|btvol <0-15> | set route speaker | reset settings | local play|stop|pause|resume | ams play|pause|toggle|next|prev|volup|voldown\n");
+        rt_kprintf("BLE writes: ping | status | health | badge | recover bt | settings | set localvol|btvol <0-15> | set route speaker | reset settings | local play|stop|pause|resume | ams play|pause|toggle|next|prev|volup|voldown\n");
     }
     else if (strcmp(argv[1], "adv") == 0)
     {

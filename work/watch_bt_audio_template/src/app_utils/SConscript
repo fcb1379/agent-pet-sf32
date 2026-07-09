@@ -24,6 +24,9 @@ if GetDepend('AUDIO_LOCAL_MUSIC'):
 if GetDepend('BSP_BLE_SIBLES'):
     src+=['ble_watch_link.c']
 
+if GetDepend('BSP_BLE_WATCH_FACE'):
+    src+=['badge_transfer.c']
+
 if GetDepend('BSP_USING_DATA_SVC'):
     src+=['ble_ios_services.c']
 
