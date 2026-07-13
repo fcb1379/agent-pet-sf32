@@ -463,6 +463,17 @@ Display recovery pass on 2026-07-13:
   recent display-memory/rendering variables before any further text investigation.
 - Bluetooth, audio, BLE, and badge features are unchanged by this recovery pass.
 
+RGB565 text-format diagnostic on 2026-07-13:
+
+- The stable SRAM-buffer configuration restored the screen, but the user reports
+  that text remains abnormal.
+- The board uses an SPI LCD. The SDK documents `LV_COLOR_16_SWAP` for displays
+  with an 8-bit/SPI transfer interface; when enabled, its LVGL LCD driver selects
+  `RTGRAPHIC_PIXEL_FORMAT_RGB565P` for the framebuffer.
+- Enable `CONFIG_LV_COLOR_16_SWAP=y` as the next isolated diagnostic. This changes
+  RGB565 byte ordering only; it leaves the render path, buffer allocation, and all
+  product features unchanged.
+
 ### T01 - Flash and Verify Watch Baseline
 
 Status: flashed, binary-verified, and visually confirmed
