@@ -441,6 +441,28 @@ LCD flush path rollback on 2026-07-13:
   diagnostics should stay on `DRV_EPIC_NEW_API` and focus on RGB565 byte order,
   font bitmap format, or CO5300/LCDC data-lane configuration.
 
+Flash verification policy update on 2026-07-13:
+
+- User requested that subsequent firmware downloads do not perform flash readback
+  comparisons, because they add substantial turnaround time without helping the
+  current display diagnosis.
+- Default deployment verification is now limited to a successful build and a
+  successful UART download through `/dev/cu.usbserial-110`.
+- Flash readback is retired from normal bring-up steps and may only be reintroduced
+  when the user explicitly requests it for a suspected programming failure.
+
+Display recovery pass on 2026-07-13:
+
+- User reported the display had become completely blank after the unsuccessful
+  legacy-flush experiment and its initial rollback.
+- Restoring `DRV_EPIC_NEW_API` alone did not provide a dependable visual recovery,
+  so the next recovery image returns to the board's earlier display allocation:
+  `LV_FB_LINE_NUM=50` and LVGL draw buffers in HCPU SRAM.
+- The temporary PSRAM framebuffer and runtime EPIC-GPU-disable diagnostics are
+  now disabled. This keeps the known-good render-list path while removing the two
+  recent display-memory/rendering variables before any further text investigation.
+- Bluetooth, audio, BLE, and badge features are unchanged by this recovery pass.
+
 ### T01 - Flash and Verify Watch Baseline
 
 Status: flashed, binary-verified, and visually confirmed

@@ -15,11 +15,9 @@ config FREETYPE_TINY_FONT_FULL
 config FRAME_BUFFER_IN_PSRAM
     bool
     depends on BSP_USING_PSRAM
-    default y
 
 config WATCH_UI_DISABLE_EPIC_GPU
     bool
-    default y
 
 menu "app cache Memory configuration"   
 
