@@ -402,7 +402,8 @@ Text rendering diagnostic, LCD flush path pass on 2026-07-13:
 
 - User reported that text was still abnormal with the EPIC GPU render callbacks
   disabled, so the issue is not isolated to `draw_letter` / `letter_blend`.
-- Switched the project away from the SDK's `DRV_EPIC_NEW_API` render-list path:
+- Switched the project away from the SDK's `DRV_EPIC_NEW_API` render-list path
+  as a diagnostic:
   - `# CONFIG_DRV_EPIC_NEW_API is not set`
   - the build now uses `lv_gpu.c` and the older `lcd_flush` path instead of
     `lv_gpu_new_api.c` and `lcd_flush_new_api`.
@@ -422,6 +423,23 @@ Text rendering diagnostic, LCD flush path pass on 2026-07-13:
   - If text is still abnormal, the next diagnostic should focus on font bitmap
     format / RGB565 byte order (`LV_COLOR_16_SWAP`) rather than EPIC render-list
     scheduling.
+
+LCD flush path rollback on 2026-07-13:
+
+- User reported that the legacy LCD flush diagnostic caused the entire screen to
+  become corrupted.
+- Reverted the project back to the newer SDK render-list path:
+  - `CONFIG_DRV_EPIC_NEW_API=y`
+- Rebuilt successfully for `sf32lb52-lchspi-ulp`; RAM usage returned to about
+  63%, PSRAM usage about 19%.
+- Flashed through `/dev/cu.usbserial-110`.
+- Readback verification passed:
+  - `FTAB_CMP_EXIT=0`
+  - `MAIN_CMP_EXIT=0`
+  - `FS_ROOT_CMP_EXIT=0`
+- Do not continue with the legacy `lcd_flush` path on this board. Next display
+  diagnostics should stay on `DRV_EPIC_NEW_API` and focus on RGB565 byte order,
+  font bitmap format, or CO5300/LCDC data-lane configuration.
 
 ### T01 - Flash and Verify Watch Baseline
 
