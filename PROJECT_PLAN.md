@@ -505,6 +505,15 @@ Text-control bitmap-font diagnostic on 2026-07-13:
   anti-aliased Montserrat glyph handling; equally abnormal UNSCII text would rule
   out the label font bitmap as the primary cause.
 
+Bitmap-font diagnostic rollback on 2026-07-14:
+
+- User reported that the UNSCII text-control test caused the watch to freeze.
+- Removed `CONFIG_LV_FONT_UNSCII_16` and restored the prior Montserrat font
+  selections for all affected controls. The previous label-refresh simplification
+  remains in place.
+- Do not repeat the UNSCII font test. Future text investigation must avoid changes
+  that alter the font object's compiled representation at runtime.
+
 ### T01 - Flash and Verify Watch Baseline
 
 Status: flashed, binary-verified, and visually confirmed

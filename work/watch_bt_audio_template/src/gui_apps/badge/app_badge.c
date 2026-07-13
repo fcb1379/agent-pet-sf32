@@ -124,7 +124,7 @@ static void badge_on_start(void)
     lv_label_set_text(g_badge_ui.message, "BLE image pending");
     lv_obj_set_width(g_badge_ui.message, LV_HOR_RES_MAX - 32);
     lv_label_set_long_mode(g_badge_ui.message, LV_LABEL_LONG_WRAP);
-    lv_obj_set_style_text_font(g_badge_ui.message, &lv_font_unscii_16, 0);
+    lv_obj_set_style_text_font(g_badge_ui.message, &lv_font_montserrat_24, 0);
     lv_obj_set_style_text_color(g_badge_ui.message, lv_color_white(), 0);
     lv_obj_set_style_text_align(g_badge_ui.message, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_bg_color(g_badge_ui.message, lv_color_black(), 0);
