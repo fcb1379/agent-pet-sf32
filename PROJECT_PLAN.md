@@ -474,6 +474,26 @@ RGB565 text-format diagnostic on 2026-07-13:
   RGB565 byte ordering only; it leaves the render path, buffer allocation, and all
   product features unchanged.
 
+RGB565 diagnostic rollback on 2026-07-13:
+
+- User reported that enabling RGB565 byte swapping prevented the screen from
+  displaying at all.
+- Revert `CONFIG_LV_COLOR_16_SWAP`; the recovered baseline remains the normal
+  RGB565 framebuffer format with `DRV_EPIC_NEW_API` and a 50-line SRAM buffer.
+- Further work must stay in the application text-control layer instead of changing
+  LCD rendering, framebuffer allocation, or pixel-format configuration.
+
+Text-control refresh pass on 2026-07-13:
+
+- The dynamic text controls in the `status`, `music`, and `badge` apps and the
+  clock status panel were manually invalidating labels both before and after each
+  `lv_label_set_text` call.
+- LVGL already invalidates a label's old and new extents when its text changes.
+  Removed the redundant explicit invalidations so every dynamic update creates one
+  standard label refresh rather than multiple overlapping refresh requests.
+- No LCD, EPIC, framebuffer, font-engine, or color-format setting is changed by
+  this pass.
+
 ### T01 - Flash and Verify Watch Baseline
 
 Status: flashed, binary-verified, and visually confirmed

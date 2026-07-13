@@ -46,9 +46,7 @@ static void music_update_action_text(const char *text)
     rt_snprintf(g_music_ui.last_action_text, sizeof(g_music_ui.last_action_text), "%s", text);
     if (g_music_ui.last_action)
     {
-        lv_obj_invalidate(g_music_ui.last_action);
         lv_label_set_text(g_music_ui.last_action, g_music_ui.last_action_text);
-        lv_obj_invalidate(g_music_ui.last_action);
     }
 }
 
@@ -75,9 +73,7 @@ static void music_refresh(void)
     if (rt_strncmp(g_music_ui.status_text, text, sizeof(g_music_ui.status_text)) != 0)
     {
         rt_snprintf(g_music_ui.status_text, sizeof(g_music_ui.status_text), "%s", text);
-        lv_obj_invalidate(g_music_ui.status);
         lv_label_set_text(g_music_ui.status, g_music_ui.status_text);
-        lv_obj_invalidate(g_music_ui.status);
     }
 }
 

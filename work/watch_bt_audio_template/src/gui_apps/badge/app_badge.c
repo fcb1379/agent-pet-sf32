@@ -73,11 +73,9 @@ static void badge_ui_refresh(void)
     }
     else
     {
-        lv_obj_invalidate(g_badge_ui.message);
         lv_label_set_text(g_badge_ui.message,
                           badge_ui_message(&snapshot, message, sizeof(message)));
         lv_obj_center(g_badge_ui.message);
-        lv_obj_invalidate(g_badge_ui.message);
         lv_obj_add_flag(g_badge_ui.image, LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(g_badge_ui.message, LV_OBJ_FLAG_HIDDEN);
     }

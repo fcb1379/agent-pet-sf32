@@ -40,9 +40,7 @@ static void status_update_action_text(const char *text)
     rt_snprintf(g_status_ui.last_action_text, sizeof(g_status_ui.last_action_text), "%s", text);
     if (g_status_ui.last_action)
     {
-        lv_obj_invalidate(g_status_ui.last_action);
         lv_label_set_text(g_status_ui.last_action, g_status_ui.last_action_text);
-        lv_obj_invalidate(g_status_ui.last_action);
     }
 }
 
@@ -99,9 +97,7 @@ static void status_refresh(void)
     if (rt_strncmp(g_status_ui.content_text, text, sizeof(g_status_ui.content_text)) != 0)
     {
         rt_snprintf(g_status_ui.content_text, sizeof(g_status_ui.content_text), "%s", text);
-        lv_obj_invalidate(g_status_ui.content);
         lv_label_set_text(g_status_ui.content, g_status_ui.content_text);
-        lv_obj_invalidate(g_status_ui.content);
     }
 }
 

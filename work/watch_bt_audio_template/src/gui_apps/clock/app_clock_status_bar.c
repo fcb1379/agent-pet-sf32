@@ -250,12 +250,8 @@ static void ios_status_update_labels(void)
         ios_last_ancs_count = snapshot.ancs_count;
         if (snapshot.ancs_count == 0)
         {
-            lv_obj_invalidate(ios_noti_title_label);
-            lv_obj_invalidate(ios_noti_content_label);
             lv_label_set_text(ios_noti_title_label, "Notify");
             lv_label_set_text(ios_noti_content_label, "No notice");
-            lv_obj_invalidate(ios_noti_title_label);
-            lv_obj_invalidate(ios_noti_content_label);
         }
         else
         {
@@ -264,12 +260,8 @@ static void ios_status_update_labels(void)
             rt_snprintf(content, sizeof(content), "%s",
                         snapshot.last_title[0] ? snapshot.last_title :
                         (snapshot.last_message[0] ? snapshot.last_message : "New notice"));
-            lv_obj_invalidate(ios_noti_title_label);
-            lv_obj_invalidate(ios_noti_content_label);
             lv_label_set_text(ios_noti_title_label, title);
             lv_label_set_text(ios_noti_content_label, content);
-            lv_obj_invalidate(ios_noti_title_label);
-            lv_obj_invalidate(ios_noti_content_label);
         }
     }
 
@@ -278,12 +270,8 @@ static void ios_status_update_labels(void)
         ios_last_ams_count = snapshot.ams_count;
         if (snapshot.ams_count == 0)
         {
-            lv_obj_invalidate(ios_media_title_label);
-            lv_obj_invalidate(ios_media_content_label);
             lv_label_set_text(ios_media_title_label, "Media");
             lv_label_set_text(ios_media_content_label, "No media");
-            lv_obj_invalidate(ios_media_title_label);
-            lv_obj_invalidate(ios_media_content_label);
         }
         else
         {
@@ -292,12 +280,8 @@ static void ios_status_update_labels(void)
             rt_snprintf(content, sizeof(content), "%s",
                         snapshot.track[0] ? snapshot.track :
                         (snapshot.artist[0] ? snapshot.artist : "Playing"));
-            lv_obj_invalidate(ios_media_title_label);
-            lv_obj_invalidate(ios_media_content_label);
             lv_label_set_text(ios_media_title_label, title);
             lv_label_set_text(ios_media_content_label, content);
-            lv_obj_invalidate(ios_media_title_label);
-            lv_obj_invalidate(ios_media_content_label);
         }
     }
 }
