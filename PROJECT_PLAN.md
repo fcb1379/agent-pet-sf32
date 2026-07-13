@@ -494,6 +494,17 @@ Text-control refresh pass on 2026-07-13:
 - No LCD, EPIC, framebuffer, font-engine, or color-format setting is changed by
   this pass.
 
+Text-control bitmap-font diagnostic on 2026-07-13:
+
+- The standard label-refresh pass did not resolve the reported text corruption.
+- Enabled LVGL's built-in `UNSCII 16` font, whose glyph bitmaps are 1 bit per pixel
+  and therefore do not use grayscale anti-aliasing.
+- Applied it only to labels in the new status, music, badge, and clock status-panel
+  controls. The rest of the system and every display-driver setting remain unchanged.
+- This is a control-layer A/B test: clear UNSCII text would isolate the failure to
+  anti-aliased Montserrat glyph handling; equally abnormal UNSCII text would rule
+  out the label font bitmap as the primary cause.
+
 ### T01 - Flash and Verify Watch Baseline
 
 Status: flashed, binary-verified, and visually confirmed

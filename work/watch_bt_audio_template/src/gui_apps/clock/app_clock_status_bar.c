@@ -310,7 +310,7 @@ static lv_obj_t *phone_text_block_create(lv_obj_t *par, lv_obj_t *align_base,
     lv_label_set_long_mode(title_label, LV_LABEL_LONG_DOT);
     lv_label_set_text(title_label, title);
     lv_obj_set_style_text_align(title_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_text_font(title_label, &lv_font_montserrat_28, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(title_label, &lv_font_unscii_16, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_color(title_label, LV_COLOR_WHITE, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_opa(title_label, LV_OPA_COVER, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_bg_color(title_label, LV_COLOR_BLACK, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -331,7 +331,7 @@ static lv_obj_t *phone_text_block_create(lv_obj_t *par, lv_obj_t *align_base,
     lv_label_set_long_mode(content_label, LV_LABEL_LONG_DOT);
     lv_label_set_text(content_label, content);
     lv_obj_set_style_text_align(content_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_text_font(content_label, &lv_font_montserrat_24, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(content_label, &lv_font_unscii_16, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_color(content_label, lv_color_hex(0xD8D8D8), LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_opa(content_label, LV_OPA_COVER, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_bg_color(content_label, LV_COLOR_BLACK, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -365,7 +365,7 @@ static void msg_list_content_init(lv_obj_t *par)
     lv_label_set_text(label_header, "Phone");
     lv_obj_set_width(label_header, PHONE_TEXT_WIDTH);
     lv_obj_set_style_text_align(label_header, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_text_font(label_header, &lv_font_montserrat_36, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(label_header, &lv_font_unscii_16, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_color(label_header, LV_COLOR_WHITE, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_opa(label_header, LV_OPA_COVER, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_align(label_header, LV_ALIGN_TOP_MID, 0, LV_DPX(18));
