@@ -398,6 +398,31 @@ Text rendering diagnostic on 2026-07-09:
     abnormal text returns. That would isolate the issue to EPIC accelerated text
     alpha blending rather than LVGL label memory.
 
+Text rendering diagnostic, LCD flush path pass on 2026-07-13:
+
+- User reported that text was still abnormal with the EPIC GPU render callbacks
+  disabled, so the issue is not isolated to `draw_letter` / `letter_blend`.
+- Switched the project away from the SDK's `DRV_EPIC_NEW_API` render-list path:
+  - `# CONFIG_DRV_EPIC_NEW_API is not set`
+  - the build now uses `lv_gpu.c` and the older `lcd_flush` path instead of
+    `lv_gpu_new_api.c` and `lcd_flush_new_api`.
+- Kept the previous display mitigations:
+  - `LV_FB_LINE_NUM=152`
+  - `FRAME_BUFFER_IN_PSRAM=1`
+  - `WATCH_UI_DISABLE_EPIC_GPU=1`
+- Build verification passed for `sf32lb52-lchspi-ulp`; RAM usage is about 54%,
+  PSRAM usage is about 19%.
+- Flashed through `/dev/cu.usbserial-110`.
+- Readback verification passed:
+  - `FTAB_CMP_EXIT=0`
+  - `MAIN_CMP_EXIT=0`
+  - `FS_ROOT_CMP_EXIT=0`
+- Manual verification to run now:
+  - Check whether text-heavy pages display correctly with the old LCD flush path.
+  - If text is still abnormal, the next diagnostic should focus on font bitmap
+    format / RGB565 byte order (`LV_COLOR_16_SWAP`) rather than EPIC render-list
+    scheduling.
+
 ### T01 - Flash and Verify Watch Baseline
 
 Status: flashed, binary-verified, and visually confirmed
