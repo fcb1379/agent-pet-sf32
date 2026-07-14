@@ -336,13 +336,23 @@ static void ble_link_handle_command(const char *payload)
             return;
         }
 
+        if (argc >= 2 && strcmp(argv[1], "cancel") == 0)
+        {
+            int ret = badge_transfer_cancel();
+
+            rt_snprintf(rsp, sizeof(rsp), "badge:cancel:%d", ret);
+            ble_link_notify(rsp);
+            return;
+        }
+
         badge_transfer_get_snapshot(&badge);
-        rt_snprintf(rsp, sizeof(rsp), "badge:s=%d,img=%d,rx=%lu,total=%lu,gen=%lu,err=%d",
+        rt_snprintf(rsp, sizeof(rsp), "badge:s=%d,img=%d,rx=%lu,total=%lu,gen=%lu,act=%lu,err=%d",
                     badge.state,
                     badge.image_available,
                     (unsigned long)badge.received,
                     (unsigned long)badge.total,
                     (unsigned long)badge.generation,
+                    (unsigned long)badge.last_activity_tick,
                     badge.last_error);
         ble_link_notify(rsp);
     }

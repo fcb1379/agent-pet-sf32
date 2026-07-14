@@ -219,6 +219,17 @@ Status: phase 1 receiver and viewer implemented; phone transfer verification pen
 - Add a badge viewer UI that refreshes when a new image generation is committed.
 - Follow-up: image library, deletion, selection, and a dedicated phone experience.
 
+Transfer reliability pass on 2026-07-15:
+
+- Added explicit transfer cancellation through finsh `badge cancel` and custom BLE
+  command `badge cancel`; both preserve the last committed badge image.
+- Added free-space checks before writing a temporary image, complete-write handling
+  for filesystem short writes, and JPEG SOI/EOI marker validation before commit.
+- Added a last-activity tick to the badge status snapshot and BLE `badge` response,
+  so a phone companion can identify an active or stalled upload.
+- Next: ship the phone-side companion UI and then run interruption/cancel validation
+  with actual hardware.
+
 Result on 2026-07-09:
 
 - Enabled the SDK BLE serial transport and watch-face transfer protocol:

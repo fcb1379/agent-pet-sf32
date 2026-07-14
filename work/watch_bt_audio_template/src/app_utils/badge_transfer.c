@@ -15,6 +15,7 @@
 #define BADGE_BACKUP_PATH "/badge.bak"
 #define BADGE_CRC_INIT 0xffffffffU
 #define BADGE_MAX_FILE_SIZE (2U * 1024U * 1024U)
+#define BADGE_VALIDATE_BUFFER_SIZE 128U
 
 typedef struct
 {
@@ -24,6 +25,7 @@ typedef struct
     uint32_t all_files_total;
     uint32_t crc;
     uint32_t generation;
+    uint32_t last_activity_tick;
     int16_t last_error;
     uint8_t state;
     uint8_t image_available;
@@ -70,15 +72,89 @@ static void badge_fail(int error)
 {
     badge_close_temp();
     unlink(BADGE_TEMP_PATH);
+    g_badge.last_activity_tick = rt_tick_get();
     g_badge.state = BADGE_TRANSFER_ERROR;
     g_badge.last_error = error;
 }
 
+static int badge_write_all(int fd, const uint8_t *data, uint32_t len)
+{
+    uint32_t offset = 0;
+
+    while (offset < len)
+    {
+        int written = write(fd, data + offset, len - offset);
+
+        if (written <= 0)
+        {
+            return -RT_ERROR;
+        }
+        offset += written;
+    }
+
+    return RT_EOK;
+}
+
+static int badge_validate_jpeg_file(void)
+{
+    uint8_t buffer[BADGE_VALIDATE_BUFFER_SIZE];
+    uint8_t previous = 0;
+    uint8_t has_soi = 0;
+    uint8_t has_eoi = 0;
+    int fd;
+    int read_len;
+
+    fd = open(BADGE_TEMP_PATH, O_RDONLY | O_BINARY, 0);
+    if (fd < 0)
+    {
+        return BLE_WATCHFACE_STATUS_FILE_OPEN_ERROR;
+    }
+
+    while ((read_len = read(fd, buffer, sizeof(buffer))) > 0)
+    {
+        int index;
+
+        for (index = 0; index < read_len; index++)
+        {
+            if (previous == 0xff && buffer[index] == 0xd8)
+            {
+                has_soi = 1;
+            }
+            if (previous == 0xff && buffer[index] == 0xd9)
+            {
+                has_eoi = 1;
+            }
+            previous = buffer[index];
+        }
+    }
+    close(fd);
+
+    if (read_len < 0)
+    {
+        return BLE_WATCHFACE_STATUS_FILE_CLOSE_ERROR;
+    }
+
+    return (has_soi && has_eoi) ? BLE_WATCHFACE_STATUS_OK : BLE_WATCHFACE_STATUS_APP_ERROR;
+}
+
 static int badge_begin_file(uint32_t total)
 {
+    struct statfs fs;
+    uint64_t available_bytes;
+
     if (total <= 4 || total > BADGE_MAX_FILE_SIZE || (total & 3U))
     {
         return BLE_WATCHFACE_STATUS_FILE_SIZE_ERROR;
+    }
+
+    if (dfs_statfs("/", &fs) != 0)
+    {
+        return BLE_WATCHFACE_STATUS_SPACE_ERROR;
+    }
+    available_bytes = (uint64_t)fs.f_bsize * fs.f_bfree;
+    if (available_bytes < total)
+    {
+        return BLE_WATCHFACE_STATUS_SPACE_ERROR;
     }
 
     badge_close_temp();
@@ -92,6 +168,7 @@ static int badge_begin_file(uint32_t total)
     g_badge.total = total;
     g_badge.received = 0;
     g_badge.crc = BADGE_CRC_INIT;
+    g_badge.last_activity_tick = rt_tick_get();
     g_badge.last_error = 0;
     g_badge.state = BADGE_TRANSFER_RECEIVING;
     return BLE_WATCHFACE_STATUS_OK;
@@ -127,33 +204,20 @@ static int badge_write_chunk(const uint8_t *data, uint32_t len)
         g_badge.crc = badge_crc32_mpeg2(data, len, g_badge.crc);
     }
 
-    if (payload_len && write(g_badge.fd, data, payload_len) != (int)payload_len)
+    if (payload_len && badge_write_all(g_badge.fd, data, payload_len) != RT_EOK)
     {
         return BLE_WATCHFACE_STATUS_FILE_WRITE_ERROR;
     }
 
     g_badge.received += len;
+    g_badge.last_activity_tick = rt_tick_get();
     return BLE_WATCHFACE_STATUS_OK;
 }
 
 static int badge_commit_file(void)
 {
-    uint8_t signature[2];
-    int fd;
-
     badge_close_temp();
-    fd = open(BADGE_TEMP_PATH, O_RDONLY | O_BINARY, 0);
-    if (fd < 0 || read(fd, signature, sizeof(signature)) != sizeof(signature))
-    {
-        if (fd >= 0)
-        {
-            close(fd);
-        }
-        return BLE_WATCHFACE_STATUS_FILE_OPEN_ERROR;
-    }
-    close(fd);
-
-    if (signature[0] != 0xff || signature[1] != 0xd8)
+    if (badge_validate_jpeg_file() != BLE_WATCHFACE_STATUS_OK)
     {
         return BLE_WATCHFACE_STATUS_APP_ERROR;
     }
@@ -173,6 +237,7 @@ static int badge_commit_file(void)
 
     g_badge.image_available = 1;
     g_badge.generation++;
+    g_badge.last_activity_tick = rt_tick_get();
     g_badge.state = BADGE_TRANSFER_READY;
     g_badge.last_error = 0;
     return BLE_WATCHFACE_STATUS_OK;
@@ -265,6 +330,7 @@ void badge_transfer_get_snapshot(badge_transfer_snapshot_t *snapshot)
     snapshot->received = g_badge.received;
     snapshot->total = g_badge.total;
     snapshot->generation = g_badge.generation;
+    snapshot->last_activity_tick = g_badge.last_activity_tick;
     snapshot->last_error = g_badge.last_error;
     snapshot->image_available = g_badge.image_available || stat(BADGE_IMAGE_PATH, &st) == 0;
 }
@@ -273,6 +339,10 @@ int badge_transfer_clear(void)
 {
     int ret = RT_EOK;
 
+    if (g_badge.state == BADGE_TRANSFER_RECEIVING)
+    {
+        ble_watchface_abort();
+    }
     badge_close_temp();
     if (access(BADGE_TEMP_PATH, 0) == 0 && unlink(BADGE_TEMP_PATH) != 0)
     {
@@ -292,10 +362,23 @@ int badge_transfer_clear(void)
     g_badge.all_files_total = 0;
     g_badge.crc = BADGE_CRC_INIT;
     g_badge.generation++;
+    g_badge.last_activity_tick = rt_tick_get();
     g_badge.last_error = (ret == RT_EOK) ? 0 : BLE_WATCHFACE_STATUS_FILE_WRITE_ERROR;
     g_badge.state = (ret == RT_EOK) ? BADGE_TRANSFER_IDLE : BADGE_TRANSFER_ERROR;
     g_badge.image_available = 0;
     return ret;
+}
+
+int badge_transfer_cancel(void)
+{
+    if (g_badge.state != BADGE_TRANSFER_RECEIVING)
+    {
+        return -RT_EEMPTY;
+    }
+
+    ble_watchface_abort();
+    badge_fail(BLE_WATCHFACE_STATUS_USER_ABORT);
+    return RT_EOK;
 }
 
 static int badge_transfer_init(void)
@@ -326,14 +409,21 @@ __ROM_USED void badge(int argc, char **argv)
         return;
     }
 
+    if (argc >= 2 && strcmp(argv[1], "cancel") == 0)
+    {
+        rt_kprintf("badge cancel ret=%d\n", badge_transfer_cancel());
+        return;
+    }
+
     badge_transfer_get_snapshot(&snapshot);
-    rt_kprintf("badge state=%d image=%d received=%lu/%lu generation=%lu error=%d path=%s\n",
+    rt_kprintf("badge state=%d image=%d received=%lu/%lu generation=%lu active=%lu error=%d path=%s\n",
                snapshot.state,
                snapshot.image_available,
                (unsigned long)snapshot.received,
                (unsigned long)snapshot.total,
                (unsigned long)snapshot.generation,
+               (unsigned long)snapshot.last_activity_tick,
                snapshot.last_error,
                BADGE_IMAGE_PATH);
 }
-MSH_CMD_EXPORT(badge, electronic badge transfer status and clear);
+MSH_CMD_EXPORT(badge, electronic badge transfer status clear or cancel);

@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101319">
+  <title>Huangshan Badge</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="app-shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">HUANGSHAN WATCH</p>
+        <h1>电子吧唧</h1>
+      </div>
+      <button id="connectButton" class="icon-button" title="连接手表" aria-label="连接手表">
+        <span id="connectionDot" class="connection-dot"></span>
+      </button>
+    </header>
+
+    <section class="preview-area" aria-label="图片预览">
+      <canvas id="previewCanvas" width="240" height="240"></canvas>
+      <div id="emptyPreview" class="empty-preview">选择一张图片</div>
+      <div id="transferOverlay" class="transfer-overlay" hidden>
+        <strong id="progressValue">0%</strong>
+        <span id="progressDetail">准备传输</span>
+      </div>
+    </section>
+
+    <section class="controls" aria-label="传图控制">
+      <label class="file-control" for="imageInput">
+        <span>选择图片</span>
+        <input id="imageInput" type="file" accept="image/*">
+      </label>
+      <button id="sendButton" class="primary-action" disabled>发送到手表</button>
+      <div class="secondary-actions">
+        <button id="refreshButton" class="secondary-action" disabled>刷新状态</button>
+        <button id="cancelButton" class="secondary-action" disabled>取消传输</button>
+        <button id="clearButton" class="secondary-action danger" disabled>清除图片</button>
+      </div>
+    </section>
+
+    <section class="device-status" aria-live="polite">
+      <div>
+        <span>设备</span>
+        <strong id="deviceName">未连接</strong>
+      </div>
+      <div>
+        <span>图片</span>
+        <strong id="imageInfo">尚未选择</strong>
+      </div>
+      <div>
+        <span>传输</span>
+        <strong id="transferInfo">等待连接</strong>
+      </div>
+    </section>
+  </main>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
