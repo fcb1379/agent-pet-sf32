@@ -1,12 +1,21 @@
+import {
+  CHUNK_SIZE,
+  MAX_IMAGE_SIZE,
+  PHONE_TYPE_ANDROID,
+  SERIAL_CATEGORY_WATCHFACE,
+  WATCHFACE_TYPE_BACKGROUND,
+  joinBytes,
+  makeUploadPayload,
+  serialCarrierFrames,
+  u16,
+  u32,
+  watchfaceMessage,
+} from "./protocol.js";
+
 const LINK_SERVICE = "48535741-5443-485f-4c49-4e4b00000001";
 const LINK_CHARACTERISTIC = "48535741-5443-485f-4c49-4e4b00000002";
 const SERIAL_SERVICE = "7369666c-695f-7364-0000-000000000000";
 const SERIAL_DATA = "7369666c-695f-7364-0002-000000000000";
-const SERIAL_CATEGORY_WATCHFACE = 0x04;
-const WATCHFACE_TYPE_BACKGROUND = 2;
-const PHONE_TYPE_ANDROID = 2;
-const CHUNK_SIZE = 180;
-const MAX_IMAGE_SIZE = 2 * 1024 * 1024 - 4;
 
 const elements = {
   connect: document.querySelector("#connectButton"),
@@ -55,41 +64,6 @@ function setProgress(percent, detail) {
 }
 
 function showTransfer(visible) { elements.overlay.hidden = !visible; }
-
-function u16(value) {
-  const bytes = new Uint8Array(2);
-  new DataView(bytes.buffer).setUint16(0, value, true);
-  return bytes;
-}
-
-function u32(value) {
-  const bytes = new Uint8Array(4);
-  new DataView(bytes.buffer).setUint32(0, value, true);
-  return bytes;
-}
-
-function joinBytes(...parts) {
-  const size = parts.reduce((sum, part) => sum + part.length, 0);
-  const result = new Uint8Array(size);
-  let offset = 0;
-  for (const part of parts) { result.set(part, offset); offset += part.length; }
-  return result;
-}
-
-function crc32Mpeg2(data) {
-  let crc = 0xffffffff;
-  for (const byte of data) {
-    crc ^= byte << 24;
-    for (let bit = 0; bit < 8; bit += 1) {
-      crc = (crc & 0x80000000) ? ((crc << 1) ^ 0x04c11db7) >>> 0 : (crc << 1) >>> 0;
-    }
-  }
-  return crc >>> 0;
-}
-
-function watchfaceMessage(id, data = new Uint8Array()) {
-  return joinBytes(u16(id), u16(data.length), data);
-}
 
 function serialMessageReceived(message) {
   if (message.length < 4) return;
@@ -153,19 +127,7 @@ async function writeSerialPacket(packet) {
 }
 
 async function sendSerial(payload) {
-  if (payload.length <= 16) {
-    await writeSerialPacket(joinBytes(new Uint8Array([SERIAL_CATEGORY_WATCHFACE, 0]), u16(payload.length), payload));
-    return;
-  }
-  let offset = 0;
-  const first = payload.slice(0, 16);
-  await writeSerialPacket(joinBytes(new Uint8Array([SERIAL_CATEGORY_WATCHFACE, 1]), u16(payload.length), first));
-  offset += first.length;
-  while (offset < payload.length) {
-    const part = payload.slice(offset, offset + 18);
-    offset += part.length;
-    await writeSerialPacket(joinBytes(new Uint8Array([SERIAL_CATEGORY_WATCHFACE, offset === payload.length ? 3 : 2]), part));
-  }
+  for (const frame of serialCarrierFrames(payload)) await writeSerialPacket(frame);
 }
 
 function responseStatus(message) {
@@ -239,9 +201,7 @@ async function prepareImage(file) {
 
 async function uploadImage() {
   if (!preparedImage || uploadInProgress) return;
-  const padding = (4 - (preparedImage.length % 4)) % 4;
-  const payload = joinBytes(preparedImage, new Uint8Array(padding));
-  const upload = joinBytes(payload, u32(crc32Mpeg2(payload)));
+  const upload = makeUploadPayload(preparedImage);
   const fileName = encoder.encode("badge.jpg");
   uploadInProgress = true;
   updateControls();

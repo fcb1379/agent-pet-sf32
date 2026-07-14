@@ -16,3 +16,9 @@ python3 -m http.server 8080
 Open `http://localhost:8080` in Chrome, connect `Huangshan-Watch-BLE`, choose an
 image, then send it. The app also exposes the `badge`, `badge cancel`, and
 `badge clear` controls through the custom GATT characteristic.
+
+Run the protocol-only checks without a Bluetooth device:
+
+```sh
+node test_protocol.mjs
+```

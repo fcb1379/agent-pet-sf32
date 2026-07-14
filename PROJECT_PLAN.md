@@ -241,6 +241,9 @@ Phone companion implementation on 2026-07-15:
   to acknowledged characteristic writes when a browser lacks no-response writes.
 - Browser UI and JavaScript syntax checks passed locally. The real BLE transfer,
   cancellation, and recovery paths remain hardware validation items.
+- Added repeatable protocol vectors for CRC32, byte order, serial framing, and
+  padded upload payloads; run `node phone_app/test_protocol.mjs` from the project
+  root before changing phone-side transport code.
 - Android Chrome is the current runnable target because it supports Web Bluetooth.
   Safari does not, so an iOS native CoreBluetooth wrapper remains a separate task.
 
