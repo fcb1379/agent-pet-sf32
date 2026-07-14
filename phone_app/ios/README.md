@@ -16,4 +16,6 @@ three Swift files from `HuangshanBadge/`, and add this `Info.plist` entry:
 ```
 
 Run the project on a physical iPhone, select `Huangshan-Watch-BLE`, choose a
-photo, and send it. Simulator builds cannot exercise Bluetooth.
+photo, and send it. Simulator builds cannot exercise Bluetooth. The native client
+uses the negotiated CoreBluetooth write length, while the browser prototype keeps
+the conservative 20-byte ATT framing required by Web Bluetooth.

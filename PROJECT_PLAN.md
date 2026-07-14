@@ -256,6 +256,8 @@ Native iOS client source on 2026-07-15:
   discovery, image selection, center-cropped 240 x 240 JPEG preparation, progress,
   cancellation, clear/status actions, and the same WFPUSH2 framing/CRC used by the
   web companion.
+- Its serial carrier framing derives the first/subsequent fragment capacities from
+  CoreBluetooth's negotiated write length instead of assuming a 20-byte ATT packet.
 - The local machine has no `iphoneos` SDK, so Xcode build, signing, BLE permission,
   and physical-iPhone transfer validation are pending after Xcode installation.
 

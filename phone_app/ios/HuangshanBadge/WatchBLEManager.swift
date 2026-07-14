@@ -119,14 +119,17 @@ final class WatchBLEManager: NSObject, ObservableObject {
     private func sendSerial(_ payload: Data) throws {
         guard let peripheral, let characteristic = serialCharacteristic else { throw BadgeError.notConnected }
         let writeType: CBCharacteristicWriteType = characteristic.properties.contains(.writeWithoutResponse) ? .withoutResponse : .withResponse
-        if payload.count <= 16 {
+        let maximumPacket = peripheral.maximumWriteValueLength(for: writeType)
+        let firstCapacity = max(1, maximumPacket - 4)
+        let continuationCapacity = max(1, maximumPacket - 2)
+        if payload.count <= firstCapacity {
             peripheral.writeValue(Data([ProtocolValue.serialCategoryWatchface, 0]) + Self.u16(UInt16(payload.count)) + payload, for: characteristic, type: writeType)
             return
         }
-        var offset = 16
-        peripheral.writeValue(Data([ProtocolValue.serialCategoryWatchface, 1]) + Self.u16(UInt16(payload.count)) + payload.prefix(16), for: characteristic, type: writeType)
+        var offset = firstCapacity
+        peripheral.writeValue(Data([ProtocolValue.serialCategoryWatchface, 1]) + Self.u16(UInt16(payload.count)) + payload.prefix(firstCapacity), for: characteristic, type: writeType)
         while offset < payload.count {
-            let end = min(offset + 18, payload.count)
+            let end = min(offset + continuationCapacity, payload.count)
             let flag: UInt8 = end == payload.count ? 3 : 2
             peripheral.writeValue(Data([ProtocolValue.serialCategoryWatchface, flag]) + Data(payload[offset..<end]), for: characteristic, type: writeType)
             offset = end
