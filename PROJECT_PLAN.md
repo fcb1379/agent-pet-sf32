@@ -244,6 +244,15 @@ Phone companion implementation on 2026-07-15:
 - Android Chrome is the current runnable target because it supports Web Bluetooth.
   Safari does not, so an iOS native CoreBluetooth wrapper remains a separate task.
 
+Native iOS client source on 2026-07-15:
+
+- Added `phone_app/ios/HuangshanBadge/`: a SwiftUI/CoreBluetooth client with device
+  discovery, image selection, center-cropped 240 x 240 JPEG preparation, progress,
+  cancellation, clear/status actions, and the same WFPUSH2 framing/CRC used by the
+  web companion.
+- The local machine has no `iphoneos` SDK, so Xcode build, signing, BLE permission,
+  and physical-iPhone transfer validation are pending after Xcode installation.
+
 Result on 2026-07-09:
 
 - Enabled the SDK BLE serial transport and watch-face transfer protocol:
