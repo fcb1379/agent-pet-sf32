@@ -121,8 +121,10 @@ function onSerialNotification(event) {
 async function writeSerialPacket(packet) {
   if (serialCharacteristic.writeValueWithoutResponse) {
     await serialCharacteristic.writeValueWithoutResponse(packet);
-  } else {
+  } else if (serialCharacteristic.writeValueWithResponse) {
     await serialCharacteristic.writeValueWithResponse(packet);
+  } else {
+    await serialCharacteristic.writeValue(packet);
   }
 }
 
@@ -137,7 +139,12 @@ function responseStatus(message) {
 }
 
 async function sendCommand(command) {
-  await linkCharacteristic.writeValueWithResponse(encoder.encode(command));
+  const payload = encoder.encode(command);
+  if (linkCharacteristic.writeValueWithResponse) {
+    await linkCharacteristic.writeValueWithResponse(payload);
+  } else {
+    await linkCharacteristic.writeValue(payload);
+  }
 }
 
 function onLinkNotification(event) {
@@ -147,10 +154,12 @@ function onLinkNotification(event) {
 
 async function connect() {
   if (!navigator.bluetooth) throw new Error("当前浏览器不支持 Web Bluetooth");
+  setTransferInfo("请选择 Huangshan 手表");
   device = await navigator.bluetooth.requestDevice({
     filters: [{ namePrefix: "Huangshan-Watch" }],
     optionalServices: [LINK_SERVICE, SERIAL_SERVICE],
   });
+  setTransferInfo("正在连接手表");
   device.addEventListener("gattserverdisconnected", () => {
     rejectSerialWaiters(new Error("手表已断开连接"));
     linkCharacteristic = undefined;
@@ -160,6 +169,7 @@ async function connect() {
     updateControls();
   });
   const server = await device.gatt.connect();
+  setTransferInfo("正在读取手表服务");
   const linkService = await server.getPrimaryService(LINK_SERVICE);
   linkCharacteristic = await linkService.getCharacteristic(LINK_CHARACTERISTIC);
   await linkCharacteristic.startNotifications();
@@ -179,6 +189,9 @@ async function canvasBlob(canvas, quality) {
 }
 
 async function prepareImage(file) {
+  if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+    throw new Error("网页端请使用 JPG、PNG 或 WebP 图片；HEIC 请使用 iOS 原生客户端");
+  }
   const image = await createImageBitmap(file);
   const canvas = elements.canvas;
   const context = canvas.getContext("2d");
@@ -236,7 +249,12 @@ async function uploadImage() {
 elements.connect.addEventListener("click", () => connect().catch((error) => { setTransferInfo(error.message); updateControls(); }));
 elements.imageInput.addEventListener("change", (event) => {
   const [file] = event.target.files;
-  if (file) prepareImage(file).catch((error) => { setTransferInfo(error.message); });
+  if (file) prepareImage(file).catch((error) => {
+    preparedImage = undefined;
+    elements.imageInfo.textContent = "尚未选择";
+    updateControls();
+    setTransferInfo(error.message);
+  });
 });
 elements.send.addEventListener("click", () => uploadImage().catch((error) => { setTransferInfo(error.message); showTransfer(false); }));
 elements.refresh.addEventListener("click", () => sendCommand("badge").catch((error) => { setTransferInfo(error.message); }));

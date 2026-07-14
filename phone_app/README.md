@@ -17,6 +17,9 @@ Open `http://localhost:8080` in Chrome, connect `Huangshan-Watch-BLE`, choose an
 image, then send it. The app also exposes the `badge`, `badge cancel`, and
 `badge clear` controls through the custom GATT characteristic.
 
+For the web companion, choose JPG, PNG, or WebP. HEIC selection is deliberately
+handled by the native iOS client because browser HEIC decoding is not consistent.
+
 The app has a web manifest and service-worker cache, so it can be installed as an
 Android PWA after serving it through HTTPS. `localhost` is sufficient for desktop
 development only; an Android phone needs an HTTPS host (for example, a GitHub

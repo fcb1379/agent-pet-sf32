@@ -1,4 +1,4 @@
-const CACHE_NAME = "huangshan-badge-v1";
+const CACHE_NAME = "huangshan-badge-v2";
 const APP_FILES = ["./", "./index.html", "./styles.css", "./app.js", "./protocol.js", "./manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {

@@ -249,6 +249,9 @@ Phone companion implementation on 2026-07-15:
 - The Android web client now includes a standalone PWA manifest and offline cache.
   It still requires HTTPS on a physical phone because Web Bluetooth is limited to
   secure contexts.
+- The web client reports Bluetooth connection stages, supports both modern and
+  legacy Chrome GATT write APIs, and explicitly limits browser-side image input to
+  JPG/PNG/WebP; the native iOS client accepts HEIC through UIKit.
 
 Native iOS client source on 2026-07-15:
 
