@@ -208,7 +208,7 @@ Status: pending
 
 ### T11 - Electronic Badge and BLE Image Transfer
 
-Status: phase 1 receiver and viewer implemented; phone transfer verification pending
+Status: receiver/viewer and Android Chrome companion implemented; hardware transfer verification pending
 
 - Use the SDK BLE serial transport and watch-face transfer protocol so the official
   SiFli Android/iOS tooling can send files.
@@ -217,7 +217,7 @@ Status: phase 1 receiver and viewer implemented; phone transfer verification pen
 - Limit the first implementation to 2 MB and reject non-JPEG payloads.
 - Expose transfer status through the `badge` finsh command.
 - Add a badge viewer UI that refreshes when a new image generation is committed.
-- Follow-up: image library, deletion, selection, and a dedicated phone experience.
+- Follow-up: image library, deletion, selection, and native iOS packaging.
 
 Transfer reliability pass on 2026-07-15:
 
@@ -229,6 +229,20 @@ Transfer reliability pass on 2026-07-15:
   so a phone companion can identify an active or stalled upload.
 - Next: ship the phone-side companion UI and then run interruption/cancel validation
   with actual hardware.
+
+Phone companion implementation on 2026-07-15:
+
+- Added `phone_app/`, a local-first companion UI that center-crops images to 240 x
+  240, JPEG encodes them locally, calculates the SiFli MPEG-2 CRC32, and sends the
+  WFPUSH2 watch-face messages through the serial BLE service.
+- It exposes connection, transfer progress, status refresh, cancellation, and image
+  deletion through the existing custom BLE service. The client now blocks concurrent
+  uploads, rejects in-flight protocol waits immediately on disconnect, and falls back
+  to acknowledged characteristic writes when a browser lacks no-response writes.
+- Browser UI and JavaScript syntax checks passed locally. The real BLE transfer,
+  cancellation, and recovery paths remain hardware validation items.
+- Android Chrome is the current runnable target because it supports Web Bluetooth.
+  Safari does not, so an iOS native CoreBluetooth wrapper remains a separate task.
 
 Result on 2026-07-09:
 

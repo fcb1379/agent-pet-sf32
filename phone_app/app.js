@@ -31,6 +31,7 @@ let linkCharacteristic;
 let serialCharacteristic;
 let preparedImage;
 let serialAssembly;
+let uploadInProgress = false;
 const serialMessages = [];
 const serialWaiters = [];
 const encoder = new TextEncoder();
@@ -42,7 +43,7 @@ function isConnected() { return Boolean(device?.gatt?.connected && linkCharacter
 function updateControls() {
   const connected = isConnected();
   elements.dot.classList.toggle("connected", connected);
-  elements.send.disabled = !connected || !preparedImage;
+  elements.send.disabled = !connected || !preparedImage || uploadInProgress;
   elements.refresh.disabled = !connected;
   elements.cancel.disabled = !connected;
   elements.clear.disabled = !connected;
@@ -91,6 +92,7 @@ function watchfaceMessage(id, data = new Uint8Array()) {
 }
 
 function serialMessageReceived(message) {
+  if (message.length < 4) return;
   const index = serialWaiters.findIndex((waiter) => waiter.id === new DataView(message.buffer, message.byteOffset, message.byteLength).getUint16(0, true));
   if (index >= 0) {
     serialWaiters.splice(index, 1)[0].resolve(message);
@@ -99,11 +101,21 @@ function serialMessageReceived(message) {
   }
 }
 
+function rejectSerialWaiters(error) {
+  while (serialWaiters.length) serialWaiters.pop().reject(error);
+  serialMessages.length = 0;
+  serialAssembly = undefined;
+}
+
 function waitForWatchface(id, timeout = 8000) {
   const queued = serialMessages.findIndex((message) => new DataView(message.buffer, message.byteOffset, message.byteLength).getUint16(0, true) === id);
   if (queued >= 0) return Promise.resolve(serialMessages.splice(queued, 1)[0]);
   return new Promise((resolve, reject) => {
-    const waiter = { id, resolve: (message) => { clearTimeout(timer); resolve(message); } };
+    const waiter = {
+      id,
+      resolve: (message) => { clearTimeout(timer); resolve(message); },
+      reject: (error) => { clearTimeout(timer); reject(error); },
+    };
     const timer = setTimeout(() => {
       const index = serialWaiters.indexOf(waiter);
       if (index >= 0) serialWaiters.splice(index, 1);
@@ -114,7 +126,8 @@ function waitForWatchface(id, timeout = 8000) {
 }
 
 function onSerialNotification(event) {
-  const packet = new Uint8Array(event.target.value.buffer);
+  const value = event.target.value;
+  const packet = new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
   if (packet.length < 2 || packet[0] !== SERIAL_CATEGORY_WATCHFACE) return;
   const flag = packet[1];
   if (flag === 0 && packet.length >= 4) {
@@ -132,7 +145,11 @@ function onSerialNotification(event) {
 }
 
 async function writeSerialPacket(packet) {
-  await serialCharacteristic.writeValueWithoutResponse(packet);
+  if (serialCharacteristic.writeValueWithoutResponse) {
+    await serialCharacteristic.writeValueWithoutResponse(packet);
+  } else {
+    await serialCharacteristic.writeValueWithResponse(packet);
+  }
 }
 
 async function sendSerial(payload) {
@@ -173,6 +190,7 @@ async function connect() {
     optionalServices: [LINK_SERVICE, SERIAL_SERVICE],
   });
   device.addEventListener("gattserverdisconnected", () => {
+    rejectSerialWaiters(new Error("手表已断开连接"));
     linkCharacteristic = undefined;
     serialCharacteristic = undefined;
     elements.deviceName.textContent = "已断开";
@@ -220,11 +238,13 @@ async function prepareImage(file) {
 }
 
 async function uploadImage() {
-  if (!preparedImage) return;
+  if (!preparedImage || uploadInProgress) return;
   const padding = (4 - (preparedImage.length % 4)) % 4;
   const payload = joinBytes(preparedImage, new Uint8Array(padding));
   const upload = joinBytes(payload, u32(crc32Mpeg2(payload)));
   const fileName = encoder.encode("badge.jpg");
+  uploadInProgress = true;
+  updateControls();
   showTransfer(true);
   try {
     setProgress(0, "建立传输");
@@ -247,6 +267,8 @@ async function uploadImage() {
     setProgress(100, "已保存到手表");
     setTransferInfo("传输完成");
   } finally {
+    uploadInProgress = false;
+    updateControls();
     setTimeout(() => showTransfer(false), 900);
   }
 }
