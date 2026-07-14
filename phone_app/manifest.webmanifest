@@ -1,0 +1,11 @@
+{
+  "name": "Huangshan Badge",
+  "short_name": "电子吧唧",
+  "description": "Huangshan watch electronic badge image transfer",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#101319",
+  "theme_color": "#101319",
+  "lang": "zh-CN"
+}

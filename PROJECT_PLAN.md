@@ -246,6 +246,9 @@ Phone companion implementation on 2026-07-15:
   root before changing phone-side transport code.
 - Android Chrome is the current runnable target because it supports Web Bluetooth.
   Safari does not, so an iOS native CoreBluetooth wrapper remains a separate task.
+- The Android web client now includes a standalone PWA manifest and offline cache.
+  It still requires HTTPS on a physical phone because Web Bluetooth is limited to
+  secure contexts.
 
 Native iOS client source on 2026-07-15:
 

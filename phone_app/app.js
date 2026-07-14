@@ -243,3 +243,7 @@ elements.refresh.addEventListener("click", () => sendCommand("badge").catch((err
 elements.cancel.addEventListener("click", () => sendCommand("badge cancel").catch((error) => { setTransferInfo(error.message); }));
 elements.clear.addEventListener("click", () => sendCommand("badge clear").catch((error) => { setTransferInfo(error.message); }));
 updateControls();
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js"));
+}
