@@ -252,6 +252,10 @@ Phone companion implementation on 2026-07-15:
 - The web client reports Bluetooth connection stages, supports both modern and
   legacy Chrome GATT write APIs, and explicitly limits browser-side image input to
   JPG/PNG/WebP; the native iOS client accepts HEIC through UIKit.
+- Browser connection investigation found that the watch requested Secure
+  Connections bonding immediately after every GATT link, although the badge
+  services are not encrypted. This is removed so Web Bluetooth can discover the
+  services first; ANCS/AMS or a phone can still initiate pairing when required.
 
 Native iOS client source on 2026-07-15:
 

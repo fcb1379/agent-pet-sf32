@@ -533,17 +533,11 @@ static int ble_link_event_handler(uint16_t event_id, uint8_t *data, uint16_t len
     case BLE_GAP_CONNECTED_IND:
     {
         ble_gap_connect_ind_t *ind = (ble_gap_connect_ind_t *)data;
-        ble_gap_sec_req_t sec_req;
 
         env->is_connected = 1;
         env->conn_idx = ind->conn_idx;
         env->conn_interval = ind->con_interval;
         LOG_I("BLE connected conn=%d interval=%d", env->conn_idx, env->conn_interval);
-
-        rt_memset(&sec_req, 0, sizeof(sec_req));
-        sec_req.conn_idx = ind->conn_idx;
-        sec_req.auth = GAP_AUTH_REQ_SEC_CON_BOND;
-        ble_gap_security_request(&sec_req);
         break;
     }
     case BLE_GAP_DISCONNECTED_IND:
