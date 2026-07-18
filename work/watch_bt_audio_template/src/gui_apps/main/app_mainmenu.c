@@ -210,6 +210,7 @@ typedef struct
     static
 #endif
 app_mainmenu_ctx_t app_mainmenu_ctx;
+static bool g_mainmenu_list_style;
 //static rt_list_t app_list;
 
 static void icon_event_callback(lv_event_t *e);
@@ -217,6 +218,149 @@ static void page_event_callback(lv_event_t *e);
 static void get_icon_col_row(uint16_t idx, uint16_t *p_col, uint16_t *p_row);
 static int layout_icon_transform(uint32_t row_idx, uint32_t col_idx, float *p_float_x, float *p_float_y, float *p_float_icon_w, float *p_float_icon_h, float *p_float_pivot_r);
 static void app_mainmenu_icons_transform(bool force_refresh);
+static void app_mainmenu_list_ui_init(void);
+
+static void app_mainmenu_free_layout_buffers(void)
+{
+    if (app_mainmenu_ctx.list)
+    {
+        rt_free(app_mainmenu_ctx.list);
+        app_mainmenu_ctx.list = NULL;
+    }
+#ifdef DEBUG_APP_MAINMENU_DISPLAY_ICON_COORDINATE
+    if (app_mainmenu_ctx.label_list)
+    {
+        rt_free(app_mainmenu_ctx.label_list);
+        app_mainmenu_ctx.label_list = NULL;
+    }
+#endif
+    if (app_mainmenu_ctx.icon_pivot)
+    {
+        rt_free(app_mainmenu_ctx.icon_pivot);
+        app_mainmenu_ctx.icon_pivot = NULL;
+    }
+}
+
+static const char *app_mainmenu_display_name(const builtin_app_desc_t *app)
+{
+#ifdef LV_USING_EXT_RESOURCE_MANAGER
+    return LV_EXT_STR_GET(app->name);
+#else
+    return app->name;
+#endif
+}
+
+static void app_mainmenu_list_item_event(lv_event_t *event)
+{
+    lv_event_code_t code = lv_event_get_code(event);
+    lv_obj_t *item = lv_event_get_target(event);
+
+    if (code == LV_EVENT_SHORT_CLICKED)
+    {
+        const char *cmd = (const char *)lv_event_get_user_data(event);
+
+        if (cmd)
+        {
+            gui_app_run(cmd);
+        }
+    }
+    else if (code == LV_EVENT_DELETE)
+    {
+        char *cmd = (char *)lv_obj_get_user_data(item);
+
+        if (cmd)
+        {
+            lv_mem_free(cmd);
+        }
+    }
+}
+
+static void app_mainmenu_list_add_item(lv_obj_t *parent, const builtin_app_desc_t *app, uint16_t index)
+{
+    const lv_coord_t margin = 10;
+    const lv_coord_t item_height = 52;
+    lv_obj_t *item;
+    lv_obj_t *icon;
+    lv_obj_t *label;
+    lv_obj_t *arrow;
+    char *cmd;
+    size_t cmd_length;
+
+    if (!app->icon || strcmp(app->id, APP_ID) == 0)
+    {
+        return;
+    }
+
+    item = lv_obj_create(parent);
+    lv_obj_set_pos(item, margin, 42 + index * (item_height + 6));
+    lv_obj_set_size(item, LV_HOR_RES_MAX - margin * 2, item_height);
+    lv_obj_set_style_bg_color(item, lv_color_hex(0x182433), 0);
+    lv_obj_set_style_bg_opa(item, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(item, 0, 0);
+    lv_obj_set_style_radius(item, 6, 0);
+    lv_obj_set_style_pad_all(item, 0, 0);
+    lv_obj_clear_flag(item, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(item, LV_OBJ_FLAG_CLICKABLE);
+
+    cmd_length = strlen(app->id) + 1;
+    cmd = lv_mem_alloc(cmd_length);
+    RT_ASSERT(cmd);
+    rt_memcpy(cmd, app->id, cmd_length);
+    lv_obj_set_user_data(item, cmd);
+    lv_obj_add_event_cb(item, app_mainmenu_list_item_event, LV_EVENT_ALL, cmd);
+
+    icon = lv_img_create(item);
+    lv_img_set_src(icon, app->icon);
+    lv_obj_set_pos(icon, 12, 11);
+    lv_obj_set_size(icon, 30, 30);
+
+    label = lv_label_create(item);
+    lv_label_set_text(label, app_mainmenu_display_name(app));
+    lv_label_set_long_mode(label, LV_LABEL_LONG_DOT);
+    lv_obj_set_pos(label, 54, 14);
+    lv_obj_set_size(label, LV_HOR_RES_MAX - 116, 24);
+    lv_obj_set_style_text_font(label, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(label, lv_color_white(), 0);
+
+    arrow = lv_label_create(item);
+    lv_label_set_text(arrow, ">");
+    lv_obj_set_pos(arrow, LV_HOR_RES_MAX - 46, 13);
+    lv_obj_set_style_text_font(arrow, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(arrow, lv_color_hex(0x8ca4bf), 0);
+}
+
+static void app_mainmenu_list_ui_init(void)
+{
+    const builtin_app_desc_t *app;
+    uint16_t index = 0;
+    lv_obj_t *title;
+
+    app_mainmenu_ctx.pg_obj = lv_obj_create(lv_scr_act());
+    lv_obj_set_size(app_mainmenu_ctx.pg_obj, LV_HOR_RES_MAX, LV_VER_RES_MAX);
+    lv_obj_set_style_bg_color(app_mainmenu_ctx.pg_obj, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(app_mainmenu_ctx.pg_obj, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(app_mainmenu_ctx.pg_obj, 0, 0);
+    lv_obj_set_style_pad_all(app_mainmenu_ctx.pg_obj, 0, 0);
+    lv_obj_set_scroll_dir(app_mainmenu_ctx.pg_obj, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(app_mainmenu_ctx.pg_obj, LV_SCROLLBAR_MODE_AUTO);
+
+    title = lv_label_create(app_mainmenu_ctx.pg_obj);
+    lv_label_set_text(title, "Apps");
+    lv_obj_set_pos(title, 12, 8);
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(title, lv_color_hex(0x9bd3ff), 0);
+
+    app = gui_builtin_app_list_open();
+    while (app)
+    {
+        if (app->icon && strcmp(app->id, APP_ID) != 0)
+        {
+            app_mainmenu_list_add_item(app_mainmenu_ctx.pg_obj, app, index++);
+        }
+        app = gui_builtin_app_list_get_next(app);
+    }
+    gui_builtin_app_list_close(app);
+}
 
 
 static bool limit_square(lv_area_t *parent_area, float *x, float *y, float *icon_r)
@@ -1497,6 +1641,12 @@ static void on_start(void)
 
     memset(&app_mainmenu_ctx, 0, sizeof(app_mainmenu_ctx));
 
+    if (g_mainmenu_list_style)
+    {
+        app_mainmenu_list_ui_init();
+        return;
+    }
+
     app_mainmenu_ctx.zoom = 1;
     app_mainmenu_ctx.last_zoom = 1;
 
@@ -1552,14 +1702,23 @@ static void on_pause(void)
 }
 static void on_stop(void)
 {
-    rt_free(app_mainmenu_ctx.list);
-    app_mainmenu_ctx.list = NULL;
-#ifdef DEBUG_APP_MAINMENU_DISPLAY_ICON_COORDINATE
-    rt_free(app_mainmenu_ctx.label_list);
-    app_mainmenu_ctx.label_list = NULL;
-#endif
-    rt_free(app_mainmenu_ctx.icon_pivot);
-    app_mainmenu_ctx.icon_pivot = NULL;
+    app_mainmenu_free_layout_buffers();
+}
+
+void app_mainmenu_toggle_style(void)
+{
+    if (!gui_app_is_actived(APP_ID))
+    {
+        return;
+    }
+
+    if (app_mainmenu_ctx.pg_obj)
+    {
+        lv_obj_del(app_mainmenu_ctx.pg_obj);
+    }
+    app_mainmenu_free_layout_buffers();
+    g_mainmenu_list_style = !g_mainmenu_list_style;
+    on_start();
 }
 
 
@@ -1599,4 +1758,3 @@ static int app_mainmenu(intent_t i)
 
 
 BUILTIN_APP_EXPORT(LV_EXT_STR_ID(mainmenu), NULL, APP_ID, app_mainmenu);
-

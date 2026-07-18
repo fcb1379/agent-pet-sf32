@@ -194,6 +194,7 @@ Status: calculator implemented; boot-time phone time synchronization implemented
 - Add a standalone calculator application to the launcher with a generated calculator icon. Done in firmware: clear, sign, percent, decimal, four arithmetic operations, and division-by-zero recovery.
 - Persist the last Android companion device and reconnect when the app starts or the watch reconnects after a restart. Done in the Android companion.
 - Send `HWS1|0|TIME_REQ` after the watch control notifications are enabled; the Android companion answers with the phone's Unix time and local UTC offset. Done; requires a connected Android companion for physical verification.
+- Add a list-style launcher using the same registered, functional apps as the icon launcher. Done; double-clicking the physical button while in the launcher toggles between list and icon layouts.
 
 ## Open Questions
 

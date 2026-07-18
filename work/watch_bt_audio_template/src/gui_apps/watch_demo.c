@@ -44,11 +44,13 @@ static rt_device_t lcd_device;
 static lv_timer_t *button_event_task;
 static struct rt_event btn_event;
 static lv_obj_t *mbox;
+static lv_timer_t *home_key_timer;
 
 /*Compatible with private lib*/
 uint32_t g_mainmenu[2];
 
 extern void ui_datac_init(void);
+extern void app_mainmenu_toggle_style(void);
 
 #ifdef BSP_USING_PM
     extern bool lv_refreshing_done(void);
@@ -88,6 +90,31 @@ static bool watch_ui_gpu_is_enabled(void)
  * \n
  * @see
  */
+static void default_home_key_action(void)
+{
+    if (gui_app_is_actived("Main"))
+        gui_app_run("clock");
+    else
+    {
+        /* The single physical key is the back key outside the launcher. */
+        if (RT_EOK != gui_app_goback())
+            gui_app_run("Main");
+#if defined(GUI_APP_FRAMEWORK)&&(!defined (APP_TRANS_ANIMATION_NONE))
+        lvsf_gesture_bars_realign();
+#endif
+    }
+}
+
+static void default_home_key_timer_cb(lv_timer_t *timer)
+{
+    if (home_key_timer == timer)
+    {
+        home_key_timer = NULL;
+    }
+    lv_timer_del(timer);
+    default_home_key_action();
+}
+
 static int32_t default_keypad_handler(lv_key_t key, lv_indev_state_t event)
 {
     static lv_indev_state_t last_event = LV_INDEV_STATE_REL;
@@ -99,16 +126,22 @@ static int32_t default_keypad_handler(lv_key_t key, lv_indev_state_t event)
         if ((LV_INDEV_STATE_PR == event) && (LV_KEY_HOME == key))
         {
             LOG_I("default_keypad_handler %d,%d", key, event);
-            if (gui_app_is_actived("Main"))
-                gui_app_run("clock");
+            if (home_key_timer)
+            {
+                lv_timer_del(home_key_timer);
+                home_key_timer = NULL;
+                if (gui_app_is_actived("Main"))
+                {
+                    app_mainmenu_toggle_style();
+                }
+                else
+                {
+                    default_home_key_action();
+                }
+            }
             else
             {
-                /* The single physical key is the back key outside the launcher. */
-                if (RT_EOK != gui_app_goback())
-                    gui_app_run("Main");
-#if defined(GUI_APP_FRAMEWORK)&&(!defined (APP_TRANS_ANIMATION_NONE))
-                lvsf_gesture_bars_realign();
-#endif
+                home_key_timer = lv_timer_create(default_home_key_timer_cb, 300, NULL);
             }
         }
         else if ((LV_INDEV_STATE_PR == event) && (LV_KEY_ESC == key))
