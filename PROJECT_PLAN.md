@@ -1061,6 +1061,16 @@ PWA update reliability pass on 2026-07-18:
   features such as `同步时间` and `刷新状态` instead of remaining on a stale cached
   HTML shell; offline use still falls back to the most recently cached assets.
 
+Android PWA deployment path on 2026-07-18:
+
+- Added `.github/workflows/deploy-phone-app.yml`. It deploys only `phone_app/` to
+  GitHub Pages through the official Pages artifact workflow after matching changes
+  land on `main`.
+- After the repository owner selects GitHub Actions in Settings > Pages, the
+  resulting HTTPS URL can be opened directly from Android Chrome, satisfying Web
+  Bluetooth's secure-context requirement without a LAN server or self-signed
+  certificate.
+
 Board runtime observation on 2026-07-18:
 
 - Opened `/dev/cu.usbserial-10` read-only at 1,000,000 baud and received the

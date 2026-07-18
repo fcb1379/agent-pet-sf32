@@ -32,6 +32,16 @@ an offline fallback. `localhost` is sufficient for desktop development only; an
 Android phone needs an HTTPS host (for example, a GitHub Pages deployment) because
 Web Bluetooth is a secure-context API.
 
+## Android HTTPS Deployment
+
+The repository includes `.github/workflows/deploy-phone-app.yml`, which publishes
+`phone_app/` through GitHub Pages whenever this directory changes on `main`. In
+the repository's **Settings > Pages**, select **GitHub Actions** as the publishing
+source once. After the workflow succeeds, open its deployment URL on Android
+Chrome, install it as a PWA if desired, and connect to `Huangshan-Watch-BLE`.
+GitHub Pages serves the companion via HTTPS, which satisfies the Web Bluetooth
+secure-context requirement.
+
 Run the protocol-only checks without a Bluetooth device:
 
 ```sh
