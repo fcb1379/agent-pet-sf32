@@ -243,11 +243,38 @@ static void app_mainmenu_free_layout_buffers(void)
 
 static const char *app_mainmenu_display_name(const builtin_app_desc_t *app)
 {
-#ifdef LV_USING_EXT_RESOURCE_MANAGER
-    return LV_EXT_STR_GET(app->name);
-#else
-    return app->name;
-#endif
+    /* The built-in Montserrat font only carries Latin glyphs. */
+    if (strcmp(app->id, "clock") == 0)
+    {
+        return "Clock";
+    }
+    if (strcmp(app->id, "badge") == 0)
+    {
+        return "Badge";
+    }
+    if (strcmp(app->id, "music") == 0)
+    {
+        return "Music";
+    }
+    if (strcmp(app->id, "status") == 0)
+    {
+        return "Status";
+    }
+    if (strcmp(app->id, "calculator") == 0)
+    {
+        return "Calculator";
+    }
+
+    return app->id;
+}
+
+static void app_mainmenu_list_gesture_event(lv_event_t *event)
+{
+    if (lv_event_get_code(event) == LV_EVENT_GESTURE
+            && lv_indev_get_gesture_dir(lv_indev_get_act()) == LV_DIR_LEFT)
+    {
+        gui_app_run("clock");
+    }
 }
 
 static void app_mainmenu_list_item_event(lv_event_t *event)
@@ -301,6 +328,7 @@ static void app_mainmenu_list_add_item(lv_obj_t *parent, const builtin_app_desc_
     lv_obj_set_style_pad_all(item, 0, 0);
     lv_obj_clear_flag(item, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(item, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_flag(item, LV_OBJ_FLAG_GESTURE_BUBBLE);
 
     cmd_length = strlen(app->id) + 1;
     cmd = lv_mem_alloc(cmd_length);
@@ -343,6 +371,8 @@ static void app_mainmenu_list_ui_init(void)
     lv_obj_set_style_pad_all(app_mainmenu_ctx.pg_obj, 0, 0);
     lv_obj_set_scroll_dir(app_mainmenu_ctx.pg_obj, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(app_mainmenu_ctx.pg_obj, LV_SCROLLBAR_MODE_AUTO);
+    lv_obj_add_event_cb(app_mainmenu_ctx.pg_obj, app_mainmenu_list_gesture_event,
+                        LV_EVENT_GESTURE, NULL);
 
     title = lv_label_create(app_mainmenu_ctx.pg_obj);
     lv_label_set_text(title, "Apps");
