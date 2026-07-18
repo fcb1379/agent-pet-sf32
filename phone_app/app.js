@@ -59,9 +59,9 @@ function updateControls() {
   const connected = isConnected();
   elements.dot.classList.toggle("connected", connected);
   elements.send.disabled = !connected || !preparedImage || uploadInProgress;
-  elements.refresh.disabled = !connected;
+  elements.refresh.disabled = !connected || uploadInProgress;
   elements.cancel.disabled = !connected;
-  elements.clear.disabled = !connected;
+  elements.clear.disabled = !connected || uploadInProgress;
   elements.syncTime.disabled = !connected || uploadInProgress;
 }
 
@@ -144,6 +144,18 @@ async function sendSerial(payload) {
   for (const frame of serialCarrierFrames(payload)) await writeSerialPacket(frame);
 }
 
+async function sendSerialRequest(payload, responseId) {
+  const response = waitForWatchface(responseId);
+  try {
+    await sendSerial(payload);
+  } catch (error) {
+    const index = serialWaiters.findIndex((waiter) => waiter.id === responseId);
+    if (index >= 0) serialWaiters.splice(index, 1)[0].reject(error);
+    return response;
+  }
+  return response;
+}
+
 function responseStatus(message) {
   if (message.length < 6) throw new Error("手表响应格式错误");
   const status = new DataView(message.buffer, message.byteOffset, message.byteLength).getUint16(4, true);
@@ -206,14 +218,43 @@ function parseStatePayload(payload) {
   return Object.fromEntries(payload.split(";").map((part) => part.split("=", 2)).filter(([key, value]) => key && value !== undefined));
 }
 
+function formatWatchTime(value, timezoneOffsetMinutes) {
+  const match = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})$/.exec(value || "");
+  const offset = Number(timezoneOffsetMinutes);
+  const timezone = Number.isFinite(offset) ? ` UTC${offset >= 0 ? "+" : ""}${offset / 60}` : "";
+  return match ? `${match[1]}-${match[2]}-${match[3]} ${match[4]}:${match[5]}:${match[6]}${timezone}` : "等待同步";
+}
+
+function displayWatchState(payload) {
+  const state = parseStatePayload(payload);
+  elements.timeInfo.textContent = formatWatchTime(state.time, state.tz);
+  return state;
+}
+
 async function syncTime() {
   const epochSeconds = Math.floor(Date.now() / 1000);
   const timezoneOffsetMinutes = -new Date().getTimezoneOffset();
   setTransferInfo("正在同步时间");
   const payload = await sendControl("TIME", `${epochSeconds},${timezoneOffsetMinutes}`);
-  const state = parseStatePayload(payload);
-  elements.timeInfo.textContent = state.time ? `${state.time} UTC${timezoneOffsetMinutes >= 0 ? "+" : ""}${timezoneOffsetMinutes / 60}` : "已同步";
+  displayWatchState(payload);
   setTransferInfo("时间已同步");
+}
+
+async function refreshWatchState() {
+  setTransferInfo("正在读取手表状态");
+  const statePayload = await sendControl("STATE");
+  const badgePayload = await sendControl("BADGE", "STATUS");
+  const state = displayWatchState(statePayload);
+  const badge = parseStatePayload(badgePayload);
+  const image = state.img === "1" ? "已保存" : "未保存";
+  setTransferInfo(`图片${image}，传输状态 ${badge.s ?? "未知"}`);
+}
+
+async function runBadgeAction(action, successText) {
+  setTransferInfo("正在处理图片");
+  await sendControl("BADGE", action);
+  setTransferInfo(successText);
+  await refreshWatchState();
 }
 
 async function connect() {
@@ -249,7 +290,7 @@ async function connect() {
   const hello = await sendControl("HELLO");
   setTransferInfo(`已连接 ${hello}`);
   await syncTime();
-  await sendCommand("badge");
+  await refreshWatchState();
 }
 
 async function canvasBlob(canvas, quality) {
@@ -289,24 +330,19 @@ async function uploadImage() {
   showTransfer(true);
   try {
     setProgress(0, "建立传输");
-    await sendSerial(watchfaceMessage(0, joinBytes(u16(WATCHFACE_TYPE_BACKGROUND), new Uint8Array([PHONE_TYPE_ANDROID]), u32(upload.length))));
-    responseStatus(await waitForWatchface(1));
-    await sendSerial(watchfaceMessage(2, joinBytes(u32(upload.length), u16(fileName.length), fileName)));
-    responseStatus(await waitForWatchface(3));
+    responseStatus(await sendSerialRequest(watchfaceMessage(0, joinBytes(u16(WATCHFACE_TYPE_BACKGROUND), new Uint8Array([PHONE_TYPE_ANDROID]), u32(upload.length))), 1));
+    responseStatus(await sendSerialRequest(watchfaceMessage(2, joinBytes(u32(upload.length), u16(fileName.length), fileName)), 3));
     let index = 0;
     for (let offset = 0; offset < upload.length; offset += CHUNK_SIZE) {
       const part = upload.slice(offset, offset + CHUNK_SIZE);
-      await sendSerial(watchfaceMessage(4, joinBytes(u32(index), part)));
-      responseStatus(await waitForWatchface(5));
+      responseStatus(await sendSerialRequest(watchfaceMessage(4, joinBytes(u32(index), part)), 5));
       index += 1;
       setProgress(((offset + part.length) / upload.length) * 100, `正在发送 ${Math.round((offset + part.length) / 1024)} KB`);
     }
-    await sendSerial(watchfaceMessage(6));
-    responseStatus(await waitForWatchface(7));
-    await sendSerial(watchfaceMessage(8));
-    responseStatus(await waitForWatchface(9));
+    responseStatus(await sendSerialRequest(watchfaceMessage(6), 7));
+    responseStatus(await sendSerialRequest(watchfaceMessage(8), 9));
     setProgress(100, "已保存到手表");
-    setTransferInfo("传输完成");
+    await refreshWatchState();
   } finally {
     uploadInProgress = false;
     updateControls();
@@ -325,9 +361,9 @@ elements.imageInput.addEventListener("change", (event) => {
   });
 });
 elements.send.addEventListener("click", () => uploadImage().catch((error) => { setTransferInfo(error.message); showTransfer(false); }));
-elements.refresh.addEventListener("click", () => sendCommand("badge").catch((error) => { setTransferInfo(error.message); }));
-elements.cancel.addEventListener("click", () => sendCommand("badge cancel").catch((error) => { setTransferInfo(error.message); }));
-elements.clear.addEventListener("click", () => sendCommand("badge clear").catch((error) => { setTransferInfo(error.message); }));
+elements.refresh.addEventListener("click", () => refreshWatchState().catch((error) => { setTransferInfo(error.message); }));
+elements.cancel.addEventListener("click", () => runBadgeAction("CANCEL", "已取消传输").catch((error) => { setTransferInfo(error.message); }));
+elements.clear.addEventListener("click", () => runBadgeAction("CLEAR", "已清除图片").catch((error) => { setTransferInfo(error.message); }));
 elements.syncTime.addEventListener("click", () => syncTime().catch((error) => { setTransferInfo(error.message); }));
 updateControls();
 

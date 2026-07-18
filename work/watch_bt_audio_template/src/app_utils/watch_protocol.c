@@ -117,13 +117,13 @@ static int watch_protocol_set_time(const char *payload, char *result, size_t res
     time_ret = set_time((rt_uint32_t)local_time.tm_hour,
                         (rt_uint32_t)local_time.tm_min,
                         (rt_uint32_t)local_time.tm_sec);
-    settings_ret = watch_settings_set_time_sync((int16_t)timezone_minutes,
-                                                (uint32_t)utc_seconds);
     if (date_ret != RT_EOK || time_ret != RT_EOK)
     {
         LOG_E("RTC update failed date=%d time=%d", date_ret, time_ret);
         return -RT_ERROR;
     }
+    settings_ret = watch_settings_set_time_sync((int16_t)timezone_minutes,
+                                                (uint32_t)utc_seconds);
 
     rt_snprintf(result, result_size, "time=%04d%02d%02dT%02d%02d%02d;tz=%ld;p=%d",
                 local_time.tm_year + 1900,
@@ -178,7 +178,7 @@ static int watch_protocol_badge(const char *payload, char *result, size_t result
     if (!payload || strcmp(payload, "STATUS") == 0)
     {
         badge_transfer_get_snapshot(&badge);
-        rt_snprintf(result, result_size, "img=%d;state=%d;rx=%lu;total=%lu;err=%d",
+        rt_snprintf(result, result_size, "i=%d;s=%d;r=%lu;t=%lu;e=%d",
                     badge.image_available,
                     badge.state,
                     (unsigned long)badge.received,
@@ -216,6 +216,7 @@ int watch_protocol_handle_request(const char *request, char *response, size_t re
     int count = 0;
     char result[48];
     long request_id;
+    const char *error_request_id = "0";
     int ret;
 
     if (!request || !response || response_size == 0 || strncmp(request, WATCH_PROTOCOL_PREFIX "|", 5) != 0)
@@ -237,10 +238,14 @@ int watch_protocol_handle_request(const char *request, char *response, size_t re
         parts[count++] = token;
         token = strtok_r(NULL, "|", &saveptr);
     }
-    if (count < 3 || strcmp(parts[0], WATCH_PROTOCOL_PREFIX) != 0 ||
-            watch_protocol_parse_long(parts[1], 1, 65535, &request_id) != RT_EOK)
+    if (count >= 2 && watch_protocol_parse_long(parts[1], 1, 65535, &request_id) == RT_EOK)
     {
-        watch_protocol_error(response, response_size, count >= 2 ? parts[1] : "0",
+        error_request_id = parts[1];
+    }
+    if (token || count < 3 || strcmp(parts[0], WATCH_PROTOCOL_PREFIX) != 0 ||
+            error_request_id[0] == '0')
+    {
+        watch_protocol_error(response, response_size, error_request_id,
                              WATCH_PROTOCOL_ERR_MALFORMED);
         return 1;
     }
@@ -248,7 +253,7 @@ int watch_protocol_handle_request(const char *request, char *response, size_t re
     if (strcmp(parts[2], "HELLO") == 0 && count == 3)
     {
         watch_protocol_ok(response, response_size, parts[1],
-                          "model=HS52;cap=TIME,BADGE,STATE,MEDIA");
+                          "model=HS52;cap=TIME,BADGE,STATE");
     }
     else if (strcmp(parts[2], "TIME") == 0 && count == 4)
     {

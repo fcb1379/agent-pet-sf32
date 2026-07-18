@@ -39,6 +39,9 @@ final class WatchBLEManager: NSObject, ObservableObject {
     private var waitingResponses: [UInt16: (id: UUID, continuation: CheckedContinuation<Data, Error>)] = [:]
     private var waitingControls: [Int: (id: UUID, continuation: CheckedContinuation<String, Error>)] = [:]
     private var nextControlRequestId = 1
+    private var linkNotificationsEnabled = false
+    private var serialNotificationsEnabled = false
+    private var didBootstrapControlPlane = false
 
     override init() {
         super.init()
@@ -91,24 +94,19 @@ final class WatchBLEManager: NSObject, ObservableObject {
             let payload = jpeg + padding
             let upload = payload + Self.u32(Self.crc32Mpeg2(payload))
             transferStatus = "建立传输"
-            try sendSerial(Self.watchfaceMessage(0, Self.u16(ProtocolValue.backgroundFileType) + Data([ProtocolValue.phoneTypeIOS]) + Self.u32(UInt32(upload.count))))
-            try Self.requireSuccess(try await waitForResponse(1))
-            try sendSerial(Self.watchfaceMessage(2, Self.u32(UInt32(upload.count)) + Self.u16(9) + Data("badge.jpg".utf8)))
-            try Self.requireSuccess(try await waitForResponse(3))
+            try Self.requireSuccess(try await sendSerialRequest(Self.watchfaceMessage(0, Self.u16(ProtocolValue.backgroundFileType) + Data([ProtocolValue.phoneTypeIOS]) + Self.u32(UInt32(upload.count))), responseId: 1))
+            try Self.requireSuccess(try await sendSerialRequest(Self.watchfaceMessage(2, Self.u32(UInt32(upload.count)) + Self.u16(9) + Data("badge.jpg".utf8)), responseId: 3))
 
             var index: UInt32 = 0
             for offset in stride(from: 0, to: upload.count, by: ProtocolValue.chunkSize) {
                 let end = min(offset + ProtocolValue.chunkSize, upload.count)
-                try sendSerial(Self.watchfaceMessage(4, Self.u32(index) + Data(upload[offset..<end])))
-                try Self.requireSuccess(try await waitForResponse(5))
+                try Self.requireSuccess(try await sendSerialRequest(Self.watchfaceMessage(4, Self.u32(index) + Data(upload[offset..<end])), responseId: 5))
                 index += 1
                 progress = Double(end) / Double(upload.count)
                 transferStatus = "正在发送 \(end / 1024) KB"
             }
-            try sendSerial(Self.watchfaceMessage(6, Data()))
-            try Self.requireSuccess(try await waitForResponse(7))
-            try sendSerial(Self.watchfaceMessage(8, Data()))
-            try Self.requireSuccess(try await waitForResponse(9))
+            try Self.requireSuccess(try await sendSerialRequest(Self.watchfaceMessage(6, Data()), responseId: 7))
+            try Self.requireSuccess(try await sendSerialRequest(Self.watchfaceMessage(8, Data()), responseId: 9))
             progress = 1
             transferStatus = "已保存到手表"
         } catch {
@@ -204,14 +202,20 @@ final class WatchBLEManager: NSObject, ObservableObject {
         }
     }
 
-    private func waitForResponse(_ id: UInt16) async throws -> Data {
-        try await withCheckedThrowingContinuation { continuation in
+    private func sendSerialRequest(_ payload: Data, responseId: UInt16) async throws -> Data {
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Data, Error>) in
             let token = UUID()
-            waitingResponses[id] = (token, continuation)
+            waitingResponses[responseId] = (token, continuation)
             DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in
-                guard let response = self?.waitingResponses[id], response.id == token else { return }
-                self?.waitingResponses[id] = nil
+                guard let response = self?.waitingResponses[responseId], response.id == token else { return }
+                self?.waitingResponses[responseId] = nil
                 response.continuation.resume(throwing: BadgeError.timeout)
+            }
+            do {
+                try sendSerial(payload)
+            } catch {
+                self.waitingResponses[responseId] = nil
+                continuation.resume(throwing: error)
             }
         }
     }
@@ -259,6 +263,9 @@ final class WatchBLEManager: NSObject, ObservableObject {
         serialAssembly = nil
         linkCharacteristic = nil
         serialCharacteristic = nil
+        linkNotificationsEnabled = false
+        serialNotificationsEnabled = false
+        didBootstrapControlPlane = false
         connectedName = "已断开"
         transferStatus = message
     }
@@ -306,10 +313,22 @@ extension WatchBLEManager: CBPeripheralDelegate {
                 peripheral.setNotifyValue(true, for: characteristic)
             }
         }
-        if isConnected {
-            transferStatus = "已连接"
-            Task { await bootstrapControlPlane() }
+    }
+
+    func peripheral(_ peripheral: CBPeripheral, didUpdateNotificationStateFor characteristic: CBCharacteristic, error: Error?) {
+        guard error == nil, characteristic.isNotifying else {
+            errorMessage = error?.localizedDescription ?? "无法订阅手表通知"
+            return
         }
+        if characteristic.uuid == ProtocolValue.linkCharacteristic {
+            linkNotificationsEnabled = true
+        } else if characteristic.uuid == ProtocolValue.serialData {
+            serialNotificationsEnabled = true
+        }
+        guard linkNotificationsEnabled, serialNotificationsEnabled, !didBootstrapControlPlane else { return }
+        didBootstrapControlPlane = true
+        transferStatus = "已连接"
+        Task { await bootstrapControlPlane() }
     }
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {

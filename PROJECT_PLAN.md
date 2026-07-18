@@ -992,5 +992,28 @@ validation pending.
   - Reboot the watch and confirm its clock UI continues from the synchronized RTC.
   - Confirm existing JPEG upload, cancellation, and deletion through the PWA still
     work after the handshake.
-  - Build the iOS project in Xcode, then confirm the same handshake, time sync, and
+- Build the iOS project in Xcode, then confirm the same handshake, time sync, and
     image transfer on a physical iPhone.
+
+Reliability pass on 2026-07-18:
+
+- Removed an inaccurate `MEDIA` capability from `HELLO`; only implemented v1
+  capabilities (`TIME`, `BADGE`, and `STATE`) are advertised.
+- The `BADGE|STATUS` response now uses compact fixed field names
+  (`i`, `s`, `r`, `t`, `e`) so every response stays within the custom GATT control
+  frame budget, including large transfer counts and negative errors.
+- The RTC preference record is written only after both RTC date and time calls
+  succeed.
+- The PWA now uses v1 state and badge requests for refresh, cancel, clear, and
+  post-upload state. It pre-registers each WFPUSH2 acknowledgement before sending
+  the packet.
+- The native iOS client waits for both notification subscriptions to succeed before
+  the protocol handshake, and also pre-registers WFPUSH2 acknowledgements.
+- Rebuilt and flashed without readback through `/dev/cu.usbserial-10`.
+- Manual verification additions:
+  - Immediately send a small JPEG after connect at least five times; each run must
+    finish without a timeout and refresh must show `图片已保存`.
+  - Press `取消传输` during a transfer; the last committed badge must remain intact.
+  - Press `清除图片`, then `刷新状态`; the status must report no saved image.
+  - On iPhone, confirm the handshake does not begin before both notify subscriptions
+    are established, then repeat the image upload test.

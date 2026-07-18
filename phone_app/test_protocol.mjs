@@ -20,6 +20,11 @@ assert.deepEqual(parseControlResponse("HWS1|7|OK|time=20260718T120000;tz=480"), 
   status: "OK",
   payload: "time=20260718T120000;tz=480",
 });
+assert.deepEqual(parseControlResponse("HWS1|8|ERR|3"), {
+  requestId: 8,
+  status: "ERR",
+  payload: "3",
+});
 assert.equal(parseControlResponse("badge:s=2"), undefined);
 assert.deepEqual([...watchfaceMessage(0, bytes(2, 0, 2, 12, 0, 0, 0))], [0, 0, 7, 0, 2, 0, 2, 12, 0, 0, 0]);
 

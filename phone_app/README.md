@@ -14,12 +14,14 @@ python3 -m http.server 8080
 ```
 
 Open `http://localhost:8080` in Chrome, connect `Huangshan-Watch-BLE`, choose an
-image, then send it. The app also exposes the `badge`, `badge cancel`, and
-`badge clear` controls through the custom GATT characteristic.
+image, then send it. Refresh, cancellation, and deletion use the versioned
+`HWS1` `STATE` and `BADGE` control operations through the custom GATT
+characteristic.
 
 After the connection is established, the client negotiates `HWS1` and syncs the
-watch RTC from the phone's Unix time and timezone. Use `同步时间` to run it again.
-The wire contract is documented in `../docs/huangshan-watch-protocol-v1.md`.
+watch RTC from the phone's Unix time and timezone. It then reads the image and
+transfer state; use `同步时间` or `刷新状态` to run these operations again. The wire
+contract is documented in `../docs/huangshan-watch-protocol-v1.md`.
 
 For the web companion, choose JPG, PNG, or WebP. HEIC selection is deliberately
 handled by the native iOS client because browser HEIC decoding is not consistent.

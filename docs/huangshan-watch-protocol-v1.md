@@ -47,10 +47,10 @@ Error codes:
 
 | Operation | Payload | Response payload | Purpose |
 | --- | --- | --- | --- |
-| `HELLO` | none | `model=HS52;cap=TIME,BADGE,STATE,MEDIA` | Capability handshake after connect. |
+| `HELLO` | none | `model=HS52;cap=TIME,BADGE,STATE` | Capability handshake after connect. |
 | `TIME` | `<unix-seconds>,<utc-offset-minutes>` | `time=YYYYMMDDTHHMMSS;tz=<minutes>` | Set the watch local RTC time. The phone sends UTC Unix seconds and its offset east of UTC. |
 | `STATE` | none | `time=...;tz=...;img=<0|1>` | Read the current local watch time, saved timezone offset, and badge availability. |
-| `BADGE` | `STATUS`, `CLEAR`, or `CANCEL` | implementation status | Control the image-transfer session; image payloads use WFPUSH2. |
+| `BADGE` | `STATUS`, `CLEAR`, or `CANCEL` | `i=<0|1>;s=<state>;r=<bytes>;t=<bytes>;e=<error>` for `STATUS`, or `action=<...>` | Control the image-transfer session; image payloads use WFPUSH2. |
 | `MEDIA` | reserved | reserved | Future phone media state/control bridge. |
 | `NOTIFY` | reserved | reserved | Future app notification bridge. |
 | `FIND` | reserved | reserved | Future find-watch alert. |
