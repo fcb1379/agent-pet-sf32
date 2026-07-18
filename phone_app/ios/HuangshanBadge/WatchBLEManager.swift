@@ -9,6 +9,7 @@ final class WatchBLEManager: NSObject, ObservableObject {
         static let serialService = CBUUID(string: "7369666C-695F-7364-0000-000000000000")
         static let serialData = CBUUID(string: "7369666C-695F-7364-0002-000000000000")
         static let serialCategoryWatchface: UInt8 = 0x04
+        static let controlVersion = "HWS1"
         static let backgroundFileType: UInt16 = 2
         static let phoneTypeIOS: UInt8 = 1
         static let chunkSize = 180
@@ -19,6 +20,7 @@ final class WatchBLEManager: NSObject, ObservableObject {
     @Published private(set) var connectedName = "未连接"
     @Published private(set) var imageStatus = "尚未选择"
     @Published private(set) var transferStatus = "等待连接"
+    @Published private(set) var timeStatus = "等待同步"
     @Published private(set) var previewImage: UIImage?
     @Published private(set) var progress: Double = 0
     @Published private(set) var isUploading = false
@@ -35,6 +37,8 @@ final class WatchBLEManager: NSObject, ObservableObject {
     private var preparedJPEG: Data?
     private var serialAssembly: (expected: Int, data: Data)?
     private var waitingResponses: [UInt16: (id: UUID, continuation: CheckedContinuation<Data, Error>)] = [:]
+    private var waitingControls: [Int: (id: UUID, continuation: CheckedContinuation<String, Error>)] = [:]
+    private var nextControlRequestId = 1
 
     override init() {
         super.init()
@@ -68,9 +72,11 @@ final class WatchBLEManager: NSObject, ObservableObject {
         }
     }
 
-    func requestStatus() { sendCommand("badge") }
-    func cancelTransfer() { sendCommand("badge cancel") }
-    func clearBadge() { sendCommand("badge clear") }
+    func requestStatus() { Task { await requestBadgeStatus() } }
+    func cancelTransfer() { Task { await runBadgeAction("CANCEL") } }
+    func clearBadge() { Task { await runBadgeAction("CLEAR") } }
+
+    func syncTime() { Task { await synchronizeTime() } }
 
     func uploadPreparedImage() async {
         guard let jpeg = preparedJPEG else { return }
@@ -111,9 +117,71 @@ final class WatchBLEManager: NSObject, ObservableObject {
         }
     }
 
-    private func sendCommand(_ command: String) {
-        guard let peripheral, let characteristic = linkCharacteristic else { return }
+    private func sendCommand(_ command: String) throws {
+        guard let peripheral, let characteristic = linkCharacteristic else { throw BadgeError.notConnected }
         peripheral.writeValue(Data(command.utf8), for: characteristic, type: .withResponse)
+    }
+
+    private func sendControl(_ operation: String, payload: String = "") async throws -> String {
+        let requestId = nextControlRequestId
+        nextControlRequestId = nextControlRequestId % 65535 + 1
+        let suffix = payload.isEmpty ? "" : "|\(payload)"
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<String, Error>) in
+            let token = UUID()
+            waitingControls[requestId] = (token, continuation)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in
+                guard let response = self?.waitingControls[requestId], response.id == token else { return }
+                self?.waitingControls[requestId] = nil
+                response.continuation.resume(throwing: BadgeError.timeout)
+            }
+            do {
+                try sendCommand("\(ProtocolValue.controlVersion)|\(requestId)|\(operation)\(suffix)")
+            } catch {
+                self.waitingControls[requestId] = nil
+                continuation.resume(throwing: error)
+            }
+        }
+    }
+
+    private func synchronizeTime() async {
+        guard isConnected else { return }
+        do {
+            transferStatus = "正在同步时间"
+            let epoch = Int(Date().timeIntervalSince1970)
+            let timezoneMinutes = TimeZone.current.secondsFromGMT() / 60
+            let response = try await sendControl("TIME", payload: "\(epoch),\(timezoneMinutes)")
+            timeStatus = response
+            transferStatus = "时间已同步"
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func requestBadgeStatus() async {
+        do {
+            transferStatus = try await sendControl("BADGE", payload: "STATUS")
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func runBadgeAction(_ action: String) async {
+        do {
+            transferStatus = try await sendControl("BADGE", payload: action)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func bootstrapControlPlane() async {
+        do {
+            let hello = try await sendControl("HELLO")
+            transferStatus = "已连接 \(hello)"
+            await synchronizeTime()
+            await requestBadgeStatus()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 
     private func sendSerial(_ payload: Data) throws {
@@ -172,9 +240,22 @@ final class WatchBLEManager: NSObject, ObservableObject {
         response.continuation.resume(returning: message)
     }
 
+    private func handleControlResponse(_ response: String) {
+        let fields = response.split(separator: "|", omittingEmptySubsequences: false)
+        guard fields.count >= 3, String(fields[0]) == ProtocolValue.controlVersion,
+              let requestId = Int(fields[1]), let waiter = waitingControls.removeValue(forKey: requestId) else { return }
+        if fields[2] == "OK" {
+            waiter.continuation.resume(returning: fields.dropFirst(3).joined(separator: "|"))
+        } else {
+            waiter.continuation.resume(throwing: BadgeError.controlRejected(String(fields.dropFirst(3).joined(separator: "|"))))
+        }
+    }
+
     private func resetConnection(_ message: String) {
         waitingResponses.values.forEach { $0.continuation.resume(throwing: BadgeError.disconnected) }
         waitingResponses.removeAll()
+        waitingControls.values.forEach { $0.continuation.resume(throwing: BadgeError.disconnected) }
+        waitingControls.removeAll()
         serialAssembly = nil
         linkCharacteristic = nil
         serialCharacteristic = nil
@@ -225,14 +306,21 @@ extension WatchBLEManager: CBPeripheralDelegate {
                 peripheral.setNotifyValue(true, for: characteristic)
             }
         }
-        if isConnected { transferStatus = "已连接"; requestStatus() }
+        if isConnected {
+            transferStatus = "已连接"
+            Task { await bootstrapControlPlane() }
+        }
     }
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
         guard error == nil, let value = characteristic.value else { return }
         if characteristic.uuid == ProtocolValue.linkCharacteristic {
             let response = String(decoding: value, as: UTF8.self)
-            if response.hasPrefix("badge:") { transferStatus = response }
+            if response.hasPrefix(ProtocolValue.controlVersion + "|") {
+                handleControlResponse(response)
+            } else if response.hasPrefix("badge:") {
+                transferStatus = response
+            }
         } else if characteristic.uuid == ProtocolValue.serialData {
             handleSerial(value)
         }
@@ -241,7 +329,7 @@ extension WatchBLEManager: CBPeripheralDelegate {
 
 private extension WatchBLEManager {
     enum BadgeError: LocalizedError {
-        case notConnected, timeout, disconnected, invalidResponse, rejected(UInt16), invalidImage
+        case notConnected, timeout, disconnected, invalidResponse, rejected(UInt16), invalidImage, controlRejected(String)
         var errorDescription: String? {
             switch self {
             case .notConnected: return "请先连接手表"
@@ -250,6 +338,7 @@ private extension WatchBLEManager {
             case .invalidResponse: return "手表响应格式错误"
             case .rejected(let code): return "手表拒绝传输，错误码 \(code)"
             case .invalidImage: return "无法处理这张图片"
+            case .controlRejected(let code): return "手表协议错误 \(code)"
             }
         }
     }

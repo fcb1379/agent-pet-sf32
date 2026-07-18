@@ -79,7 +79,8 @@ struct ContentView: View {
             .buttonStyle(.borderedProminent)
             .disabled(!watch.canUpload)
 
-            HStack {
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                Button("同步时间") { watch.syncTime() }
                 Button("刷新状态") { watch.requestStatus() }
                 Button("取消传输") { watch.cancelTransfer() }
                 Button("清除图片", role: .destructive) { watch.clearBadge() }
@@ -93,9 +94,10 @@ struct ContentView: View {
         List {
             LabeledContent("设备", value: watch.connectedName)
             LabeledContent("图片", value: watch.imageStatus)
+            LabeledContent("时间", value: watch.timeStatus)
             LabeledContent("传输", value: watch.transferStatus)
         }
-        .frame(height: 170)
+        .frame(height: 210)
         .listStyle(.plain)
     }
 

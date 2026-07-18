@@ -4,8 +4,10 @@ import {
   PHONE_TYPE_ANDROID,
   SERIAL_CATEGORY_WATCHFACE,
   WATCHFACE_TYPE_BACKGROUND,
+  controlRequest,
   joinBytes,
   makeUploadPayload,
+  parseControlResponse,
   serialCarrierFrames,
   u16,
   u32,
@@ -25,6 +27,7 @@ const elements = {
   refresh: document.querySelector("#refreshButton"),
   cancel: document.querySelector("#cancelButton"),
   clear: document.querySelector("#clearButton"),
+  syncTime: document.querySelector("#syncTimeButton"),
   canvas: document.querySelector("#previewCanvas"),
   empty: document.querySelector("#emptyPreview"),
   overlay: document.querySelector("#transferOverlay"),
@@ -33,6 +36,7 @@ const elements = {
   deviceName: document.querySelector("#deviceName"),
   imageInfo: document.querySelector("#imageInfo"),
   transferInfo: document.querySelector("#transferInfo"),
+  timeInfo: document.querySelector("#timeInfo"),
 };
 
 let device;
@@ -43,8 +47,10 @@ let serialAssembly;
 let uploadInProgress = false;
 const serialMessages = [];
 const serialWaiters = [];
+const controlWaiters = new Map();
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
+let nextControlRequestId = 1;
 
 function setTransferInfo(text) { elements.transferInfo.textContent = text; }
 function isConnected() { return Boolean(device?.gatt?.connected && linkCharacteristic && serialCharacteristic); }
@@ -56,6 +62,7 @@ function updateControls() {
   elements.refresh.disabled = !connected;
   elements.cancel.disabled = !connected;
   elements.clear.disabled = !connected;
+  elements.syncTime.disabled = !connected || uploadInProgress;
 }
 
 function setProgress(percent, detail) {
@@ -79,6 +86,11 @@ function rejectSerialWaiters(error) {
   while (serialWaiters.length) serialWaiters.pop().reject(error);
   serialMessages.length = 0;
   serialAssembly = undefined;
+}
+
+function rejectControlWaiters(error) {
+  for (const waiter of controlWaiters.values()) waiter.reject(error);
+  controlWaiters.clear();
 }
 
 function waitForWatchface(id, timeout = 8000) {
@@ -149,7 +161,59 @@ async function sendCommand(command) {
 
 function onLinkNotification(event) {
   const text = decoder.decode(event.target.value);
+  const control = parseControlResponse(text);
+  if (control) {
+    const waiter = controlWaiters.get(control.requestId);
+    if (waiter) {
+      controlWaiters.delete(control.requestId);
+      if (control.status === "OK") waiter.resolve(control.payload);
+      else waiter.reject(new Error(`手表协议错误 ${control.payload || "unknown"}`));
+    }
+    return;
+  }
   if (text.startsWith("badge:")) setTransferInfo(text);
+}
+
+function waitForControl(requestId, timeout = 6000) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      controlWaiters.delete(requestId);
+      reject(new Error("手表控制响应超时"));
+    }, timeout);
+    controlWaiters.set(requestId, {
+      resolve: (payload) => { clearTimeout(timer); resolve(payload); },
+      reject: (error) => { clearTimeout(timer); reject(error); },
+    });
+  });
+}
+
+async function sendControl(operation, payload = "") {
+  const requestId = nextControlRequestId;
+  nextControlRequestId = nextControlRequestId % 65535 + 1;
+  const response = waitForControl(requestId);
+  try {
+    await sendCommand(controlRequest(requestId, operation, payload));
+  } catch (error) {
+    const waiter = controlWaiters.get(requestId);
+    controlWaiters.delete(requestId);
+    waiter?.reject(error);
+    throw error;
+  }
+  return response;
+}
+
+function parseStatePayload(payload) {
+  return Object.fromEntries(payload.split(";").map((part) => part.split("=", 2)).filter(([key, value]) => key && value !== undefined));
+}
+
+async function syncTime() {
+  const epochSeconds = Math.floor(Date.now() / 1000);
+  const timezoneOffsetMinutes = -new Date().getTimezoneOffset();
+  setTransferInfo("正在同步时间");
+  const payload = await sendControl("TIME", `${epochSeconds},${timezoneOffsetMinutes}`);
+  const state = parseStatePayload(payload);
+  elements.timeInfo.textContent = state.time ? `${state.time} UTC${timezoneOffsetMinutes >= 0 ? "+" : ""}${timezoneOffsetMinutes / 60}` : "已同步";
+  setTransferInfo("时间已同步");
 }
 
 async function connect() {
@@ -162,6 +226,7 @@ async function connect() {
   setTransferInfo("正在连接手表");
   device.addEventListener("gattserverdisconnected", () => {
     rejectSerialWaiters(new Error("手表已断开连接"));
+    rejectControlWaiters(new Error("手表已断开连接"));
     linkCharacteristic = undefined;
     serialCharacteristic = undefined;
     elements.deviceName.textContent = "已断开";
@@ -181,6 +246,9 @@ async function connect() {
   elements.deviceName.textContent = device.name || "Huangshan Watch";
   setTransferInfo("已连接");
   updateControls();
+  const hello = await sendControl("HELLO");
+  setTransferInfo(`已连接 ${hello}`);
+  await syncTime();
   await sendCommand("badge");
 }
 
@@ -260,6 +328,7 @@ elements.send.addEventListener("click", () => uploadImage().catch((error) => { s
 elements.refresh.addEventListener("click", () => sendCommand("badge").catch((error) => { setTransferInfo(error.message); }));
 elements.cancel.addEventListener("click", () => sendCommand("badge cancel").catch((error) => { setTransferInfo(error.message); }));
 elements.clear.addEventListener("click", () => sendCommand("badge clear").catch((error) => { setTransferInfo(error.message); }));
+elements.syncTime.addEventListener("click", () => syncTime().catch((error) => { setTransferInfo(error.message); }));
 updateControls();
 
 if ("serviceWorker" in navigator) {

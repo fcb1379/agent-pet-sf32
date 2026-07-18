@@ -27,6 +27,8 @@
 #define WATCH_SETTINGS_KEY_LOCAL_VOL "local_vol"
 #define WATCH_SETTINGS_KEY_BT_VOL "bt_vol"
 #define WATCH_SETTINGS_KEY_ROUTE "route"
+#define WATCH_SETTINGS_KEY_TZ_OFFSET "tz_offset"
+#define WATCH_SETTINGS_KEY_TIME_SYNC "time_sync"
 
 typedef struct
 {
@@ -66,11 +68,26 @@ static watch_audio_route_t watch_settings_clamp_route(int32_t route)
     }
 }
 
+static int16_t watch_settings_clamp_timezone(int32_t offset_minutes)
+{
+    if (offset_minutes < -840)
+    {
+        return -840;
+    }
+    if (offset_minutes > 840)
+    {
+        return 840;
+    }
+    return (int16_t)offset_minutes;
+}
+
 static void watch_settings_load_defaults(watch_settings_snapshot_t *value)
 {
     value->local_volume = watch_settings_clamp_volume(WATCH_SETTINGS_DEFAULT_LOCAL_VOLUME);
     value->bt_volume = watch_settings_clamp_volume(WATCH_SETTINGS_DEFAULT_BT_VOLUME);
     value->route = WATCH_AUDIO_ROUTE_SPEAKER_ONLY;
+    value->timezone_offset_minutes = 0;
+    value->last_time_sync_epoch = 0;
 }
 
 static rt_err_t watch_settings_save_int_locked(const char *key, int32_t value)
@@ -180,6 +197,24 @@ rt_err_t watch_settings_set_route(watch_audio_route_t route)
     return ret == RT_EOK ? RT_EOK : ret;
 }
 
+rt_err_t watch_settings_set_time_sync(int16_t timezone_offset_minutes, uint32_t utc_epoch)
+{
+    rt_err_t timezone_ret;
+    rt_err_t epoch_ret;
+
+    timezone_offset_minutes = watch_settings_clamp_timezone(timezone_offset_minutes);
+    rt_mutex_take(&g_watch_settings.lock, RT_WAITING_FOREVER);
+    g_watch_settings.value.timezone_offset_minutes = timezone_offset_minutes;
+    g_watch_settings.value.last_time_sync_epoch = utc_epoch;
+    timezone_ret = watch_settings_save_int_locked(WATCH_SETTINGS_KEY_TZ_OFFSET, timezone_offset_minutes);
+    epoch_ret = watch_settings_save_int_locked(WATCH_SETTINGS_KEY_TIME_SYNC, (int32_t)utc_epoch);
+    rt_mutex_release(&g_watch_settings.lock);
+
+    LOG_I("time sync tz=%d epoch=%lu save=%d/%d", timezone_offset_minutes,
+          (unsigned long)utc_epoch, timezone_ret, epoch_ret);
+    return (timezone_ret == RT_EOK && epoch_ret == RT_EOK) ? RT_EOK : -RT_ERROR;
+}
+
 rt_err_t watch_settings_reset(void)
 {
     watch_settings_snapshot_t defaults;
@@ -194,6 +229,8 @@ rt_err_t watch_settings_reset(void)
         share_prefs_remove(g_watch_settings.prefs, WATCH_SETTINGS_KEY_LOCAL_VOL);
         share_prefs_remove(g_watch_settings.prefs, WATCH_SETTINGS_KEY_BT_VOL);
         share_prefs_remove(g_watch_settings.prefs, WATCH_SETTINGS_KEY_ROUTE);
+        share_prefs_remove(g_watch_settings.prefs, WATCH_SETTINGS_KEY_TZ_OFFSET);
+        share_prefs_remove(g_watch_settings.prefs, WATCH_SETTINGS_KEY_TIME_SYNC);
     }
     else
     {
@@ -239,6 +276,13 @@ static int watch_settings_init(void)
             watch_settings_clamp_route(share_prefs_get_int(g_watch_settings.prefs,
                                                            WATCH_SETTINGS_KEY_ROUTE,
                                                            defaults.route));
+        g_watch_settings.value.timezone_offset_minutes =
+            watch_settings_clamp_timezone(share_prefs_get_int(g_watch_settings.prefs,
+                                                              WATCH_SETTINGS_KEY_TZ_OFFSET,
+                                                              defaults.timezone_offset_minutes));
+        g_watch_settings.value.last_time_sync_epoch = (uint32_t)share_prefs_get_int(g_watch_settings.prefs,
+                                                                                     WATCH_SETTINGS_KEY_TIME_SYNC,
+                                                                                     defaults.last_time_sync_epoch);
     }
     else
     {

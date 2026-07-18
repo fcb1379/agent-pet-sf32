@@ -19,3 +19,7 @@ Run the project on a physical iPhone, select `Huangshan-Watch-BLE`, choose a
 photo, and send it. Simulator builds cannot exercise Bluetooth. The native client
 uses the negotiated CoreBluetooth write length, while the browser prototype keeps
 the conservative 20-byte ATT framing required by Web Bluetooth.
+
+After discovery, the client performs the `HWS1` capability handshake and writes
+the current iPhone Unix time plus timezone to the watch RTC. The control protocol
+is defined in `../../docs/huangshan-watch-protocol-v1.md`.

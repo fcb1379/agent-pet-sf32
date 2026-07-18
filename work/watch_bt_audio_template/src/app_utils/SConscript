@@ -22,7 +22,7 @@ if GetDepend('AUDIO_LOCAL_MUSIC'):
     src+=['local_music_player.c']
 
 if GetDepend('BSP_BLE_SIBLES'):
-    src+=['ble_watch_link.c']
+    src+=['ble_watch_link.c', 'watch_protocol.c']
 
 if GetDepend('BSP_BLE_WATCH_FACE'):
     src+=['badge_transfer.c']

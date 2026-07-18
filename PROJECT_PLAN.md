@@ -968,3 +968,29 @@ Result update on 2026-07-09:
   - BLE write `health`; expected response starts with `health:bt=` and recovery count
     increases after an A2DP disconnect or `recover bt`.
   - BLE write `recover bt`; expected `recover:bt:0` after the BT stack is ready.
+
+## Communication Protocol v1.0 and Phone App
+
+Status: implemented and software-verified on 2026-07-18; hardware and Xcode
+validation pending.
+
+- Added the versioned control-plane specification at
+  `docs/huangshan-watch-protocol-v1.md`.
+- The custom BLE characteristic now supports `HWS1` request/response frames with
+  `HELLO`, `TIME`, `STATE`, and `BADGE` operations. Existing text commands and
+  WFPUSH2 image transport remain compatible.
+- `TIME` accepts a UTC epoch plus phone UTC offset, updates the RTC to local time,
+  and persists the offset and last synchronization epoch in product preferences.
+- Updated the Android Chrome PWA and native iOS CoreBluetooth source to perform a
+  control handshake, synchronize time after connection, and use the protocol for
+  badge status, cancellation, and deletion.
+- Software checks passed: firmware build, JavaScript syntax checks, protocol test
+  vectors, Swift parser, and Git whitespace check.
+- Deferred hardware/Xcode validation:
+  - Connect an Android Chrome phone and confirm the time row changes to the local
+    time returned by the watch after automatic and manual synchronization.
+  - Reboot the watch and confirm its clock UI continues from the synchronized RTC.
+  - Confirm existing JPEG upload, cancellation, and deletion through the PWA still
+    work after the handshake.
+  - Build the iOS project in Xcode, then confirm the same handshake, time sync, and
+    image transfer on a physical iPhone.

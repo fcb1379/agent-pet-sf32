@@ -1,4 +1,5 @@
 export const SERIAL_CATEGORY_WATCHFACE = 0x04;
+export const CONTROL_PROTOCOL_VERSION = "HWS1";
 export const WATCHFACE_TYPE_BACKGROUND = 2;
 export const PHONE_TYPE_ANDROID = 2;
 export const CHUNK_SIZE = 180;
@@ -55,4 +56,19 @@ export function makeUploadPayload(jpeg) {
   const padding = (4 - (jpeg.length % 4)) % 4;
   const payload = joinBytes(jpeg, new Uint8Array(padding));
   return joinBytes(payload, u32(crc32Mpeg2(payload)));
+}
+
+export function controlRequest(requestId, operation, payload = "") {
+  const suffix = payload ? `|${payload}` : "";
+  return `${CONTROL_PROTOCOL_VERSION}|${requestId}|${operation}${suffix}`;
+}
+
+export function parseControlResponse(text) {
+  const parts = text.split("|");
+  if (parts.length < 3 || parts[0] !== CONTROL_PROTOCOL_VERSION || !/^\d+$/.test(parts[1])) return undefined;
+  return {
+    requestId: Number(parts[1]),
+    status: parts[2],
+    payload: parts.slice(3).join("|"),
+  };
 }

@@ -24,6 +24,7 @@
 #include "bt_audio_sink.h"
 #include "local_music_player.h"
 #include "watch_settings.h"
+#include "watch_protocol.h"
 
 #define LOG_TAG "ble_link"
 #include "log.h"
@@ -261,6 +262,12 @@ static void ble_link_handle_command(const char *payload)
     char *saveptr = NULL;
     int argc = 0;
     char rsp[96];
+
+    if (watch_protocol_handle_request(payload, rsp, sizeof(rsp)))
+    {
+        ble_link_notify(rsp);
+        return;
+    }
 
     rt_strncpy(cmd, payload, sizeof(cmd) - 1);
     cmd[sizeof(cmd) - 1] = '\0';

@@ -21,7 +21,7 @@ button, input { font: inherit; }
   padding: 22px 18px 28px;
 }
 
-.topbar, .secondary-actions, .device-status { display: flex; }
+.topbar, .device-status { display: flex; }
 
 .topbar {
   align-items: center;
@@ -92,8 +92,8 @@ h1 { margin: 0; font-size: 26px; font-weight: 700; }
 .file-control { background: #19212b; }
 .file-control input { position: absolute; width: 1px; height: 1px; opacity: 0; }
 .primary-action { border-color: #27a86b; background: #1c9e62; color: #06150d; font-weight: 700; }
-.secondary-actions { gap: 8px; }
-.secondary-action { flex: 1; min-height: 40px; background: #19212b; color: #e7edf4; }
+.secondary-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.secondary-action { min-width: 0; min-height: 40px; background: #19212b; color: #e7edf4; }
 .danger { color: #ffb4ad; }
 button:disabled {
   cursor: not-allowed;
@@ -121,6 +121,4 @@ button:disabled {
 
 @media (max-width: 360px) {
   .app-shell { padding-inline: 14px; }
-  .secondary-actions { flex-wrap: wrap; }
-  .secondary-action { min-width: calc(50% - 4px); }
 }

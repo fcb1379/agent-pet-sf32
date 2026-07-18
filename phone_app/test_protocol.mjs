@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 
 import {
   SERIAL_CATEGORY_WATCHFACE,
+  controlRequest,
   crc32Mpeg2,
   makeUploadPayload,
+  parseControlResponse,
   serialCarrierFrames,
   u32,
   watchfaceMessage,
@@ -12,6 +14,13 @@ import {
 const bytes = (...values) => Uint8Array.from(values);
 
 assert.equal(crc32Mpeg2(new TextEncoder().encode("123456789")), 0x0376e6e7);
+assert.equal(controlRequest(7, "TIME", "1700000000,480"), "HWS1|7|TIME|1700000000,480");
+assert.deepEqual(parseControlResponse("HWS1|7|OK|time=20260718T120000;tz=480"), {
+  requestId: 7,
+  status: "OK",
+  payload: "time=20260718T120000;tz=480",
+});
+assert.equal(parseControlResponse("badge:s=2"), undefined);
 assert.deepEqual([...watchfaceMessage(0, bytes(2, 0, 2, 12, 0, 0, 0))], [0, 0, 7, 0, 2, 0, 2, 12, 0, 0, 0]);
 
 const carrier = serialCarrierFrames(Uint8Array.from({ length: 36 }, (_, index) => index));
