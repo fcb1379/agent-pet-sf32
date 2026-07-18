@@ -1015,5 +1015,15 @@ Reliability pass on 2026-07-18:
     finish without a timeout and refresh must show `图片已保存`.
   - Press `取消传输` during a transfer; the last committed badge must remain intact.
   - Press `清除图片`, then `刷新状态`; the status must report no saved image.
-  - On iPhone, confirm the handshake does not begin before both notify subscriptions
+- On iPhone, confirm the handshake does not begin before both notify subscriptions
     are established, then repeat the image upload test.
+
+Native iOS project packaging on 2026-07-18:
+
+- Added `phone_app/ios/HuangshanBadge.xcodeproj` and the app `Info.plist`, so the
+  CoreBluetooth companion can be opened directly by Xcode instead of being copied
+  into a manually created project.
+- The target is iOS 16+, contains the Bluetooth privacy declaration, and includes
+  all three Swift source files.
+- Xcode is not installed on this Mac, so archive/signing and physical-iPhone
+  verification remain pending after a signing team is selected.
