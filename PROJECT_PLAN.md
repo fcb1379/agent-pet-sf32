@@ -1053,3 +1053,10 @@ Firmware protocol contract test on 2026-07-18:
   badge status formatting, action dispatch, malformed extra fields, invalid IDs,
   and the 64-byte custom characteristic response ceiling.
 - Latest local result: `watch protocol host tests passed`.
+
+PWA update reliability pass on 2026-07-18:
+
+- Changed the web companion service worker to a network-first cache strategy and
+  bumped its cache version. An installed companion now receives new control
+  features such as `同步时间` and `刷新状态` instead of remaining on a stale cached
+  HTML shell; offline use still falls back to the most recently cached assets.

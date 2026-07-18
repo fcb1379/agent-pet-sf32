@@ -26,10 +26,11 @@ contract is documented in `../docs/huangshan-watch-protocol-v1.md`.
 For the web companion, choose JPG, PNG, or WebP. HEIC selection is deliberately
 handled by the native iOS client because browser HEIC decoding is not consistent.
 
-The app has a web manifest and service-worker cache, so it can be installed as an
-Android PWA after serving it through HTTPS. `localhost` is sufficient for desktop
-development only; an Android phone needs an HTTPS host (for example, a GitHub
-Pages deployment) because Web Bluetooth is a secure-context API.
+The app has a web manifest and a network-first service-worker cache, so it can be
+installed as an Android PWA after serving it through HTTPS while still retaining
+an offline fallback. `localhost` is sufficient for desktop development only; an
+Android phone needs an HTTPS host (for example, a GitHub Pages deployment) because
+Web Bluetooth is a secure-context API.
 
 Run the protocol-only checks without a Bluetooth device:
 
