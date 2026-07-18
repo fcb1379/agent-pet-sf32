@@ -1060,3 +1060,12 @@ PWA update reliability pass on 2026-07-18:
   bumped its cache version. An installed companion now receives new control
   features such as `同步时间` and `刷新状态` instead of remaining on a stale cached
   HTML shell; offline use still falls back to the most recently cached assets.
+
+Board runtime observation on 2026-07-18:
+
+- Opened `/dev/cu.usbserial-10` read-only at 1,000,000 baud and received the
+  SFBL startup identity (`SFBL`, chip/package/revision fields). This confirms the
+  current serial boot path is alive after flashing.
+- No application log lines were emitted during the observation window. This is not
+  evidence of BLE, time synchronization, or image-transfer success; those remain
+  physical phone verification items.
