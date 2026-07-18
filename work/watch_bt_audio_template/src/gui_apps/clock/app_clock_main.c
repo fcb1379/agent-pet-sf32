@@ -545,7 +545,6 @@ static void app_clock_load_dyn_wf(void)
 #endif /* RT_USING_XIP_MODULE */
 
 /**********************regist app clock to app manager****************************/
-extern void app_clock_rotate_bg_register(void);
 #if 1//!(defined(PKG_USING_MICROPYTHON)||defined(PKG_USING_QUICKJS))
     extern void app_clock_simple_register(void);
     extern void app_clock_dial_register(void);
@@ -584,10 +583,6 @@ static void on_start(void)
     p_app_clock_main = (app_clock_main_t *) rt_malloc(sizeof(app_clock_main_t));
     memset(p_app_clock_main, 0, sizeof(app_clock_main_t));
     rt_list_init(&p_app_clock_main->list);
-#if (LV_HOR_RES_MAX < 512)&&(LV_VER_RES_MAX < 512)
-    app_clock_rotate_bg_register();
-#endif
-
 #if 1//!(defined(PKG_USING_MICROPYTHON)||defined(PKG_USING_QUICKJS))
     app_clock_simple_register();
     app_clock_dial_register();
@@ -778,5 +773,4 @@ void app_clock_img_cache_free(lv_img_dsc_t *p_img)
     }
 }
 #endif
-
 

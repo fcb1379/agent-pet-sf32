@@ -492,10 +492,7 @@ void app_watch_entry(void *parameter)
         wait_platform_init_done();
     }
 #else
-    {
-        set_date(2022, 7, 1);
-        set_time(9, 0, 0);
-    }
+    /* Keep the RTC value restored by hardware or phone synchronization. */
 #endif /* _MSC_VER */
 
     init_pin();

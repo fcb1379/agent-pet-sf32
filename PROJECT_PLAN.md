@@ -195,6 +195,8 @@ Status: calculator implemented; boot-time phone time synchronization implemented
 - Persist the last Android companion device and reconnect when the app starts or the watch reconnects after a restart. Done in the Android companion.
 - Send `HWS1|0|TIME_REQ` after the watch control notifications are enabled; the Android companion answers with the phone's Unix time and local UTC offset. Done; requires a connected Android companion for physical verification.
 - Add a list-style launcher using the same registered, functional apps as the icon launcher. Done; double-clicking the physical button while in the launcher toggles between list and icon layouts. The list currently uses Latin labels because its embedded Montserrat font has no Chinese glyph coverage; a left swipe returns to the clock face.
+- Remove the first rotating-background clock face from the home clock carousel. Done; the simple clock is now the first selectable face.
+- Preserve RTC values across boot. Done; removed the development-only fixed 2022-07-01 09:00 RTC initialization that was overwriting phone time synchronization on every hardware reboot.
 
 ## Open Questions
 
