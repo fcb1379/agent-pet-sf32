@@ -17,6 +17,10 @@ which already has framing, acknowledgement, and CRC support.
 All frames are UTF-8 ASCII and must be no longer than 63 bytes excluding the
 terminating NUL byte used by the watch implementation.
 
+The watch requests ATT MTU exchange immediately after a BLE connection. Clients
+must wait until GATT service/notification setup completes before sending control
+frames; the application protocol itself does not fragment a control frame.
+
 Request:
 
 ```text

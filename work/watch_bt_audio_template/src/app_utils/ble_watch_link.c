@@ -544,6 +544,7 @@ static int ble_link_event_handler(uint16_t event_id, uint8_t *data, uint16_t len
         env->is_connected = 1;
         env->conn_idx = ind->conn_idx;
         env->conn_interval = ind->con_interval;
+        sibles_exchange_mtu(env->conn_idx);
         LOG_I("BLE connected conn=%d interval=%d", env->conn_idx, env->conn_interval);
         break;
     }

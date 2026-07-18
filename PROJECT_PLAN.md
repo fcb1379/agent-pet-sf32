@@ -1035,3 +1035,11 @@ Native image-transfer backpressure pass on 2026-07-18:
   serialized with-response writes if that is the only supported mode.
 - Disconnect and write errors resume pending continuations so an interrupted upload
   reports an error rather than waiting for a stale timeout.
+
+ATT MTU reliability pass on 2026-07-18:
+
+- The watch now proactively requests ATT MTU exchange in its BLE connection event,
+  matching SiFli's throughput and ping-pong examples. This makes v1 control-frame
+  writes and notifications reliable without assuming a phone initiated negotiation.
+- Hardware verification: connect once from Android and once from iPhone, then check
+  the watch log for `BLE MTU=<value>` before sending `TIME` or a badge command.
