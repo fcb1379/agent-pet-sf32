@@ -29,6 +29,9 @@
 #define WATCH_SETTINGS_KEY_ROUTE "route"
 #define WATCH_SETTINGS_KEY_TZ_OFFSET "tz_offset"
 #define WATCH_SETTINGS_KEY_TIME_SYNC "time_sync"
+#define WATCH_SETTINGS_KEY_ALARM_ENABLED "alarm_enabled"
+#define WATCH_SETTINGS_KEY_ALARM_HOUR "alarm_hour"
+#define WATCH_SETTINGS_KEY_ALARM_MINUTE "alarm_minute"
 
 typedef struct
 {
@@ -81,6 +84,16 @@ static int16_t watch_settings_clamp_timezone(int32_t offset_minutes)
     return (int16_t)offset_minutes;
 }
 
+static uint8_t watch_settings_clamp_alarm_hour(int32_t hour)
+{
+    return hour < 0 ? 0 : (hour > 23 ? 23 : (uint8_t)hour);
+}
+
+static uint8_t watch_settings_clamp_alarm_minute(int32_t minute)
+{
+    return minute < 0 ? 0 : (minute > 59 ? 59 : (uint8_t)minute);
+}
+
 static void watch_settings_load_defaults(watch_settings_snapshot_t *value)
 {
     value->local_volume = watch_settings_clamp_volume(WATCH_SETTINGS_DEFAULT_LOCAL_VOLUME);
@@ -88,6 +101,9 @@ static void watch_settings_load_defaults(watch_settings_snapshot_t *value)
     value->route = WATCH_AUDIO_ROUTE_SPEAKER_ONLY;
     value->timezone_offset_minutes = 0;
     value->last_time_sync_epoch = 0;
+    value->alarm_enabled = 0;
+    value->alarm_hour = 7;
+    value->alarm_minute = 0;
 }
 
 static rt_err_t watch_settings_save_int_locked(const char *key, int32_t value)
@@ -215,6 +231,30 @@ rt_err_t watch_settings_set_time_sync(int16_t timezone_offset_minutes, uint32_t 
     return (timezone_ret == RT_EOK && epoch_ret == RT_EOK) ? RT_EOK : -RT_ERROR;
 }
 
+rt_err_t watch_settings_set_alarm(uint8_t enabled, uint8_t hour, uint8_t minute)
+{
+    rt_err_t enabled_ret;
+    rt_err_t hour_ret;
+    rt_err_t minute_ret;
+
+    hour = watch_settings_clamp_alarm_hour(hour);
+    minute = watch_settings_clamp_alarm_minute(minute);
+    rt_mutex_take(&g_watch_settings.lock, RT_WAITING_FOREVER);
+    g_watch_settings.value.alarm_enabled = enabled ? 1 : 0;
+    g_watch_settings.value.alarm_hour = hour;
+    g_watch_settings.value.alarm_minute = minute;
+    enabled_ret = watch_settings_save_int_locked(WATCH_SETTINGS_KEY_ALARM_ENABLED,
+                                                 g_watch_settings.value.alarm_enabled);
+    hour_ret = watch_settings_save_int_locked(WATCH_SETTINGS_KEY_ALARM_HOUR, hour);
+    minute_ret = watch_settings_save_int_locked(WATCH_SETTINGS_KEY_ALARM_MINUTE, minute);
+    rt_mutex_release(&g_watch_settings.lock);
+
+    LOG_I("alarm enabled=%d time=%02d:%02d save=%d/%d/%d", enabled ? 1 : 0,
+          hour, minute, enabled_ret, hour_ret, minute_ret);
+    return (enabled_ret == RT_EOK && hour_ret == RT_EOK && minute_ret == RT_EOK) ?
+           RT_EOK : -RT_ERROR;
+}
+
 rt_err_t watch_settings_reset(void)
 {
     watch_settings_snapshot_t defaults;
@@ -231,6 +271,9 @@ rt_err_t watch_settings_reset(void)
         share_prefs_remove(g_watch_settings.prefs, WATCH_SETTINGS_KEY_ROUTE);
         share_prefs_remove(g_watch_settings.prefs, WATCH_SETTINGS_KEY_TZ_OFFSET);
         share_prefs_remove(g_watch_settings.prefs, WATCH_SETTINGS_KEY_TIME_SYNC);
+        share_prefs_remove(g_watch_settings.prefs, WATCH_SETTINGS_KEY_ALARM_ENABLED);
+        share_prefs_remove(g_watch_settings.prefs, WATCH_SETTINGS_KEY_ALARM_HOUR);
+        share_prefs_remove(g_watch_settings.prefs, WATCH_SETTINGS_KEY_ALARM_MINUTE);
     }
     else
     {
@@ -283,6 +326,15 @@ static int watch_settings_init(void)
         g_watch_settings.value.last_time_sync_epoch = (uint32_t)share_prefs_get_int(g_watch_settings.prefs,
                                                                                      WATCH_SETTINGS_KEY_TIME_SYNC,
                                                                                      defaults.last_time_sync_epoch);
+        g_watch_settings.value.alarm_enabled = share_prefs_get_int(g_watch_settings.prefs,
+                                                                    WATCH_SETTINGS_KEY_ALARM_ENABLED,
+                                                                    defaults.alarm_enabled) ? 1 : 0;
+        g_watch_settings.value.alarm_hour = watch_settings_clamp_alarm_hour(
+            share_prefs_get_int(g_watch_settings.prefs, WATCH_SETTINGS_KEY_ALARM_HOUR,
+                                 defaults.alarm_hour));
+        g_watch_settings.value.alarm_minute = watch_settings_clamp_alarm_minute(
+            share_prefs_get_int(g_watch_settings.prefs, WATCH_SETTINGS_KEY_ALARM_MINUTE,
+                                 defaults.alarm_minute));
     }
     else
     {

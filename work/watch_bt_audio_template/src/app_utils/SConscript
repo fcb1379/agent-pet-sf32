@@ -13,7 +13,7 @@ if GetDepend('BSP_BT_APP') and os.path.exists(os.path.join(cwd, 'bt_app.c')):
     src+=['bt_app.c']
 
 if GetDepend('BSP_SHARE_PREFS'):
-    src+=['watch_settings.c']
+    src+=['watch_settings.c', 'watch_alarm_service.c']
 
 if GetDepend('CFG_AV_SNK'):
     src+=['bt_audio_sink.c']

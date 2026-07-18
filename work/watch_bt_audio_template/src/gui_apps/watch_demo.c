@@ -12,6 +12,7 @@
 #include "app_mem.h"
 #include "log.h"
 #include "lv_freetype.h"
+#include "watch_alarm_service.h"
 #include <string.h>
 
 #ifdef BSP_USING_PM
@@ -496,6 +497,7 @@ void app_watch_entry(void *parameter)
 #endif /* _MSC_VER */
 
     init_pin();
+    watch_alarm_service_init();
     lcd_device = rt_device_find(LCD_DEVICE_NAME);
 
 #ifdef BSP_USING_PM

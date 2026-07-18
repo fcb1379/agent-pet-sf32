@@ -50,5 +50,7 @@
     "status":"状态",
     "music":"音乐",
     "calculator":"计算器",
+    "timer":"计时器",
+    "alarm_app":"闹钟",
     "lvgl_demos":"LVGL示例DEMO"
 }

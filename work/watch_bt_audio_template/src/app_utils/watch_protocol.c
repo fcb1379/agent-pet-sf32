@@ -6,6 +6,7 @@
 
 #include "badge_transfer.h"
 #include "watch_protocol.h"
+#include "watch_alarm_service.h"
 #include "watch_settings.h"
 
 #define LOG_TAG "watch.proto"
@@ -170,6 +171,67 @@ static int watch_protocol_state(char *result, size_t result_size)
     return RT_EOK;
 }
 
+static int watch_protocol_alarm(const char *payload, char *result, size_t result_size)
+{
+    watch_alarm_snapshot_t snapshot;
+    char value[20];
+    char *first;
+    char *second;
+    long hour;
+    long minute;
+    int ret;
+
+    if (!payload || strcmp(payload, "STATUS") == 0)
+    {
+        watch_alarm_get_snapshot(&snapshot);
+        rt_snprintf(result, result_size, "enabled=%d;time=%02d%02d;ring=%d",
+                    snapshot.alarm_enabled, snapshot.alarm_hour, snapshot.alarm_minute,
+                    snapshot.alarm_ringing);
+        return RT_EOK;
+    }
+    if (strcmp(payload, "OFF") == 0)
+    {
+        watch_alarm_get_snapshot(&snapshot);
+        ret = watch_alarm_set(0, snapshot.alarm_hour, snapshot.alarm_minute);
+    }
+    else if (strcmp(payload, "DISMISS") == 0)
+    {
+        ret = watch_alarm_dismiss();
+    }
+    else if (rt_strncmp(payload, "ON,", 3) == 0 && rt_strlen(payload) < sizeof(value))
+    {
+        rt_strncpy(value, payload + 3, sizeof(value) - 1);
+        value[sizeof(value) - 1] = '\0';
+        first = value;
+        second = strchr(first, ',');
+        if (!second)
+        {
+            return -RT_EINVAL;
+        }
+        *second++ = '\0';
+        if (watch_protocol_parse_long(first, 0, 23, &hour) != RT_EOK ||
+                watch_protocol_parse_long(second, 0, 59, &minute) != RT_EOK)
+        {
+            return -RT_EINVAL;
+        }
+        ret = watch_alarm_set(1, (uint8_t)hour, (uint8_t)minute);
+    }
+    else
+    {
+        return -RT_EINVAL;
+    }
+
+    if (ret != RT_EOK)
+    {
+        return ret;
+    }
+    watch_alarm_get_snapshot(&snapshot);
+    rt_snprintf(result, result_size, "enabled=%d;time=%02d%02d;ring=%d",
+                snapshot.alarm_enabled, snapshot.alarm_hour, snapshot.alarm_minute,
+                snapshot.alarm_ringing);
+    return RT_EOK;
+}
+
 static int watch_protocol_badge(const char *payload, char *result, size_t result_size)
 {
     badge_transfer_snapshot_t badge;
@@ -253,7 +315,7 @@ int watch_protocol_handle_request(const char *request, char *response, size_t re
     if (strcmp(parts[2], "HELLO") == 0 && count == 3)
     {
         watch_protocol_ok(response, response_size, parts[1],
-                          "model=HS52;cap=TIME,BADGE,STATE,TIME_REQ");
+                          "model=HS52;cap=TIME,BADGE,STATE,ALARM,TIME_REQ");
     }
     else if (strcmp(parts[2], "TIME") == 0 && count == 4)
     {
@@ -277,6 +339,19 @@ int watch_protocol_handle_request(const char *request, char *response, size_t re
         else
         {
             watch_protocol_error(response, response_size, parts[1], WATCH_PROTOCOL_ERR_RUNTIME);
+        }
+    }
+    else if (strcmp(parts[2], "ALARM") == 0 && (count == 3 || count == 4))
+    {
+        ret = watch_protocol_alarm(count == 4 ? parts[3] : "STATUS", result, sizeof(result));
+        if (ret == RT_EOK)
+        {
+            watch_protocol_ok(response, response_size, parts[1], result);
+        }
+        else
+        {
+            watch_protocol_error(response, response_size, parts[1],
+                                 ret == -RT_EINVAL ? WATCH_PROTOCOL_ERR_INVALID_VALUE : WATCH_PROTOCOL_ERR_RUNTIME);
         }
     }
     else if (strcmp(parts[2], "BADGE") == 0 && (count == 3 || count == 4))

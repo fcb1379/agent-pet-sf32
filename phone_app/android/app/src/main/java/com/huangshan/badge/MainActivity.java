@@ -2,6 +2,7 @@ package com.huangshan.badge;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.TimePickerDialog;
 import android.bluetooth.BluetoothAdapter;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -26,6 +27,7 @@ import android.widget.Toast;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.util.List;
+import java.util.Calendar;
 
 public final class MainActivity extends Activity implements WatchBleClient.Listener {
     private static final int REQUEST_BLUETOOTH = 100;
@@ -37,6 +39,7 @@ public final class MainActivity extends Activity implements WatchBleClient.Liste
     private TextView imageValue;
     private TextView transferValue;
     private TextView timeValue;
+    private TextView alarmValue;
     private TextView progressValue;
     private ProgressBar progress;
     private LinearLayout deviceList;
@@ -45,6 +48,8 @@ public final class MainActivity extends Activity implements WatchBleClient.Liste
     private Button refreshButton;
     private Button cancelButton;
     private Button clearButton;
+    private Button alarmButton;
+    private Button alarmOffButton;
     private byte[] preparedJpeg;
 
     @Override protected void onCreate(Bundle state) {
@@ -52,7 +57,7 @@ public final class MainActivity extends Activity implements WatchBleClient.Liste
         watch = new WatchBleClient(this, this);
         setContentView(buildContent());
         updateControls();
-        if (hasBluetoothPermission()) watch.reconnectLastWatch();
+        if (hasBluetoothPermission() && !watch.reconnectLastWatch()) beginScan();
     }
 
     @Override protected void onDestroy() {
@@ -135,6 +140,17 @@ public final class MainActivity extends Activity implements WatchBleClient.Liste
         imageValue = statusRow(root, "图片", "尚未选择");
         transferValue = statusRow(root, "传输", "等待连接");
         timeValue = statusRow(root, "时间", "等待同步");
+        alarmValue = statusRow(root, "闹钟", "等待连接");
+
+        LinearLayout alarmActions = new LinearLayout(this);
+        alarmActions.setOrientation(LinearLayout.HORIZONTAL);
+        alarmButton = smallButton("设置闹钟");
+        alarmButton.setOnClickListener(view -> selectAlarmTime());
+        alarmOffButton = smallButton("关闭闹钟");
+        alarmOffButton.setOnClickListener(view -> watch.disableAlarm());
+        alarmActions.addView(alarmButton, weightParams(0, -2, 1, 8));
+        alarmActions.addView(alarmOffButton, weightParams(0, -2, 1, 0));
+        root.addView(alarmActions, params(-1, -2, 8));
         return scroll;
     }
 
@@ -155,6 +171,12 @@ public final class MainActivity extends Activity implements WatchBleClient.Liste
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType("image/*");
         startActivityForResult(intent, REQUEST_IMAGE);
+    }
+
+    private void selectAlarmTime() {
+        Calendar now = Calendar.getInstance();
+        new TimePickerDialog(this, (view, hour, minute) -> watch.setAlarm(hour, minute),
+                now.get(Calendar.HOUR_OF_DAY), now.get(Calendar.MINUTE), true).show();
     }
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
@@ -236,6 +258,7 @@ public final class MainActivity extends Activity implements WatchBleClient.Liste
 
     @Override public void onTransfer(String text) { transferValue.setText(text); }
     @Override public void onTime(String text) { timeValue.setText(text); }
+    @Override public void onAlarm(String text) { alarmValue.setText(text); }
     @Override public void onProgress(int percent) {
         progress.setProgress(percent);
         progressValue.setText(percent + "%");
@@ -253,6 +276,8 @@ public final class MainActivity extends Activity implements WatchBleClient.Liste
         if (refreshButton != null) refreshButton.setEnabled(connected);
         if (cancelButton != null) cancelButton.setEnabled(connected);
         if (clearButton != null) clearButton.setEnabled(connected);
+        if (alarmButton != null) alarmButton.setEnabled(connected);
+        if (alarmOffButton != null) alarmOffButton.setEnabled(connected);
     }
 
     private TextView statusRow(LinearLayout root, String label, String value) {

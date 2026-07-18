@@ -50,5 +50,7 @@
     "status":"Status",
     "music":"Music",
     "calculator":"Calculator",
+    "timer":"Timer",
+    "alarm_app":"Alarm",
     "lvgl_demos":"LVGL demos"
 }

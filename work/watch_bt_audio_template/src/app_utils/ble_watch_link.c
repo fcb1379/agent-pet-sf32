@@ -214,6 +214,14 @@ static void ble_link_notify(const char *text)
     }
 }
 
+void ble_link_notify_event(const char *text)
+{
+    if (text)
+    {
+        ble_link_notify(text);
+    }
+}
+
 static int ble_link_ams_cmd_from_name(const char *name, uint8_t *cmd)
 {
     if (strcmp(name, "play") == 0)

@@ -264,6 +264,14 @@ static const char *app_mainmenu_display_name(const builtin_app_desc_t *app)
     {
         return "Calculator";
     }
+    if (strcmp(app->id, "timer") == 0)
+    {
+        return "Timer";
+    }
+    if (strcmp(app->id, "alarm") == 0)
+    {
+        return "Alarm";
+    }
 
     return app->id;
 }

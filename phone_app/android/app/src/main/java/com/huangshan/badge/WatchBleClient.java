@@ -39,6 +39,7 @@ final class WatchBleClient {
         void onConnection(String text, boolean connected);
         void onTransfer(String text);
         void onTime(String text);
+        void onAlarm(String text);
         void onProgress(int percent);
         void onError(String text);
     }
@@ -179,7 +180,16 @@ final class WatchBleClient {
             String state = sendControl("STATE", "");
             publishState(state);
             postTransfer(formatBadgeStatus(sendControl("BADGE", "STATUS")));
+            publishAlarm(sendControl("ALARM", ""));
         });
+    }
+
+    void setAlarm(int hour, int minute) {
+        runWorker(() -> publishAlarm(sendControl("ALARM", "ON," + hour + "," + minute)));
+    }
+
+    void disableAlarm() {
+        runWorker(() -> publishAlarm(sendControl("ALARM", "OFF")));
     }
 
     void cancelTransfer() {
@@ -368,6 +378,7 @@ final class WatchBleClient {
     private void refreshStateInternal() throws Exception {
         publishState(sendControl("STATE", ""));
         postTransfer(formatBadgeStatus(sendControl("BADGE", "STATUS")));
+        publishAlarm(sendControl("ALARM", ""));
     }
 
     private String sendControl(String operation, String payload) throws Exception {
@@ -437,6 +448,10 @@ final class WatchBleClient {
                 }
                 return;
             }
+            if (requestId == 0 && "ALARM".equals(fields[2])) {
+                postAlarm("RING".equals(joinFields(fields, 3)) ? "闹钟响铃" : joinFields(fields, 3));
+                return;
+            }
             CompletableFuture<String> waiter = controlWaiters.get(requestId);
             if (waiter == null) return;
             String payload = joinFields(fields, 3);
@@ -486,6 +501,22 @@ final class WatchBleClient {
         postTime(payload.isEmpty() ? "等待同步" : payload);
     }
 
+    private void publishAlarm(String payload) {
+        Map<String, String> values = new LinkedHashMap<>();
+        for (String field : payload.split(";")) {
+            String[] pair = field.split("=", 2);
+            if (pair.length == 2) values.put(pair[0], pair[1]);
+        }
+        String time = values.get("time");
+        if (time != null && time.length() == 4) {
+            String state = "1".equals(values.get("enabled")) ? "开启" : "关闭";
+            if ("1".equals(values.get("ring"))) state = "响铃中";
+            postAlarm(time.substring(0, 2) + ":" + time.substring(2) + " " + state);
+        } else {
+            postAlarm(payload.isEmpty() ? "未设置" : payload);
+        }
+    }
+
     private static String formatBadgeStatus(String payload) {
         Map<String, String> values = new LinkedHashMap<>();
         for (String field : payload.split(";")) {
@@ -528,6 +559,7 @@ final class WatchBleClient {
     private void postConnection(String text, boolean connected) { main.post(() -> listener.onConnection(text, connected)); }
     private void postTransfer(String text) { main.post(() -> listener.onTransfer(text)); }
     private void postTime(String text) { main.post(() -> listener.onTime(text)); }
+    private void postAlarm(String text) { main.post(() -> listener.onAlarm(text)); }
     private void postProgress(int percent) { main.post(() -> listener.onProgress(percent)); }
     private void reportError(String text) { main.post(() -> listener.onError(text)); }
 

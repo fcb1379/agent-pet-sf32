@@ -197,6 +197,9 @@ Status: calculator implemented; boot-time phone time synchronization implemented
 - Add a list-style launcher using the same registered, functional apps as the icon launcher. Done; double-clicking the physical button while in the launcher toggles between list and icon layouts. The list currently uses Latin labels because its embedded Montserrat font has no Chinese glyph coverage; a left swipe returns to the clock face.
 - Remove the first rotating-background clock face from the home clock carousel. Done; the simple clock is now the first selectable face.
 - Preserve RTC values across boot. Done; removed the development-only fixed 2022-07-01 09:00 RTC initialization that was overwriting phone time synchronization on every hardware reboot.
+- Add a countdown timer and a daily alarm. Done; the Timer and Alarm launcher apps use the background alarm service, alert through the existing local-audio path, and provide generated icons.
+- Support alarm configuration from the Android companion. Done; `HWS1` now supports `ALARM` status, enable, disable, and dismiss commands, and the native Android app provides a system time picker plus an alarm status row.
+- Manual verification pending: set a one-minute timer from the watch and confirm the countdown and speaker alert; set the alarm one minute ahead from the Android app, reboot the watch, and confirm the stored daily alarm still rings and reports its state after reconnecting.
 
 ## Open Questions
 
