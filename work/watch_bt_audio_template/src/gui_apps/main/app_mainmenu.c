@@ -272,6 +272,10 @@ static const char *app_mainmenu_display_name(const builtin_app_desc_t *app)
     {
         return "Alarm";
     }
+    if (strcmp(app->id, "pet") == 0)
+    {
+        return "Momo";
+    }
 
     return app->id;
 }

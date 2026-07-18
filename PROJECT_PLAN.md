@@ -1122,6 +1122,18 @@ Native Android physical verification on 2026-07-19:
 - A fresh `BADGE|STATUS` query returned `i=1;s=2;r=1680;t=1680;e=0`, confirming
   the 1,680-byte payload is persistently saved and the transfer is complete.
 
+## Desktop Pet
+
+Status: implemented on 2026-07-19; physical display verification pending.
+
+- Added the original `Momo` desktop pet application with a generated menu icon.
+- The pet uses LVGL object animations rather than a large GIF: idle bobbing, tail
+  wagging, blinking, and three floating sparkle loops run while the application is
+  open.
+- Manual verification: open `Momo` from both menu layouts, leave it visible for at
+  least one minute, and confirm there are no frame trails, stalls, or return-swipe
+  regressions.
+
 Board runtime observation on 2026-07-18:
 
 - Opened `/dev/cu.usbserial-10` read-only at 1,000,000 baud and received the

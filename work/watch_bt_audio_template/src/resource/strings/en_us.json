@@ -52,5 +52,6 @@
     "calculator":"Calculator",
     "timer":"Timer",
     "alarm_app":"Alarm",
+    "pet":"Momo",
     "lvgl_demos":"LVGL demos"
 }

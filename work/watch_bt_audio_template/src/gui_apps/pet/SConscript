@@ -1,0 +1,9 @@
+from building import *
+import os
+
+cwd = GetCurrentDir()
+src = Glob('*.c')
+
+group = DefineGroup('App_watch_demo', src, depend = [''], CPPPATH = [cwd])
+
+Return('group')

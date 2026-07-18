@@ -52,5 +52,6 @@
     "calculator":"计算器",
     "timer":"计时器",
     "alarm_app":"闹钟",
+    "pet":"萌宠",
     "lvgl_demos":"LVGL示例DEMO"
 }
