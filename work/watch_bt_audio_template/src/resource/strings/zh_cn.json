@@ -49,5 +49,6 @@
     "badge":"电子吧唧",
     "status":"状态",
     "music":"音乐",
+    "calculator":"计算器",
     "lvgl_demos":"LVGL示例DEMO"
 }

@@ -49,5 +49,6 @@
     "badge":"Badge",
     "status":"Status",
     "music":"Music",
+    "calculator":"Calculator",
     "lvgl_demos":"LVGL demos"
 }

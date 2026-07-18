@@ -12,6 +12,7 @@ import android.bluetooth.le.BluetoothLeScanner;
 import android.bluetooth.le.ScanCallback;
 import android.bluetooth.le.ScanResult;
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.os.Handler;
 import android.os.Looper;
 
@@ -31,6 +32,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 final class WatchBleClient {
+    private static final String PREFS_NAME = "huangshan_watch";
+    private static final String PREF_LAST_DEVICE = "last_device";
     interface Listener {
         void onDevices(List<Device> devices);
         void onConnection(String text, boolean connected);
@@ -53,6 +56,7 @@ final class WatchBleClient {
     private static final UUID CCCD_UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
     private final Context context;
     private final Listener listener;
+    private final SharedPreferences preferences;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final Map<String, Device> devices = new LinkedHashMap<>();
@@ -73,11 +77,14 @@ final class WatchBleClient {
     private boolean serialNotificationsEnabled;
     private boolean serviceDiscoveryRequested;
     private boolean scanning;
+    private boolean reconnectEnabled;
+    private boolean timeSyncRequested;
     private volatile boolean ready;
 
     WatchBleClient(Context context, Listener listener) {
         this.context = context.getApplicationContext();
         this.listener = listener;
+        this.preferences = this.context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         BluetoothManager manager = context.getSystemService(BluetoothManager.class);
         adapter = manager == null ? null : manager.getAdapter();
     }
@@ -115,12 +122,37 @@ final class WatchBleClient {
 
     void connect(Device device) {
         stopScan();
-        disconnect();
-        postConnection("正在连接 " + device.name, false);
-        gatt = device.bluetoothDevice.connectGatt(context, false, gattCallback, BluetoothDevice.TRANSPORT_LE);
+        closeGatt();
+        reconnectEnabled = true;
+        preferences.edit().putString(PREF_LAST_DEVICE, device.bluetoothDevice.getAddress()).apply();
+        connectDevice(device.bluetoothDevice, device.name);
+    }
+
+    boolean reconnectLastWatch() {
+        String address = preferences.getString(PREF_LAST_DEVICE, null);
+
+        if (!isBluetoothEnabled() || address == null || address.isEmpty()) return false;
+        try {
+            reconnectEnabled = true;
+            closeGatt();
+            connectDevice(adapter.getRemoteDevice(address), "黄山手表");
+            return true;
+        } catch (IllegalArgumentException | SecurityException error) {
+            return false;
+        }
+    }
+
+    private void connectDevice(BluetoothDevice device, String name) {
+        postConnection("正在连接 " + name, false);
+        gatt = device.connectGatt(context, false, gattCallback, BluetoothDevice.TRANSPORT_LE);
     }
 
     void disconnect() {
+        reconnectEnabled = false;
+        closeGatt();
+    }
+
+    private void closeGatt() {
         ready = false;
         serviceDiscoveryRequested = false;
         BluetoothGatt current = gatt;
@@ -212,6 +244,10 @@ final class WatchBleClient {
 
     private final BluetoothGattCallback gattCallback = new BluetoothGattCallback() {
         @Override public void onConnectionStateChange(BluetoothGatt callbackGatt, int status, int newState) {
+            if (callbackGatt != gatt) {
+                if (newState == BluetoothProfile.STATE_DISCONNECTED) callbackGatt.close();
+                return;
+            }
             if (status == BluetoothGatt.GATT_SUCCESS && newState == BluetoothProfile.STATE_CONNECTED) {
                 postConnection("已连接，正在发现服务", false);
                 serviceDiscoveryRequested = false;
@@ -220,8 +256,13 @@ final class WatchBleClient {
             }
             ready = false;
             if (newState == BluetoothProfile.STATE_DISCONNECTED) {
+                gatt = null;
+                callbackGatt.close();
                 postConnection("已断开", false);
                 resetWaiters(new IllegalStateException("手表已断开连接"));
+                if (reconnectEnabled) {
+                    main.postDelayed(() -> reconnectLastWatch(), 2500);
+                }
             } else {
                 reportError("蓝牙连接失败，错误码 " + status);
             }
@@ -312,6 +353,7 @@ final class WatchBleClient {
             postTransfer("正在初始化手表连接");
             sendControl("HELLO", "");
             synchronizeTimeInternal();
+            timeSyncRequested = false;
             refreshStateInternal();
         });
     }
@@ -385,6 +427,16 @@ final class WatchBleClient {
         }
         try {
             int requestId = Integer.parseInt(fields[1]);
+            if (requestId == 0 && "TIME_REQ".equals(fields[2])) {
+                timeSyncRequested = true;
+                if (isReady()) {
+                    runWorker(() -> {
+                        synchronizeTimeInternal();
+                        timeSyncRequested = false;
+                    });
+                }
+                return;
+            }
             CompletableFuture<String> waiter = controlWaiters.get(requestId);
             if (waiter == null) return;
             String payload = joinFields(fields, 3);

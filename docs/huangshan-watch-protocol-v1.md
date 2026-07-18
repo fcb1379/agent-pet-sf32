@@ -49,6 +49,12 @@ HWS1|<request-id>|OK[|<payload>]
 HWS1|<request-id>|ERR|<error-code>
 ```
 
+The watch may also send the unsolicited notification `HWS1|0|TIME_REQ` after a
+BLE connection is established. A companion that receives it must reply with a
+normal `TIME` request after it has finished GATT setup. The Android companion
+also remembers the last watch address and reconnects to satisfy this request
+after either device restarts.
+
 `request-id` is a decimal integer in the range `1..65535`. The phone must use a
 new id for every outstanding request and match the response id. The watch handles
 one request per GATT write; clients should serialize requests.
@@ -66,7 +72,7 @@ Error codes:
 
 | Operation | Payload | Response payload | Purpose |
 | --- | --- | --- | --- |
-| `HELLO` | none | `model=HS52;cap=TIME,BADGE,STATE` | Capability handshake after connect. |
+| `HELLO` | none | `model=HS52;cap=TIME,BADGE,STATE,TIME_REQ` | Capability handshake after connect. |
 | `TIME` | `<unix-seconds>,<utc-offset-minutes>` | `time=YYYYMMDDTHHMMSS;tz=<minutes>` | Set the watch local RTC time. The phone sends UTC Unix seconds and its offset east of UTC. |
 | `STATE` | none | `time=...;tz=...;img=<0|1>` | Read the current local watch time, saved timezone offset, and badge availability. |
 | `BADGE` | `STATUS`, `CLEAR`, or `CANCEL` | `i=<0|1>;s=<state>;r=<bytes>;t=<bytes>;e=<error>` for `STATUS`, or `action=<...>` | Control the image-transfer session; image payloads use WFPUSH2. |

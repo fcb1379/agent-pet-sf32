@@ -52,6 +52,7 @@ public final class MainActivity extends Activity implements WatchBleClient.Liste
         watch = new WatchBleClient(this, this);
         setContentView(buildContent());
         updateControls();
+        if (hasBluetoothPermission()) watch.reconnectLastWatch();
     }
 
     @Override protected void onDestroy() {
@@ -213,7 +214,9 @@ public final class MainActivity extends Activity implements WatchBleClient.Liste
 
     @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(requestCode, permissions, results);
-        if (requestCode == REQUEST_BLUETOOTH && hasBluetoothPermission()) beginScan();
+        if (requestCode == REQUEST_BLUETOOTH && hasBluetoothPermission()) {
+            if (!watch.reconnectLastWatch()) beginScan();
+        }
         else if (requestCode == REQUEST_BLUETOOTH) onError("需要蓝牙附近设备权限才能连接手表");
     }
 

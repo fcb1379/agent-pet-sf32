@@ -473,6 +473,8 @@ static uint8_t ble_link_gatts_set_cbk(uint8_t conn_idx, sibles_set_cbk_t *para)
         {
             rt_timer_start(env->notify_timer);
             ble_link_notify("watch-ble-ready");
+            /* The companion replies with TIME after its control channel is ready. */
+            ble_link_notify("HWS1|0|TIME_REQ");
         }
         else
         {

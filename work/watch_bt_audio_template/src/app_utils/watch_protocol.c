@@ -253,7 +253,7 @@ int watch_protocol_handle_request(const char *request, char *response, size_t re
     if (strcmp(parts[2], "HELLO") == 0 && count == 3)
     {
         watch_protocol_ok(response, response_size, parts[1],
-                          "model=HS52;cap=TIME,BADGE,STATE");
+                          "model=HS52;cap=TIME,BADGE,STATE,TIME_REQ");
     }
     else if (strcmp(parts[2], "TIME") == 0 && count == 4)
     {
