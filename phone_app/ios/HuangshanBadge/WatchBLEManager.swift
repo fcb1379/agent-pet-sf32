@@ -4,10 +4,10 @@ import UIKit
 @MainActor
 final class WatchBLEManager: NSObject, ObservableObject {
     private enum ProtocolValue {
-        static let linkService = CBUUID(string: "48535741-5443-485F-4C49-4E4B00000001")
-        static let linkCharacteristic = CBUUID(string: "48535741-5443-485F-4C49-4E4B00000002")
-        static let serialService = CBUUID(string: "7369666C-695F-7364-0000-000000000000")
-        static let serialData = CBUUID(string: "7369666C-695F-7364-0002-000000000000")
+        static let linkService = CBUUID(string: "01000000-4B4E-494C-5F48-435441575348")
+        static let linkCharacteristic = CBUUID(string: "02000000-4B4E-494C-5F48-435441575348")
+        static let serialService = CBUUID(string: "00000000-0000-0000-6473-5F696C666973")
+        static let serialData = CBUUID(string: "00000000-0000-0200-6473-5F696C666973")
         static let serialCategoryWatchface: UInt8 = 0x04
         static let controlVersion = "HWS1"
         static let backgroundFileType: UInt16 = 2
@@ -436,8 +436,8 @@ private extension WatchBLEManager {
     static func watchfaceMessage(_ id: UInt16, _ data: Data) -> Data { u16(id) + u16(UInt16(data.count)) + data }
 
     static func requireSuccess(_ message: Data) throws {
-        guard message.count >= 6 else { throw BadgeError.invalidResponse }
-        let status = readU16(message, at: 4)
+        guard message.count >= 4 else { throw BadgeError.invalidResponse }
+        let status = readU16(message, at: 2)
         if status != 0 { throw BadgeError.rejected(status) }
     }
 

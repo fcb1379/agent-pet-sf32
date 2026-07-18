@@ -1,8 +1,12 @@
 import {
   CHUNK_SIZE,
+  LINK_CHARACTERISTIC_UUID,
+  LINK_SERVICE_UUID,
   MAX_IMAGE_SIZE,
   PHONE_TYPE_ANDROID,
   SERIAL_CATEGORY_WATCHFACE,
+  SERIAL_DATA_UUID,
+  SERIAL_SERVICE_UUID,
   WATCHFACE_TYPE_BACKGROUND,
   controlRequest,
   joinBytes,
@@ -12,12 +16,13 @@ import {
   u16,
   u32,
   watchfaceMessage,
+  watchfaceResponseStatus,
 } from "./protocol.js";
 
-const LINK_SERVICE = "48535741-5443-485f-4c49-4e4b00000001";
-const LINK_CHARACTERISTIC = "48535741-5443-485f-4c49-4e4b00000002";
-const SERIAL_SERVICE = "7369666c-695f-7364-0000-000000000000";
-const SERIAL_DATA = "7369666c-695f-7364-0002-000000000000";
+const LINK_SERVICE = LINK_SERVICE_UUID;
+const LINK_CHARACTERISTIC = LINK_CHARACTERISTIC_UUID;
+const SERIAL_SERVICE = SERIAL_SERVICE_UUID;
+const SERIAL_DATA = SERIAL_DATA_UUID;
 
 const elements = {
   connect: document.querySelector("#connectButton"),
@@ -54,6 +59,14 @@ let nextControlRequestId = 1;
 
 function setTransferInfo(text) { elements.transferInfo.textContent = text; }
 function isConnected() { return Boolean(device?.gatt?.connected && linkCharacteristic && serialCharacteristic); }
+
+async function getRequiredService(server, uuid) {
+  const services = await server.getPrimaryServices();
+  const service = services.find((candidate) => candidate.uuid === uuid);
+  if (service) return service;
+  const available = services.map((candidate) => candidate.uuid).join(", ");
+  throw new Error(`未找到服务 ${uuid}；已发现：${available || "无"}`);
+}
 
 function updateControls() {
   const connected = isConnected();
@@ -157,8 +170,12 @@ async function sendSerialRequest(payload, responseId) {
 }
 
 function responseStatus(message) {
-  if (message.length < 6) throw new Error("手表响应格式错误");
-  const status = new DataView(message.buffer, message.byteOffset, message.byteLength).getUint16(4, true);
+  let status;
+  try {
+    status = watchfaceResponseStatus(message);
+  } catch {
+    throw new Error("手表响应格式错误");
+  }
   if (status !== 0) throw new Error(`手表拒绝传输，错误码 ${status}`);
 }
 
@@ -276,11 +293,11 @@ async function connect() {
   });
   const server = await device.gatt.connect();
   setTransferInfo("正在读取手表服务");
-  const linkService = await server.getPrimaryService(LINK_SERVICE);
+  const linkService = await getRequiredService(server, LINK_SERVICE);
   linkCharacteristic = await linkService.getCharacteristic(LINK_CHARACTERISTIC);
   await linkCharacteristic.startNotifications();
   linkCharacteristic.addEventListener("characteristicvaluechanged", onLinkNotification);
-  const serialService = await server.getPrimaryService(SERIAL_SERVICE);
+  const serialService = await getRequiredService(server, SERIAL_SERVICE);
   serialCharacteristic = await serialService.getCharacteristic(SERIAL_DATA);
   await serialCharacteristic.startNotifications();
   serialCharacteristic.addEventListener("characteristicvaluechanged", onSerialNotification);

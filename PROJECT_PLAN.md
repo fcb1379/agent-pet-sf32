@@ -1071,6 +1071,26 @@ Android PWA deployment path on 2026-07-18:
   Bluetooth's secure-context requirement without a LAN server or self-signed
   certificate.
 
+Native Android companion on 2026-07-19:
+
+- Added `phone_app/android/`, a standalone Android 8.0+ native companion with no
+  browser or Web Bluetooth dependency. The product path is now the native app;
+  the PWA remains a protocol-development tool only.
+- The app uses Android BLE GATT to scan `Huangshan-Watch-BLE`, discovers the
+  SiFli byte-order-correct custom and serial UUIDs, subscribes to both notify
+  characteristics, and automatically runs `HELLO`, `TIME`, `STATE`, and
+  `BADGE|STATUS` after connecting.
+- It uses the system document picker, center-crops selected images to 240 x 240,
+  JPEG-encodes locally, then sends the padded CRC-protected WFPUSH2 payload with
+  serial acknowledgements, cancel, clear, and status actions.
+- Installed the required local Android toolchain (JDK 17, Android API 35,
+  Build Tools 34, Gradle wrapper with reachable mirrors). The initial debug APK
+  builds successfully and has been installed on the connected Pixel 4 as
+  `com.huangshan.badge`.
+- Pending Pixel verification after Nearby devices permission is granted: scan and
+  connect the watch, confirm automatic time synchronization, select a JPEG, and
+  confirm the transfer completes with `图片已保存到手表`.
+
 Board runtime observation on 2026-07-18:
 
 - Opened `/dev/cu.usbserial-10` read-only at 1,000,000 baud and received the

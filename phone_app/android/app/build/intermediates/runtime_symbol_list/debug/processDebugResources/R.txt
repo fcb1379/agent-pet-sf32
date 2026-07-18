@@ -1,0 +1,6 @@
+int color app_accent 0x7f010000
+int color app_background 0x7f010001
+int color app_muted 0x7f010002
+int color app_surface 0x7f010003
+int color app_text 0x7f010004
+int style AppTheme 0x7f020000

@@ -56,6 +56,7 @@ const struct dfs_mount_tbl mount_table[] =
 };
 #endif
 #ifdef RT_USING_DFS
+#include "dfs_fs.h"
 #include "dfs_file.h"
 #include "dfs_posix.h"
 #ifndef BSP_USING_PC_SIMULATOR
@@ -113,9 +114,17 @@ int auto_mnt_init(void)
     {
         if (NULL == name[i]) continue;
 
-        if (dfs_mount(name[i], "/", type, 0, 0) == 0) // fs exist
+        if (dfs_mount(name[i], "/", type, 0, 0) == 0) // fs exists
         {
             rt_kprintf("mount fs on %s to root success\n", name[i]);
+            break;
+        }
+        /* flash0 is the dedicated image-storage partition; format it only on first use. */
+        if (strcmp(name[i], "flash0") == 0 &&
+                dfs_mkfs(type, name[i]) == 0 &&
+                dfs_mount(name[i], "/", type, 0, 0) == 0)
+        {
+            rt_kprintf("format and mount fs on %s to root success\n", name[i]);
             break;
         }
         else

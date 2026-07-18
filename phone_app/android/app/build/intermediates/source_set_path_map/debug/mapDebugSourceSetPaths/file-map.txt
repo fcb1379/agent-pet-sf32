@@ -1,0 +1,7 @@
+com.huangshan.badge.app-pngs-0 /Users/reus/Documents/Codex/2026-07-07/https-oshwhub-com-li-chuang-kai-2/phone_app/android/app/build/generated/res/pngs/debug
+com.huangshan.badge.app-resValues-1 /Users/reus/Documents/Codex/2026-07-07/https-oshwhub-com-li-chuang-kai-2/phone_app/android/app/build/generated/res/resValues/debug
+com.huangshan.badge.app-packageDebugResources-2 /Users/reus/Documents/Codex/2026-07-07/https-oshwhub-com-li-chuang-kai-2/phone_app/android/app/build/intermediates/incremental/debug/packageDebugResources/merged.dir
+com.huangshan.badge.app-packageDebugResources-3 /Users/reus/Documents/Codex/2026-07-07/https-oshwhub-com-li-chuang-kai-2/phone_app/android/app/build/intermediates/incremental/debug/packageDebugResources/stripped.dir
+com.huangshan.badge.app-debug-4 /Users/reus/Documents/Codex/2026-07-07/https-oshwhub-com-li-chuang-kai-2/phone_app/android/app/build/intermediates/merged_res/debug/mergeDebugResources
+com.huangshan.badge.app-debug-5 /Users/reus/Documents/Codex/2026-07-07/https-oshwhub-com-li-chuang-kai-2/phone_app/android/app/src/debug/res
+com.huangshan.badge.app-main-6 /Users/reus/Documents/Codex/2026-07-07/https-oshwhub-com-li-chuang-kai-2/phone_app/android/app/src/main/res

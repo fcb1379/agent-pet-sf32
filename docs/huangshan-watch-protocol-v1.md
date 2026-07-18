@@ -3,14 +3,23 @@
 ## Scope
 
 This protocol defines the phone-to-watch application control plane. It is carried
-by the writable/notifiable custom GATT characteristic:
+by the writable/notifiable custom GATT characteristic. SiFli stores UUID bytes
+LSB-first; Web Bluetooth and CoreBluetooth clients must use the displayed UUIDs:
 
-- Service: `48535741-5443-485f-4c49-4e4b00000001`
-- Characteristic: `48535741-5443-485f-4c49-4e4b00000002`
+| Endpoint | SiFli LSB-first bytes | Web Bluetooth / CoreBluetooth UUID |
+| --- | --- | --- |
+| Control service | `48 53 57 41 54 43 48 5f 4c 49 4e 4b 00 00 00 01` | `01000000-4b4e-494c-5f48-435441575348` |
+| Control characteristic | `48 53 57 41 54 43 48 5f 4c 49 4e 4b 00 00 00 02` | `02000000-4b4e-494c-5f48-435441575348` |
+| SiFli serial service | `73 69 66 6c 69 5f 73 64 00 00 00 00 00 00 00 00` | `00000000-0000-0000-6473-5f696c666973` |
+| SiFli serial data | `73 69 66 6c 69 5f 73 64 00 02 00 00 00 00 00 00` | `00000000-0000-0200-6473-5f696c666973` |
 
 The characteristic is deliberately used for compact control messages only. Image
 bytes continue to use the SiFli serial/WFPUSH2 GATT service (category `0x04`),
 which already has framing, acknowledgement, and CRC support.
+
+Each WFPUSH2 acknowledgement begins with a little-endian `uint16` command id
+followed by a little-endian `uint16` status. Clients must read the status at
+byte offset 2; start acknowledgements append transfer-capability fields after it.
 
 ## Control Frames
 

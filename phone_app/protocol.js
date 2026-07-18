@@ -5,6 +5,18 @@ export const PHONE_TYPE_ANDROID = 2;
 export const CHUNK_SIZE = 180;
 export const MAX_IMAGE_SIZE = 2 * 1024 * 1024 - 4;
 
+export function bluetoothUuidFromSifliLsb(rawUuid) {
+  const hex = rawUuid.replaceAll("-", "").toLowerCase();
+  if (!/^[0-9a-f]{32}$/.test(hex)) throw new Error("invalid SiFli UUID");
+  const bytes = hex.match(/../g).reverse().join("");
+  return `${bytes.slice(0, 8)}-${bytes.slice(8, 12)}-${bytes.slice(12, 16)}-${bytes.slice(16, 20)}-${bytes.slice(20)}`;
+}
+
+export const LINK_SERVICE_UUID = bluetoothUuidFromSifliLsb("48535741-5443-485f-4c49-4e4b00000001");
+export const LINK_CHARACTERISTIC_UUID = bluetoothUuidFromSifliLsb("48535741-5443-485f-4c49-4e4b00000002");
+export const SERIAL_SERVICE_UUID = bluetoothUuidFromSifliLsb("7369666c-695f-7364-0000-000000000000");
+export const SERIAL_DATA_UUID = bluetoothUuidFromSifliLsb("7369666c-695f-7364-0002-000000000000");
+
 export function u16(value) {
   const bytes = new Uint8Array(2);
   new DataView(bytes.buffer).setUint16(0, value, true);
@@ -38,6 +50,11 @@ export function crc32Mpeg2(data) {
 
 export function watchfaceMessage(id, data = new Uint8Array()) {
   return joinBytes(u16(id), u16(data.length), data);
+}
+
+export function watchfaceResponseStatus(message) {
+  if (message.length < 4) throw new Error("invalid watchface response");
+  return new DataView(message.buffer, message.byteOffset, message.byteLength).getUint16(2, true);
 }
 
 export function serialCarrierFrames(payload) {
