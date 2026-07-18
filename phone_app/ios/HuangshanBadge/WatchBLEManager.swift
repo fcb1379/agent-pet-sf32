@@ -94,7 +94,7 @@ final class WatchBLEManager: NSObject, ObservableObject {
         do {
             let padding = Data(repeating: 0, count: (4 - jpeg.count % 4) % 4)
             let payload = jpeg + padding
-            let upload = payload + Self.u32(Self.crc32Mpeg2(payload))
+            let upload = payload + Self.u32BE(Self.crc32Mpeg2(payload))
             transferStatus = "建立传输"
             try Self.requireSuccess(try await sendSerialRequest(Self.watchfaceMessage(0, Self.u16(ProtocolValue.backgroundFileType) + Data([ProtocolValue.phoneTypeIOS]) + Self.u32(UInt32(upload.count))), responseId: 1))
             try Self.requireSuccess(try await sendSerialRequest(Self.watchfaceMessage(2, Self.u32(UInt32(upload.count)) + Self.u16(9) + Data("badge.jpg".utf8)), responseId: 3))
@@ -431,6 +431,7 @@ private extension WatchBLEManager {
 
     static func u16(_ value: UInt16) -> Data { withUnsafeBytes(of: value.littleEndian, { Data($0) }) }
     static func u32(_ value: UInt32) -> Data { withUnsafeBytes(of: value.littleEndian, { Data($0) }) }
+    static func u32BE(_ value: UInt32) -> Data { withUnsafeBytes(of: value.bigEndian, { Data($0) }) }
     static func readU16(_ data: Data, at offset: Int) -> UInt16 { UInt16(data[offset]) | UInt16(data[offset + 1]) << 8 }
 
     static func watchfaceMessage(_ id: UInt16, _ data: Data) -> Data { u16(id) + u16(UInt16(data.count)) + data }

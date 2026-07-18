@@ -21,6 +21,12 @@ Each WFPUSH2 acknowledgement begins with a little-endian `uint16` command id
 followed by a little-endian `uint16` status. Clients must read the status at
 byte offset 2; start acknowledgements append transfer-capability fields after it.
 
+WFPUSH2 file sizes, packet indexes, and message fields are little-endian. The
+four-byte MPEG-2 CRC32 appended after the padded JPEG payload is the exception:
+it is encoded big-endian (network byte order). The watch compares it as
+`(byte[0] << 24) | ... | byte[3]`; writing this field little-endian yields
+`CRC_CALCULATE_ERROR` (status `36`) near the final packet.
+
 ## Control Frames
 
 All frames are UTF-8 ASCII and must be no longer than 63 bytes excluding the

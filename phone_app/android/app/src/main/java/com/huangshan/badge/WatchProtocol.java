@@ -29,6 +29,10 @@ final class WatchProtocol {
         return ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt((int) value).array();
     }
 
+    static byte[] u32be(long value) {
+        return ByteBuffer.allocate(4).order(ByteOrder.BIG_ENDIAN).putInt((int) value).array();
+    }
+
     static int readU16(byte[] bytes, int offset) {
         return (bytes[offset] & 0xff) | ((bytes[offset + 1] & 0xff) << 8);
     }
@@ -64,7 +68,7 @@ final class WatchProtocol {
     static byte[] makeUpload(byte[] jpeg) {
         int padding = (4 - jpeg.length % 4) % 4;
         byte[] padded = join(jpeg, new byte[padding]);
-        return join(padded, u32(crc32Mpeg2(padded)));
+        return join(padded, u32be(crc32Mpeg2(padded)));
     }
 
     static long crc32Mpeg2(byte[] bytes) {

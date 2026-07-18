@@ -1091,6 +1091,23 @@ Native Android companion on 2026-07-19:
   connect the watch, confirm automatic time synchronization, select a JPEG, and
   confirm the transfer completes with `图片已保存到手表`.
 
+Native Android physical verification on 2026-07-19:
+
+- On the connected Pixel 4, granted Nearby devices permission and discovered
+  `Huangshan-Watch-BLE` directly from the native app.
+- Verified the custom/serial GATT services, both notification subscriptions,
+  MTU request, `HELLO`, automatic `TIME`, and `BADGE|STATUS`. The watch returned
+  its synchronized local clock through the native UI.
+- A first 1 KB JPEG transfer reached 96% and returned status `36`. SDK enum
+  review identified that code as `CRC_CALCULATE_ERROR`, not a storage error: the
+  WFPUSH2 trailing MPEG-2 CRC32 must be big-endian while other numeric fields
+  are little-endian.
+- Corrected the CRC byte order in the Android, iOS, and PWA clients and added a
+  protocol vector. The repaired Android APK transferred the same image to 100%
+  and reported `图片已保存到手表`.
+- A fresh `BADGE|STATUS` query returned `i=1;s=2;r=1680;t=1680;e=0`, confirming
+  the 1,680-byte payload is persistently saved and the transfer is complete.
+
 Board runtime observation on 2026-07-18:
 
 - Opened `/dev/cu.usbserial-10` read-only at 1,000,000 baud and received the

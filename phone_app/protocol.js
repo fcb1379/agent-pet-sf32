@@ -29,6 +29,12 @@ export function u32(value) {
   return bytes;
 }
 
+export function u32be(value) {
+  const bytes = new Uint8Array(4);
+  new DataView(bytes.buffer).setUint32(0, value, false);
+  return bytes;
+}
+
 export function joinBytes(...parts) {
   const size = parts.reduce((sum, part) => sum + part.length, 0);
   const result = new Uint8Array(size);
@@ -72,7 +78,8 @@ export function serialCarrierFrames(payload) {
 export function makeUploadPayload(jpeg) {
   const padding = (4 - (jpeg.length % 4)) % 4;
   const payload = joinBytes(jpeg, new Uint8Array(padding));
-  return joinBytes(payload, u32(crc32Mpeg2(payload)));
+  // WFPUSH2 stores its final MPEG-2 CRC32 in network byte order.
+  return joinBytes(payload, u32be(crc32Mpeg2(payload)));
 }
 
 export function controlRequest(requestId, operation, payload = "") {

@@ -72,6 +72,7 @@ final class WatchBleClient {
     private boolean linkNotificationsEnabled;
     private boolean serialNotificationsEnabled;
     private boolean serviceDiscoveryRequested;
+    private boolean scanning;
     private volatile boolean ready;
 
     WatchBleClient(Context context, Listener listener) {
@@ -90,6 +91,7 @@ final class WatchBleClient {
     }
 
     void startScan() {
+        if (scanning) return;
         if (!isBluetoothEnabled()) {
             reportError("请先开启手机蓝牙");
             return;
@@ -102,11 +104,13 @@ final class WatchBleClient {
         synchronized (devices) { devices.clear(); }
         publishDevices();
         scanner.startScan(scanCallback);
+        scanning = true;
         postTransfer("正在搜索 Huangshan-Watch-BLE");
     }
 
     void stopScan() {
-        if (scanner != null) scanner.stopScan(scanCallback);
+        if (scanner != null && scanning) scanner.stopScan(scanCallback);
+        scanning = false;
     }
 
     void connect(Device device) {
@@ -142,7 +146,7 @@ final class WatchBleClient {
         runWorker(() -> {
             String state = sendControl("STATE", "");
             publishState(state);
-            postTransfer(sendControl("BADGE", "STATUS"));
+            postTransfer(formatBadgeStatus(sendControl("BADGE", "STATUS")));
         });
     }
 
@@ -201,6 +205,7 @@ final class WatchBleClient {
         }
 
         @Override public void onScanFailed(int errorCode) {
+            scanning = false;
             reportError("蓝牙扫描失败，错误码 " + errorCode);
         }
     };
@@ -320,7 +325,7 @@ final class WatchBleClient {
 
     private void refreshStateInternal() throws Exception {
         publishState(sendControl("STATE", ""));
-        postTransfer(sendControl("BADGE", "STATUS"));
+        postTransfer(formatBadgeStatus(sendControl("BADGE", "STATUS")));
     }
 
     private String sendControl(String operation, String payload) throws Exception {
@@ -427,6 +432,22 @@ final class WatchBleClient {
             }
         }
         postTime(payload.isEmpty() ? "等待同步" : payload);
+    }
+
+    private static String formatBadgeStatus(String payload) {
+        Map<String, String> values = new LinkedHashMap<>();
+        for (String field : payload.split(";")) {
+            String[] pair = field.split("=", 2);
+            if (pair.length == 2) values.put(pair[0], pair[1]);
+        }
+        if (!values.containsKey("i")) return payload;
+        if (!"0".equals(values.getOrDefault("e", "0"))) {
+            return "传输错误，代码 " + values.get("e");
+        }
+        String bytes = values.getOrDefault("r", "0") + " / " + values.getOrDefault("t", "0") + " B";
+        if ("1".equals(values.get("i"))) return "图片已保存（" + bytes + "）";
+        if ("1".equals(values.get("s"))) return "正在接收图片（" + bytes + "）";
+        return "尚未保存图片";
     }
 
     private void runWorker(ThrowingRunnable work) {
