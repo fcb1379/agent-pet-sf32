@@ -1043,3 +1043,13 @@ ATT MTU reliability pass on 2026-07-18:
   writes and notifications reliable without assuming a phone initiated negotiation.
 - Hardware verification: connect once from Android and once from iPhone, then check
   the watch log for `BLE MTU=<value>` before sending `TIME` or a badge command.
+
+Firmware protocol contract test on 2026-07-18:
+
+- Added `tests/run_watch_protocol_host_test.sh`, which compiles the production
+  protocol handler against host mocks rather than testing a copied parser.
+- The test verifies handshake capability output, UTC-plus-offset conversion,
+  persistence after successful RTC writes only, runtime/validation errors, compact
+  badge status formatting, action dispatch, malformed extra fields, invalid IDs,
+  and the 64-byte custom characteristic response ceiling.
+- Latest local result: `watch protocol host tests passed`.

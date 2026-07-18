@@ -83,3 +83,17 @@ watch's local RTC value and persists both the offset and source UTC timestamp.
   when those services require it.
 - Future privileged operations must require an authenticated/bonded session and
   allocate a new v2 capability instead of silently changing v1 semantics.
+
+## Contract Tests
+
+Run the firmware-side host contract test from the repository root before changing
+this protocol implementation:
+
+```sh
+sh tests/run_watch_protocol_host_test.sh
+```
+
+It compiles the production `watch_protocol.c` with mocked RTC, settings, and badge
+storage dependencies. The test covers handshake, valid and failed time writes,
+status formatting, badge actions, malformed frames, error codes, and the 64-byte
+custom-characteristic response limit.
