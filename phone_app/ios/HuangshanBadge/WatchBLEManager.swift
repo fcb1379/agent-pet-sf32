@@ -38,6 +38,8 @@ final class WatchBLEManager: NSObject, ObservableObject {
     private var serialAssembly: (expected: Int, data: Data)?
     private var waitingResponses: [UInt16: (id: UUID, continuation: CheckedContinuation<Data, Error>)] = [:]
     private var waitingControls: [Int: (id: UUID, continuation: CheckedContinuation<String, Error>)] = [:]
+    private var serialReadyWaiter: (id: UUID, continuation: CheckedContinuation<Void, Error>)?
+    private var serialWriteWaiter: (id: UUID, continuation: CheckedContinuation<Void, Error>)?
     private var nextControlRequestId = 1
     private var linkNotificationsEnabled = false
     private var serialNotificationsEnabled = false
@@ -182,23 +184,65 @@ final class WatchBLEManager: NSObject, ObservableObject {
         }
     }
 
-    private func sendSerial(_ payload: Data) throws {
+    private func sendSerial(_ payload: Data) async throws {
         guard let peripheral, let characteristic = serialCharacteristic else { throw BadgeError.notConnected }
         let writeType: CBCharacteristicWriteType = characteristic.properties.contains(.writeWithoutResponse) ? .withoutResponse : .withResponse
         let maximumPacket = peripheral.maximumWriteValueLength(for: writeType)
         let firstCapacity = max(1, maximumPacket - 4)
         let continuationCapacity = max(1, maximumPacket - 2)
         if payload.count <= firstCapacity {
-            peripheral.writeValue(Data([ProtocolValue.serialCategoryWatchface, 0]) + Self.u16(UInt16(payload.count)) + payload, for: characteristic, type: writeType)
+            try await writeSerialPacket(Data([ProtocolValue.serialCategoryWatchface, 0]) + Self.u16(UInt16(payload.count)) + payload,
+                                        peripheral: peripheral, characteristic: characteristic, type: writeType)
             return
         }
         var offset = firstCapacity
-        peripheral.writeValue(Data([ProtocolValue.serialCategoryWatchface, 1]) + Self.u16(UInt16(payload.count)) + payload.prefix(firstCapacity), for: characteristic, type: writeType)
+        try await writeSerialPacket(Data([ProtocolValue.serialCategoryWatchface, 1]) + Self.u16(UInt16(payload.count)) + payload.prefix(firstCapacity),
+                                    peripheral: peripheral, characteristic: characteristic, type: writeType)
         while offset < payload.count {
             let end = min(offset + continuationCapacity, payload.count)
             let flag: UInt8 = end == payload.count ? 3 : 2
-            peripheral.writeValue(Data([ProtocolValue.serialCategoryWatchface, flag]) + Data(payload[offset..<end]), for: characteristic, type: writeType)
+            try await writeSerialPacket(Data([ProtocolValue.serialCategoryWatchface, flag]) + Data(payload[offset..<end]),
+                                        peripheral: peripheral, characteristic: characteristic, type: writeType)
             offset = end
+        }
+    }
+
+    private func writeSerialPacket(_ packet: Data, peripheral: CBPeripheral, characteristic: CBCharacteristic,
+                                   type: CBCharacteristicWriteType) async throws {
+        if type == .withoutResponse {
+            while !peripheral.canSendWriteWithoutResponse {
+                try await waitForSerialWriteAvailability(peripheral)
+            }
+            peripheral.writeValue(packet, for: characteristic, type: .withoutResponse)
+            return
+        }
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            let token = UUID()
+            serialWriteWaiter = (token, continuation)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in
+                guard let response = self?.serialWriteWaiter, response.id == token else { return }
+                self?.serialWriteWaiter = nil
+                response.continuation.resume(throwing: BadgeError.timeout)
+            }
+            peripheral.writeValue(packet, for: characteristic, type: .withResponse)
+        }
+    }
+
+    private func waitForSerialWriteAvailability(_ peripheral: CBPeripheral) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            let token = UUID()
+            serialReadyWaiter = (token, continuation)
+            if peripheral.canSendWriteWithoutResponse {
+                serialReadyWaiter = nil
+                continuation.resume()
+                return
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in
+                guard let response = self?.serialReadyWaiter, response.id == token else { return }
+                self?.serialReadyWaiter = nil
+                response.continuation.resume(throwing: BadgeError.timeout)
+            }
         }
     }
 
@@ -211,11 +255,14 @@ final class WatchBLEManager: NSObject, ObservableObject {
                 self?.waitingResponses[responseId] = nil
                 response.continuation.resume(throwing: BadgeError.timeout)
             }
-            do {
-                try sendSerial(payload)
-            } catch {
-                self.waitingResponses[responseId] = nil
-                continuation.resume(throwing: error)
+            Task {
+                do {
+                    try await self.sendSerial(payload)
+                } catch {
+                    guard let response = self.waitingResponses[responseId], response.id == token else { return }
+                    self.waitingResponses[responseId] = nil
+                    response.continuation.resume(throwing: error)
+                }
             }
         }
     }
@@ -260,6 +307,10 @@ final class WatchBLEManager: NSObject, ObservableObject {
         waitingResponses.removeAll()
         waitingControls.values.forEach { $0.continuation.resume(throwing: BadgeError.disconnected) }
         waitingControls.removeAll()
+        serialReadyWaiter?.continuation.resume(throwing: BadgeError.disconnected)
+        serialReadyWaiter = nil
+        serialWriteWaiter?.continuation.resume(throwing: BadgeError.disconnected)
+        serialWriteWaiter = nil
         serialAssembly = nil
         linkCharacteristic = nil
         serialCharacteristic = nil
@@ -329,6 +380,22 @@ extension WatchBLEManager: CBPeripheralDelegate {
         didBootstrapControlPlane = true
         transferStatus = "已连接"
         Task { await bootstrapControlPlane() }
+    }
+
+    func peripheralIsReady(toSendWriteWithoutResponse peripheral: CBPeripheral) {
+        guard let response = serialReadyWaiter else { return }
+        serialReadyWaiter = nil
+        response.continuation.resume()
+    }
+
+    func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: Error?) {
+        guard characteristic.uuid == ProtocolValue.serialData, let response = serialWriteWaiter else { return }
+        serialWriteWaiter = nil
+        if let error {
+            response.continuation.resume(throwing: error)
+        } else {
+            response.continuation.resume()
+        }
     }
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {

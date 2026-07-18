@@ -1027,3 +1027,11 @@ Native iOS project packaging on 2026-07-18:
   all three Swift source files.
 - Xcode is not installed on this Mac, so archive/signing and physical-iPhone
   verification remain pending after a signing team is selected.
+
+Native image-transfer backpressure pass on 2026-07-18:
+
+- The iOS client now waits for `peripheralIsReady(toSendWriteWithoutResponse:)`
+  whenever CoreBluetooth's no-response write queue is full, and falls back to
+  serialized with-response writes if that is the only supported mode.
+- Disconnect and write errors resume pending continuations so an interrupted upload
+  reports an error rather than waiting for a stale timeout.

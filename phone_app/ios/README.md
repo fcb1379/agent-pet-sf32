@@ -19,5 +19,5 @@ the conservative 20-byte ATT framing required by Web Bluetooth.
 After both control and serial notifications are enabled, the client performs the
 `HWS1` capability handshake and writes the current iPhone Unix time plus timezone
 to the watch RTC. It registers every WFPUSH2 response before writing the matching
-packet, preventing a fast watch response from being lost. The control protocol is
-defined in `../../docs/huangshan-watch-protocol-v1.md`.
+packet, and honors CoreBluetooth `writeWithoutResponse` backpressure during image
+transfer. The control protocol is defined in `../../docs/huangshan-watch-protocol-v1.md`.
