@@ -103,7 +103,9 @@ static int32_t default_keypad_handler(lv_key_t key, lv_indev_state_t event)
                 gui_app_run("clock");
             else
             {
-                gui_app_run("Main");
+                /* The single physical key is the back key outside the launcher. */
+                if (RT_EOK != gui_app_goback())
+                    gui_app_run("Main");
 #if defined(GUI_APP_FRAMEWORK)&&(!defined (APP_TRANS_ANIMATION_NONE))
                 lvsf_gesture_bars_realign();
 #endif
