@@ -1,6 +1,0 @@
-com.huangshan.badge:color/app_accent = 0x7f010000
-com.huangshan.badge:color/app_text = 0x7f010004
-com.huangshan.badge:color/app_surface = 0x7f010003
-com.huangshan.badge:style/AppTheme = 0x7f020000
-com.huangshan.badge:color/app_muted = 0x7f010002
-com.huangshan.badge:color/app_background = 0x7f010001

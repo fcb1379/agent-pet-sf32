@@ -33,3 +33,7 @@ ImgBurnList.ini
 work/diagnostics/
 work/sifli-check/
 *.log
+
+# Android local build state and generated packages
+phone_app/android/.gradle/
+phone_app/android/app/build/

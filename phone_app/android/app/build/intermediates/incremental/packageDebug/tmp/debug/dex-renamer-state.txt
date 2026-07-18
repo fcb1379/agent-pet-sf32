@@ -1,7 +1,0 @@
-#Sun Jul 19 00:32:53 CST 2026
-base.1=/Users/reus/Documents/Codex/2026-07-07/https-oshwhub-com-li-chuang-kai-2/phone_app/android/app/build/intermediates/dex/debug/mergeProjectDexDebug/14/classes.dex
-path.1=14/classes.dex
-base.0=/Users/reus/Documents/Codex/2026-07-07/https-oshwhub-com-li-chuang-kai-2/phone_app/android/app/build/intermediates/dex/debug/mergeProjectDexDebug/0/classes.dex
-renamed.1=classes2.dex
-renamed.0=classes.dex
-path.0=0/classes.dex
