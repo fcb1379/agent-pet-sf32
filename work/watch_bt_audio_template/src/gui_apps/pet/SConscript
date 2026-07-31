@@ -3,7 +3,8 @@ import os
 
 cwd = GetCurrentDir()
 src = Glob('*.c')
+app_utils = os.path.join(cwd, '..', '..', 'app_utils')
 
-group = DefineGroup('App_watch_demo', src, depend = [''], CPPPATH = [cwd])
+group = DefineGroup('App_watch_demo', src, depend = [''], CPPPATH = [cwd, app_utils])
 
 Return('group')

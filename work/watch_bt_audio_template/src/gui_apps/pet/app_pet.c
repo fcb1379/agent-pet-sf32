@@ -3,8 +3,10 @@
 #include "littlevgl2rtt.h"
 #include "lv_ext_resource_manager.h"
 #include "gui_app_fwk.h"
+#include "agent_pet_ble_service.h"
 
 #define APP_ID "pet"
+#define PET_STATUS_REFRESH_MS (250U)
 
 typedef struct
 {
@@ -16,9 +18,152 @@ typedef struct
     lv_obj_t *sparkle_a;
     lv_obj_t *sparkle_b;
     lv_obj_t *sparkle_c;
+    lv_obj_t *status_label;
+    lv_obj_t *task_label;
+    lv_timer_t *status_timer;
+    uint32_t ulRenderedGeneration;
+    bool bRenderedConnected;
 } pet_ui_t;
 
 static pet_ui_t g_pet_ui;
+
+static const char *PET_StateName(uint8_t ucState)
+{
+    static const char *l_aStateNames[] =
+    {
+        "Idle",
+        "Running",
+        "Needs input",
+        "Completed",
+        "Error"
+    };
+
+    if (AGENTPET_STATE_ERROR < ucState)
+    {
+        return "Unknown";
+    }
+
+    return l_aStateNames[ucState];
+}
+
+static lv_color_t PET_StateColor(uint8_t ucState)
+{
+    static const uint32_t l_aStateColors[] =
+    {
+        0xA7B0B5U,
+        0x7CC8FFU,
+        0xF6C75EU,
+        0x65D69EU,
+        0xFF6B7AU
+    };
+
+    if (AGENTPET_STATE_ERROR < ucState)
+    {
+        ucState = AGENTPET_STATE_IDLE;
+    }
+
+    return lv_color_hex(l_aStateColors[ucState]);
+}
+
+static const AGENTPET_SESSION *PET_SelectSession(
+    const AGENTPET_SNAPSHOT *pSnapshot)
+{
+    uint8_t ucIndex;
+
+    if ((NULL == pSnapshot) || (0U == pSnapshot->ucSessionCount))
+    {
+        return NULL;
+    }
+
+    for (ucIndex = 0U; ucIndex < pSnapshot->ucSessionCount; ucIndex++)
+    {
+        if (0U != (pSnapshot->aSessions[ucIndex].ucFlags & AGENTPET_TASK_FLAG_ACTIVE))
+        {
+            return &pSnapshot->aSessions[ucIndex];
+        }
+    }
+
+    return &pSnapshot->aSessions[0];
+}
+
+static const char *PET_ProviderName(uint8_t ucProvider)
+{
+    static const char *l_aProviderNames[] = {"Agent", "Codex", "Claude"};
+
+    if (2U < ucProvider)
+    {
+        return l_aProviderNames[0];
+    }
+
+    return l_aProviderNames[ucProvider];
+}
+
+/*
+ * PET_RefreshStatus
+ * 功能：在 LVGL 线程中读取已发布快照并刷新桌宠状态文字。
+ * 参数：
+ *   - pTimer: LVGL 周期定时器。
+ * 返回值：无。
+ */
+static void PET_RefreshStatus(lv_timer_t *pTimer)
+{
+    AGENTPET_BLE_STATUS tStatus;
+    const AGENTPET_SESSION *pSession;
+
+    (void)pTimer;
+    if (!AGENTPETBLE_GetStatus(&tStatus))
+    {
+        return;
+    }
+    if (
+        (g_pet_ui.ulRenderedGeneration == tStatus.ulGeneration) &&
+        (g_pet_ui.bRenderedConnected == tStatus.bConnected)
+    )
+    {
+        return;
+    }
+
+    g_pet_ui.ulRenderedGeneration = tStatus.ulGeneration;
+    g_pet_ui.bRenderedConnected = tStatus.bConnected;
+    if (!tStatus.bHasSnapshot)
+    {
+        lv_label_set_text(
+            g_pet_ui.status_label,
+            tStatus.bConnected ? "BLE connected - waiting" : "BLE disconnected");
+        lv_label_set_text(g_pet_ui.task_label, "No Agent snapshot");
+        return;
+    }
+
+    lv_label_set_text_fmt(
+        g_pet_ui.status_label,
+        "%s%s  %u tasks",
+        tStatus.bConnected ? "" : "Offline - ",
+        PET_StateName(tStatus.tSnapshot.ucAggregateState),
+        tStatus.tSnapshot.ucSessionCount);
+    lv_obj_set_style_text_color(
+        g_pet_ui.status_label,
+        PET_StateColor(tStatus.tSnapshot.ucAggregateState),
+        0);
+
+    pSession = PET_SelectSession(&tStatus.tSnapshot);
+    if (NULL == pSession)
+    {
+        lv_label_set_text(g_pet_ui.task_label, "Agent is ready");
+    }
+    else
+    {
+        lv_label_set_text_fmt(
+            g_pet_ui.task_label,
+            "%s #%04lX  %s%s",
+            PET_ProviderName(pSession->ucProvider),
+            (unsigned long)(pSession->ulTaskHash & 0xFFFFUL),
+            PET_StateName(pSession->ucState),
+            (0U != (pSession->ucFlags & AGENTPET_TASK_FLAG_APPROVAL)) ?
+                " !" : "");
+    }
+
+    return;
+}
 
 static lv_obj_t *pet_shape(lv_obj_t *parent, lv_coord_t x, lv_coord_t y,
                            lv_coord_t width, lv_coord_t height, uint32_t color,
@@ -101,7 +246,7 @@ static void pet_on_start(void)
     lv_obj_clear_flag(g_pet_ui.root, LV_OBJ_FLAG_SCROLLABLE);
 
     name = lv_label_create(g_pet_ui.root);
-    lv_label_set_text(name, "Momo");
+    lv_label_set_text(name, "Agent Pet");
     lv_obj_set_pos(name, 12, 10);
     lv_obj_set_style_text_font(name, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(name, lv_color_hex(0xd8f7ee), 0);
@@ -156,10 +301,35 @@ static void pet_on_start(void)
     pet_start_y_animation(g_pet_ui.sparkle_a, 84, 72, 1000, 250);
     pet_start_y_animation(g_pet_ui.sparkle_b, 103, 89, 1150, 80);
     pet_start_y_animation(g_pet_ui.sparkle_c, 58, 45, 900, 360);
+
+    g_pet_ui.status_label = lv_label_create(g_pet_ui.root);
+    lv_obj_set_width(g_pet_ui.status_label, 220);
+    lv_obj_set_pos(g_pet_ui.status_label, 10, 204);
+    lv_obj_set_style_text_align(g_pet_ui.status_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_color(g_pet_ui.status_label, lv_color_hex(0xA7B0B5), 0);
+
+    g_pet_ui.task_label = lv_label_create(g_pet_ui.root);
+    lv_obj_set_width(g_pet_ui.task_label, 220);
+    lv_obj_set_pos(g_pet_ui.task_label, 10, 222);
+    lv_obj_set_style_text_align(g_pet_ui.task_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_color(g_pet_ui.task_label, lv_color_hex(0xD8F7EE), 0);
+
+    g_pet_ui.ulRenderedGeneration = 0xFFFFFFFFUL;
+    g_pet_ui.bRenderedConnected = false;
+    g_pet_ui.status_timer = lv_timer_create(
+        PET_RefreshStatus,
+        PET_STATUS_REFRESH_MS,
+        NULL);
+    PET_RefreshStatus(g_pet_ui.status_timer);
 }
 
 static void pet_on_stop(void)
 {
+    if (g_pet_ui.status_timer)
+    {
+        lv_timer_del(g_pet_ui.status_timer);
+        g_pet_ui.status_timer = NULL;
+    }
     if (g_pet_ui.root)
     {
         lv_obj_del(g_pet_ui.root);

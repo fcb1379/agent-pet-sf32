@@ -20,6 +20,7 @@
 #include "bf0_sibles_serial_trans_service.h"
 #include "ble_connection_manager.h"
 #include "ble_ios_services.h"
+#include "agent_pet_ble_service.h"
 #include "badge_transfer.h"
 #include "bt_audio_sink.h"
 #include "local_music_player.h"
@@ -29,7 +30,7 @@
 #define LOG_TAG "ble_link"
 #include "log.h"
 
-#define BLE_LINK_ADV_NAME "Huangshan-Watch-BLE"
+#define BLE_LINK_ADV_NAME "AgentPet-HS52"
 #define BLE_LINK_NOTIFY_INTERVAL_MS 5000
 
 enum ble_link_att_list
@@ -86,6 +87,22 @@ BLE_GATT_SERVICE_DEFINE_128(ble_link_att_db)
 
 SIBLES_ADVERTISING_CONTEXT_DECLAR(g_ble_link_adv_context);
 
+#define AGENTPET_ADV_UUID_STORAGE_SIZE \
+    (sizeof(sibles_adv_type_srv_uuid_t) + sizeof(sibles_adv_uuid_t))
+
+static const uint8_t g_agent_pet_service_uuid[ATT_UUID_128_LEN] =
+{
+    0x00U, 0x10U, 0x0BU, 0x1AU,
+    0x2FU, 0x3EU, 0x9DU, 0x8CU,
+    0x5CU, 0x4FU, 0x5FU, 0x6BU,
+    0x01U, 0x00U, 0x1EU, 0x7AU
+};
+static uint8_t g_ble_link_name_storage[
+    sizeof(ble_gap_dev_name_t) + sizeof(BLE_LINK_ADV_NAME)];
+static uint8_t g_ble_link_rsp_name_storage[
+    sizeof(sibles_adv_type_name_t) + sizeof(BLE_LINK_ADV_NAME)];
+static uint8_t g_agent_pet_adv_uuid_storage[AGENTPET_ADV_UUID_STORAGE_SIZE];
+
 static ble_link_env_t *ble_link_env(void)
 {
     return &g_ble_link_env;
@@ -120,18 +137,16 @@ static void ble_link_advertising_start(void)
 {
     sibles_advertising_para_t para = {0};
     const char *local_name = BLE_LINK_ADV_NAME;
-    uint8_t manu_data[] = { 0x48, 0x53, 0x57, 0x01 };
     ble_gap_dev_name_t *dev_name;
+    sibles_adv_type_name_t *rsp_name;
+    sibles_adv_type_srv_uuid_t *uuid_list;
     uint8_t ret;
 
-    dev_name = rt_malloc(sizeof(ble_gap_dev_name_t) + strlen(local_name));
-    if (dev_name)
-    {
-        dev_name->len = strlen(local_name);
-        rt_memcpy(dev_name->name, local_name, dev_name->len);
-        ble_gap_set_dev_name(dev_name);
-        rt_free(dev_name);
-    }
+    dev_name = (ble_gap_dev_name_t *)g_ble_link_name_storage;
+    rt_memset(dev_name, 0, sizeof(g_ble_link_name_storage));
+    dev_name->len = strlen(local_name);
+    rt_memcpy(dev_name->name, local_name, dev_name->len);
+    ble_gap_set_dev_name(dev_name);
 
     para.own_addr_type = GAPM_STATIC_ADDR;
     para.config.adv_mode = SIBLES_ADV_CONNECT_MODE;
@@ -140,20 +155,21 @@ static void ble_link_advertising_start(void)
     para.config.max_tx_pwr = 0x7F;
     para.config.is_auto_restart = 1;
 
-    para.rsp_data.completed_name = rt_malloc(rt_strlen(local_name) + sizeof(sibles_adv_type_name_t));
-    if (para.rsp_data.completed_name)
-    {
-        para.rsp_data.completed_name->name_len = rt_strlen(local_name);
-        rt_memcpy(para.rsp_data.completed_name->name, local_name, para.rsp_data.completed_name->name_len);
-    }
+    rsp_name = (sibles_adv_type_name_t *)g_ble_link_rsp_name_storage;
+    rt_memset(rsp_name, 0, sizeof(g_ble_link_rsp_name_storage));
+    rsp_name->name_len = rt_strlen(local_name);
+    rt_memcpy(rsp_name->name, local_name, rsp_name->name_len);
+    para.rsp_data.completed_name = rsp_name;
 
-    para.adv_data.manufacturer_data = rt_malloc(sizeof(sibles_adv_type_manufacturer_data_t) + sizeof(manu_data));
-    if (para.adv_data.manufacturer_data)
-    {
-        para.adv_data.manufacturer_data->company_id = SIG_SIFLI_COMPANY_ID;
-        para.adv_data.manufacturer_data->data_len = sizeof(manu_data);
-        rt_memcpy(para.adv_data.manufacturer_data->additional_data, manu_data, sizeof(manu_data));
-    }
+    uuid_list = (sibles_adv_type_srv_uuid_t *)g_agent_pet_adv_uuid_storage;
+    rt_memset(uuid_list, 0, sizeof(g_agent_pet_adv_uuid_storage));
+    uuid_list->count = 1U;
+    uuid_list->uuid_list[0].uuid_len = ATT_UUID_128_LEN;
+    rt_memcpy(
+        uuid_list->uuid_list[0].uuid.uuid_128,
+        g_agent_pet_service_uuid,
+        ATT_UUID_128_LEN);
+    para.adv_data.completed_uuid = uuid_list;
 
     para.evt_handler = ble_link_adv_event;
     ret = sibles_advertising_init(g_ble_link_adv_context, &para);
@@ -164,15 +180,6 @@ static void ble_link_advertising_start(void)
     else
     {
         LOG_E("BLE adv init failed %d", ret);
-    }
-
-    if (para.rsp_data.completed_name)
-    {
-        rt_free(para.rsp_data.completed_name);
-    }
-    if (para.adv_data.manufacturer_data)
-    {
-        rt_free(para.adv_data.manufacturer_data);
     }
 }
 
@@ -555,6 +562,7 @@ static int ble_link_event_handler(uint16_t event_id, uint8_t *data, uint16_t len
         env->conn_idx = ind->conn_idx;
         env->conn_interval = ind->con_interval;
         sibles_exchange_mtu(env->conn_idx);
+        AGENTPETBLE_SetConnected(true);
         LOG_I("BLE connected conn=%d interval=%d", env->conn_idx, env->conn_interval);
         break;
     }
@@ -564,6 +572,7 @@ static int ble_link_event_handler(uint16_t event_id, uint8_t *data, uint16_t len
         env->is_connected = 0;
         env->notify_enabled = 0;
         rt_timer_stop(env->notify_timer);
+        AGENTPETBLE_SetConnected(false);
         LOG_I("BLE disconnected reason=%d", ind->reason);
         break;
     }
@@ -604,6 +613,10 @@ static void ble_link_thread(void *parameter)
             connection_manager_set_bond_ack(BOND_PENDING);
             connection_manager_set_bond_cnf_iocap(GAP_IO_CAP_NO_INPUT_NO_OUTPUT);
             ble_link_service_init();
+            if (!AGENTPETBLE_RegisterService())
+            {
+                LOG_E("Agent Pet service unavailable");
+            }
             ble_serial_tran_init();
             ble_link_advertising_start();
             LOG_I("BLE link ready name=%s", BLE_LINK_ADV_NAME);
@@ -615,6 +628,8 @@ static int ble_link_init(void)
 {
     ble_link_env_t *env = ble_link_env();
     rt_thread_t tid;
+
+    AGENTPETBLE_Init();
 
     env->mb_handle = rt_mb_create("blelink", 8, RT_IPC_FLAG_FIFO);
     RT_ASSERT(env->mb_handle);
