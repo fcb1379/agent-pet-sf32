@@ -1,0 +1,20 @@
+# Image resources for the pet simulator.
+# Uses the SDK's Env.ImgResource builder to convert PNG → RGB565 C arrays.
+from building import *
+import rtconfig
+
+cwd = GetCurrentDir()
+
+img_flags = '-rgb565 -section ROM3_IMG '
+
+if GetDepend('BSP_USING_PC_SIMULATOR'):
+    objs = Env.ImgResource(Glob('mascot/*.png'), img_flags + '-cfile 1 -simu')
+else:
+    objs = Env.ImgResource(Glob('mascot/*.png'), img_flags + '-cfile 1 -dpt 1')
+
+if GetOption('no_cc'):
+    objs = []
+
+objs = DefineGroup('pet_resource', objs, depend = ['PKG_USING_LITTLEVGL2RTT'])
+
+Return('objs')

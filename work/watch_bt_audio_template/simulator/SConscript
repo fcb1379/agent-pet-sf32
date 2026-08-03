@@ -1,0 +1,23 @@
+# for module compiling
+import os
+from building import *
+
+cwd = GetCurrentDir()
+objs = []
+list = os.listdir(cwd)
+Import('SIFLI_SDK')
+
+src = []
+group=[]
+inc=[cwd]
+
+LOCAL_CCFLAGS = ''
+
+# Add PC simulator-only sources (pet UI + mock). The firmware src/ tree is
+# not compiled here, so hardware BLE/audio/settings code stays untouched.
+objs.extend(SConscript(os.path.join(cwd, '../sim_src/SConscript'), variant_dir="pet_sim", duplicate=0))
+
+#Add SDK
+objs.extend(SConscript(os.path.join(SIFLI_SDK, 'SConscript'), variant_dir="sifli_sdk", duplicate=0))
+
+Return('objs')
