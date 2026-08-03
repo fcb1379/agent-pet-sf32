@@ -1,0 +1,79 @@
+work/watch_bt_audio_template/src/gui_apps/clock/app_clock_main.c
+  s_8f821ae819d670::t_80f594d44af1bb 467-468
+  s_8f821ae819d670::t_94efb3914d00b9 608-612,628-635
+  s_8f821ae819d670::t_b0381151c9663f 51
+work/watch_bt_audio_template/src/gui_apps/clock/app_clock_status_bar.c
+  s_8f821ae819d670::t_e263da05b282b3 483-524
+work/watch_bt_audio_template/src/gui_apps/clock/app_clock_status_bar.h
+  s_8f821ae819d670::t_4096640a546cf9 12
+.gitignore
+  s_1d2c1a9df4a2e7::t_d59bbe8d2a82df 45-46
+work/watch_bt_audio_template/README_SIMULATOR.md
+  s_db5b4a824fde44::t_6a7cb941715798 1,3,5,9-11,13,15,20,23,25-31,33,38-39,41
+work/watch_bt_audio_template/preview_simulator.bat
+  s_db5b4a824fde44::t_4b06449aeca3f0 6,15,25-27
+work/watch_bt_audio_template/project/Kconfig.proj
+  s_1d2c1a9df4a2e7::t_667675ed273353 20
+work/watch_bt_audio_template/project/SConstruct
+  s_5abfcd202c920f::t_d3f14584338114 25-33
+work/watch_bt_audio_template/project/pc_hcpu/proj.conf
+  s_db5b4a824fde44::t_1dec830844a932 7-26
+work/watch_bt_audio_template/project/proj.conf
+  s_5abfcd202c920f::t_d319aab5e09a52 4
+work/watch_bt_audio_template/sim_src/SConscript
+  s_5abfcd202c920f::t_2ab98b47abe228 14-17,21-27
+work/watch_bt_audio_template/sim_src/resource/images/SConscript
+  s_5abfcd202c920f::t_35819063f8ee9b 2,4,8-10,13
+work/watch_bt_audio_template/simulator/SConstruct
+  s_5abfcd202c920f::t_400d9b5aae9133 24-25
+work/watch_bt_audio_template/simulator/build.bat
+  s_db5b4a824fde44::t_9ac82b4a25560c 4,8,33-45
+work/watch_bt_audio_template/src/app_utils/SConscript
+  s_db5b4a824fde44::t_22a6f9fbb7843b 9-15,17-18,20-21,23-24,26-27,29-31,33-34,36-37
+work/watch_bt_audio_template/src/app_utils/pc_simulator_services.c
+  s_db5b4a824fde44::t_dced45d792e206 1-431
+work/watch_bt_audio_template/src/gui_apps/music/app_music.c
+  s_db5b4a824fde44::t_c96620291d0cc7 7-17,19
+work/watch_bt_audio_template/src/gui_apps/pet/app_pet.c
+  s_5abfcd202c920f::t_e19af6a46455c8 5,9-14,18-32,38-44,51-55,57-60,66-67,172,204-205,223,243-247,249-260,262-309,312-316,318-320,322-643,652,663-666,669-672,675-676,682-726,729-730,733,736-737,741-756,763,774-796,804
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "8e8545833bf80741a49cab81204cdbf2021d493e",
+  "prompts": {},
+  "sessions": {
+    "s_1d2c1a9df4a2e7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc647-59e5-7810-b4a2-5c92f96cf60c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    },
+    "s_5abfcd202c920f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc671-6dd7-7541-a0c4-d0731c870ebb",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    },
+    "s_8f821ae819d670": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e6d67970-0811-4a26-96cf-132762ee6c5c",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    },
+    "s_db5b4a824fde44": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc5a3-3008-71a3-a068-f1e7811e3e20",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}
