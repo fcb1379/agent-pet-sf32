@@ -3,7 +3,7 @@ setlocal EnableDelayedExpansion
 set NoDefaultCurrentDirectoryInExePath=
 
 REM Path to SiFli-SDK (repo submodule by default, override via env var)
-if not defined SIFLI_SIM_SDK  set SIFLI_SIM_SDK=%~dp0..\..\..\..\sdk
+if not defined SIFLI_SIM_SDK  set SIFLI_SIM_SDK=%~dp0..\..\..\sdk
 REM Path to SiFli-ENV tools
 if not defined SIFLI_ENV      set SIFLI_ENV=D:\Desktop\AI_Pet\env_latest
 

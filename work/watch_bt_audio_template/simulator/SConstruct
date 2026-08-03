@@ -4,7 +4,8 @@ import rtconfig
 if os.getenv('SIFLI_SDK'):
     SIFLI_SDK = os.getenv('SIFLI_SDK')
 else:
-    SIFLI_SDK = os.path.normpath(os.getcwd() + '/../../../..')
+    _here = os.path.dirname(os.path.abspath(__file__))
+    SIFLI_SDK = os.path.normpath(os.path.join(_here, '..', '..', '..', 'sdk'))
 
 sys.path = sys.path + [os.path.join(SIFLI_SDK, 'tools/build')]
 try:
