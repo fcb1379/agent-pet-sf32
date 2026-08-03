@@ -1,0 +1,35 @@
+work/watch_bt_audio_template/project/proj.conf
+  s_cf3d962977cbc6::t_4da0524864636e 4,8-11,40
+work/watch_bt_audio_template/src/gui_apps/file_manager/SConscript
+  s_abbb2bd46b4afc::t_a192587358afc9 1-10
+work/watch_bt_audio_template/src/gui_apps/file_manager/app_file_manager.c
+  s_abbb2bd46b4afc::t_a639950db70dd7 1-761
+work/watch_bt_audio_template/src/resource/strings/en_us.json
+  s_abbb2bd46b4afc::t_736b7bee65cd0b 56
+work/watch_bt_audio_template/src/resource/strings/zh_cn.json
+  s_abbb2bd46b4afc::t_85f74576458978 56
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "2f81d75fb2ab498062edbe6e802fe0d5cb045705",
+  "prompts": {},
+  "sessions": {
+    "s_abbb2bd46b4afc": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc6ed-063f-7a23-889d-19eb899eb590",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    },
+    "s_cf3d962977cbc6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc6f1-466d-7dd3-a11f-a9c9a40e0923",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}
