@@ -6,6 +6,9 @@
 #define AGENTPET_MAGIC_SECOND            (0x50U)
 #define AGENTPET_PROTOCOL_VERSION        (1U)
 #define AGENTPET_MESSAGE_TYPE_SNAPSHOT   (1U)
+#define AGENTPET_MESSAGE_TYPE_WOODEN_FISH (2U)
+#define AGENTPET_WOODEN_FISH_ACTION      (1U)
+#define AGENTPET_WOODEN_FISH_PAYLOAD_SIZE (1U)
 #define AGENTPET_FRAME_HEADER_SIZE       (9U)
 #define AGENTPET_FRAME_CRC_OFFSET        (19U)
 #define AGENTPET_MAX_SNAPSHOT_SIZE       (126U)
@@ -28,6 +31,7 @@ typedef struct _AGENTPET_ASSEMBLY
 {
     bool bActive;
     uint16_t usSequence;
+    uint8_t ucMessageType;
     uint8_t ucChunkCount;
     uint16_t usReceivedMask;
     uint8_t aChunkLength[AGENTPET_MAX_CHUNK_COUNT];
@@ -44,6 +48,12 @@ static uint32_t l_ulGeneration;
 static bool l_bHasSnapshot;
 /* 最近一次已发布的协议序号。用于忽略重复发送的同一完整快照。 */
 static uint16_t l_usPublishedSequence;
+/* 最近一次木鱼事件序号，仅用于拒绝 BLE 重传造成的重复动画。 */
+static uint16_t l_usWoodenFishSequence;
+/* 木鱼事件发布代数，范围 0~4294967295，供 LVGL 线程检测新点击。 */
+static uint32_t l_ulWoodenFishGeneration;
+/* 木鱼事件有效标志，false 表示设备启动后尚未收到上位机木鱼事件。 */
+static bool l_bHasWoodenFishEvent;
 
 static uint16_t Local_ReadLe16(const uint8_t *pData)
 {
@@ -166,6 +176,9 @@ void AGENTPET_ProtocolInit(void)
     l_ulGeneration = 0U;
     l_bHasSnapshot = false;
     l_usPublishedSequence = 0U;
+    l_usWoodenFishSequence = 0U;
+    l_ulWoodenFishGeneration = 0U;
+    l_bHasWoodenFishEvent = false;
 
     return;
 }
@@ -233,6 +246,7 @@ uint8_t AGENTPET_Crc8Atm(const uint8_t *pData, size_t ulLength)
 AGENTPET_RESULT AGENTPET_ProcessFrame(const uint8_t *pFrame, size_t ulLength)
 {
     uint16_t usSequence;
+    uint8_t ucMessageType;
     uint8_t ucChunkIndex;
     uint8_t ucChunkCount;
     uint8_t ucPayloadLength;
@@ -253,7 +267,8 @@ AGENTPET_RESULT AGENTPET_ProcessFrame(const uint8_t *pFrame, size_t ulLength)
         (AGENTPET_MAGIC_FIRST != pFrame[0]) ||
         (AGENTPET_MAGIC_SECOND != pFrame[1]) ||
         (AGENTPET_PROTOCOL_VERSION != pFrame[2]) ||
-        (AGENTPET_MESSAGE_TYPE_SNAPSHOT != pFrame[3])
+        ((AGENTPET_MESSAGE_TYPE_SNAPSHOT != pFrame[3]) &&
+         (AGENTPET_MESSAGE_TYPE_WOODEN_FISH != pFrame[3]))
     )
     {
         return AGENTPET_ERROR_HEADER;
@@ -264,6 +279,7 @@ AGENTPET_RESULT AGENTPET_ProcessFrame(const uint8_t *pFrame, size_t ulLength)
         return AGENTPET_ERROR_CRC;
     }
 
+    ucMessageType = pFrame[3];
     usSequence = Local_ReadLe16(&pFrame[4]);
     ucChunkIndex = pFrame[6];
     ucChunkCount = pFrame[7];
@@ -287,6 +303,27 @@ AGENTPET_RESULT AGENTPET_ProcessFrame(const uint8_t *pFrame, size_t ulLength)
         {
             return AGENTPET_ERROR_PADDING;
         }
+    }
+
+    if (AGENTPET_MESSAGE_TYPE_WOODEN_FISH == ucMessageType)
+    {
+        if (
+            (0U != ucChunkIndex) ||
+            (1U != ucChunkCount) ||
+            (AGENTPET_WOODEN_FISH_PAYLOAD_SIZE != ucPayloadLength) ||
+            (AGENTPET_WOODEN_FISH_ACTION != pFrame[AGENTPET_FRAME_HEADER_SIZE])
+        )
+        {
+            return AGENTPET_ERROR_EVENT;
+        }
+        if (l_bHasWoodenFishEvent && (l_usWoodenFishSequence == usSequence))
+        {
+            return AGENTPET_RESULT_DUPLICATE;
+        }
+        l_usWoodenFishSequence = usSequence;
+        l_ulWoodenFishGeneration++;
+        l_bHasWoodenFishEvent = true;
+        return AGENTPET_RESULT_EVENT_PUBLISHED;
     }
 
     if (l_bHasSnapshot && (l_usPublishedSequence == usSequence))
@@ -349,6 +386,34 @@ bool AGENTPET_GetSnapshot(AGENTPET_SNAPSHOT *pSnapshot, uint32_t *pGeneration)
     {
         *pGeneration = l_ulGeneration;
     }
+
+    return true;
+}
+
+/*
+ * AGENTPET_GetWoodenFishEvent
+ * 功能：读取最近一次木鱼事件序号及事件发布代数。
+ * 参数：
+ *   - pSequence: 可选输出最近事件序号。
+ *   - pGeneration: 输出事件发布代数，不能为 NULL。
+ * 返回值：已收到至少一个木鱼事件返回 true，否则返回 false。
+ */
+bool AGENTPET_GetWoodenFishEvent(uint16_t *pSequence, uint32_t *pGeneration)
+{
+    if (NULL == pGeneration)
+    {
+        return false;
+    }
+    if (!l_bHasWoodenFishEvent)
+    {
+        return false;
+    }
+
+    if (NULL != pSequence)
+    {
+        *pSequence = l_usWoodenFishSequence;
+    }
+    *pGeneration = l_ulWoodenFishGeneration;
 
     return true;
 }

@@ -14,7 +14,8 @@
 LV_IMG_DECLARE(agent_pet_mascot);
 
 #define APP_ID "pet"
-#define PET_STATUS_REFRESH_MS (250U)
+#define PET_STATUS_REFRESH_MS (100U)
+#define PET_MAX_REMOTE_HITS_PER_REFRESH (4U)
 #define PET_MASCOT_SIZE (336)
 #define PET_MASCOT_X ((LV_HOR_RES_MAX - PET_MASCOT_SIZE) / 2)
 #define PET_MASCOT_Y (((LV_VER_RES_MAX - PET_MASCOT_SIZE) / 2) - 12)
@@ -54,6 +55,7 @@ typedef struct
     share_prefs_t *pPrefs;
 #endif
     uint32_t ulRenderedGeneration;
+    uint32_t ulRenderedWoodenFishGeneration;
     uint32_t ulLastHitTick;
     uint32_t ulMeritCount;
     uint32_t ulMeritDay;
@@ -64,6 +66,7 @@ typedef struct
 static pet_ui_t g_pet_ui;
 
 static void PET_ApplyStateAnimation(uint8_t ucState);
+static void PET_PlayWoodenFishAnimation(const lv_point_t *pPoint);
 
 static const char *PET_StateName(uint8_t ucState)
 {
@@ -147,12 +150,29 @@ static void PET_RefreshStatus(lv_timer_t *pTimer)
 {
     AGENTPET_BLE_STATUS tStatus;
     const AGENTPET_SESSION *pSession;
+    uint32_t ulPendingHitCount;
+    uint8_t ucHitIndex;
 
     (void)pTimer;
     if (!AGENTPETBLE_GetStatus(&tStatus))
     {
         return;
     }
+    if (tStatus.bHasWoodenFishEvent)
+    {
+        ulPendingHitCount = tStatus.ulWoodenFishGeneration -
+            g_pet_ui.ulRenderedWoodenFishGeneration;
+        if (PET_MAX_REMOTE_HITS_PER_REFRESH < ulPendingHitCount)
+        {
+            ulPendingHitCount = PET_MAX_REMOTE_HITS_PER_REFRESH;
+        }
+        for (ucHitIndex = 0U; ucHitIndex < ulPendingHitCount; ucHitIndex++)
+        {
+            PET_PlayWoodenFishAnimation(NULL);
+        }
+        g_pet_ui.ulRenderedWoodenFishGeneration += ulPendingHitCount;
+    }
+
     if (
         (g_pet_ui.ulRenderedGeneration == tStatus.ulGeneration) &&
         (g_pet_ui.bRenderedConnected == tStatus.bConnected)
@@ -465,10 +485,8 @@ static void PET_EndWoodenFish(lv_timer_t *pTimer)
  * PET_PlayWoodenFish
  * Function: Replace the mascot with a repeatable wooden-fish interaction.
  */
-static void PET_PlayWoodenFish(lv_event_t *pEvent)
+static void PET_PlayWoodenFishAnimation(const lv_point_t *pPoint)
 {
-    lv_indev_t *pInput;
-    lv_point_t tPoint;
     lv_anim_t tAnimation;
     lv_coord_t tFishX;
     lv_coord_t tFishY;
@@ -477,19 +495,15 @@ static void PET_PlayWoodenFish(lv_event_t *pEvent)
     uint32_t ulAccentColor;
     const char *pSpeedText;
 
-    if ((NULL == pEvent) ||
-        (LV_EVENT_SHORT_CLICKED != lv_event_get_code(pEvent)) ||
-        (NULL == g_pet_ui.wooden_timer))
+    if (NULL == g_pet_ui.wooden_timer)
     {
         return;
     }
 
-    pInput = lv_indev_get_act();
-    if (NULL != pInput)
+    if (NULL != pPoint)
     {
-        lv_indev_get_point(pInput, &tPoint);
-        tFishX = tPoint.x - (PET_WOODEN_FISH_WIDTH / 2);
-        tFishY = tPoint.y - (PET_WOODEN_FISH_HEIGHT / 2);
+        tFishX = pPoint->x - (PET_WOODEN_FISH_WIDTH / 2);
+        tFishY = pPoint->y - (PET_WOODEN_FISH_HEIGHT / 2);
         tFishX = LV_MAX(0, LV_MIN(tFishX,
                                   LV_HOR_RES_MAX - PET_WOODEN_FISH_WIDTH));
         tFishY = LV_MAX(0, LV_MIN(tFishY,
@@ -569,6 +583,34 @@ static void PET_PlayWoodenFish(lv_event_t *pEvent)
     lv_timer_set_period(g_pet_ui.wooden_timer, PET_WOODEN_FISH_IDLE_MS);
     lv_timer_reset(g_pet_ui.wooden_timer);
     lv_timer_resume(g_pet_ui.wooden_timer);
+
+    return;
+}
+
+/*
+ * PET_PlayWoodenFish
+ * Function: Convert a local short click into the shared wooden-fish animation.
+ */
+static void PET_PlayWoodenFish(lv_event_t *pEvent)
+{
+    lv_indev_t *pInput;
+    lv_point_t tPoint;
+
+    if ((NULL == pEvent) ||
+        (LV_EVENT_SHORT_CLICKED != lv_event_get_code(pEvent)))
+    {
+        return;
+    }
+
+    pInput = lv_indev_get_act();
+    if (NULL == pInput)
+    {
+        PET_PlayWoodenFishAnimation(NULL);
+        return;
+    }
+
+    lv_indev_get_point(pInput, &tPoint);
+    PET_PlayWoodenFishAnimation(&tPoint);
 
     return;
 }

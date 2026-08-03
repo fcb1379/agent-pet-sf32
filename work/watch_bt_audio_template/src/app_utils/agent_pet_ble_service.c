@@ -97,6 +97,7 @@ static uint8_t Local_GattWriteCallback(
         if (
             (AGENTPET_RESULT_FRAME_ACCEPTED == eResult) ||
             (AGENTPET_RESULT_SNAPSHOT_PUBLISHED == eResult) ||
+            (AGENTPET_RESULT_EVENT_PUBLISHED == eResult) ||
             (AGENTPET_RESULT_DUPLICATE == eResult)
         )
         {
@@ -107,6 +108,11 @@ static uint8_t Local_GattWriteCallback(
             l_tAgentPetBleStatus.ulRejectedFrameCount++;
         }
         rt_exit_critical();
+        if (AGENTPET_RESULT_EVENT_PUBLISHED == eResult)
+        {
+            LOG_I("Wooden fish event accepted sequence=%u",
+                  pParameter->value[4] | ((uint16_t)pParameter->value[5] << 8U));
+        }
     }
 
     return 0U;
@@ -199,6 +205,9 @@ bool AGENTPETBLE_GetStatus(AGENTPET_BLE_STATUS *pStatus)
     AGENTPET_SNAPSHOT tSnapshot;
     uint32_t ulGeneration;
     bool bHasSnapshot;
+    bool bHasWoodenFishEvent;
+    uint16_t usWoodenFishSequence;
+    uint32_t ulWoodenFishGeneration;
 
     if (NULL == pStatus)
     {
@@ -208,11 +217,20 @@ bool AGENTPETBLE_GetStatus(AGENTPET_BLE_STATUS *pStatus)
     rt_enter_critical();
     (void)rt_memcpy(pStatus, &l_tAgentPetBleStatus, sizeof(*pStatus));
     bHasSnapshot = AGENTPET_GetSnapshot(&tSnapshot, &ulGeneration);
+    bHasWoodenFishEvent = AGENTPET_GetWoodenFishEvent(
+        &usWoodenFishSequence,
+        &ulWoodenFishGeneration);
     if (bHasSnapshot)
     {
         pStatus->bHasSnapshot = true;
         pStatus->ulGeneration = ulGeneration;
         (void)rt_memcpy(&pStatus->tSnapshot, &tSnapshot, sizeof(tSnapshot));
+    }
+    if (bHasWoodenFishEvent)
+    {
+        pStatus->bHasWoodenFishEvent = true;
+        pStatus->usWoodenFishSequence = usWoodenFishSequence;
+        pStatus->ulWoodenFishGeneration = ulWoodenFishGeneration;
     }
     rt_exit_critical();
 
