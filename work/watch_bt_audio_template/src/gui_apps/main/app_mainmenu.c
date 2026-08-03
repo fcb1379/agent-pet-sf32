@@ -359,13 +359,11 @@ static void app_mainmenu_list_add_item(lv_obj_t *parent, const builtin_app_desc_
     lv_label_set_long_mode(label, LV_LABEL_LONG_DOT);
     lv_obj_set_pos(label, 54, 14);
     lv_obj_set_size(label, LV_HOR_RES_MAX - 116, 24);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(label, lv_color_white(), 0);
 
     arrow = lv_label_create(item);
     lv_label_set_text(arrow, ">");
     lv_obj_set_pos(arrow, LV_HOR_RES_MAX - 46, 13);
-    lv_obj_set_style_text_font(arrow, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(arrow, lv_color_hex(0x8ca4bf), 0);
 }
 
@@ -389,7 +387,6 @@ static void app_mainmenu_list_ui_init(void)
     title = lv_label_create(app_mainmenu_ctx.pg_obj);
     lv_label_set_text(title, "Apps");
     lv_obj_set_pos(title, 12, 8);
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(title, lv_color_hex(0x9bd3ff), 0);
 
     app = gui_builtin_app_list_open();

@@ -160,7 +160,6 @@ static lv_obj_t *status_create_button(lv_obj_t *parent,
 
     label = lv_label_create(button);
     lv_label_set_text(label, text);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(label, lv_color_white(), 0);
     lv_obj_center(label);
     return button;
@@ -183,7 +182,6 @@ static void status_on_start(void)
 
     lv_obj_t *title = lv_label_create(g_status_ui.root);
     lv_label_set_text(title, "Status");
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_28, 0);
     lv_obj_set_style_text_color(title, lv_color_white(), 0);
     lv_obj_set_pos(title, 16, 10);
 
@@ -196,7 +194,6 @@ static void status_on_start(void)
     lv_label_set_text(g_status_ui.last_action, g_status_ui.last_action_text);
     lv_obj_set_size(g_status_ui.last_action, LV_HOR_RES_MAX - 32, 28);
     lv_label_set_long_mode(g_status_ui.last_action, LV_LABEL_LONG_DOT);
-    lv_obj_set_style_text_font(g_status_ui.last_action, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(g_status_ui.last_action, lv_color_hex(0x9bd3ff), 0);
     lv_obj_set_style_bg_color(g_status_ui.last_action, lv_color_black(), 0);
     lv_obj_set_style_bg_opa(g_status_ui.last_action, LV_OPA_COVER, 0);
@@ -205,7 +202,6 @@ static void status_on_start(void)
     g_status_ui.content = lv_label_create(g_status_ui.root);
     lv_label_set_long_mode(g_status_ui.content, LV_LABEL_LONG_WRAP);
     lv_obj_set_size(g_status_ui.content, LV_HOR_RES_MAX - 32, LV_VER_RES_MAX + 180);
-    lv_obj_set_style_text_font(g_status_ui.content, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(g_status_ui.content, lv_color_white(), 0);
     lv_obj_set_style_bg_color(g_status_ui.content, lv_color_black(), 0);
     lv_obj_set_style_bg_opa(g_status_ui.content, LV_OPA_COVER, 0);

@@ -141,7 +141,6 @@ static lv_obj_t *timer_create_button(lv_obj_t *parent, const char *text, lv_coor
 
     label = lv_label_create(object);
     lv_label_set_text(label, text);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(label, lv_color_white(), 0);
     lv_obj_center(label);
     return object;
@@ -169,21 +168,18 @@ static void timer_on_start(void)
     title = lv_label_create(g_timer_ui.root);
     lv_label_set_text(title, "Timer");
     lv_obj_set_pos(title, margin, 10);
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(title, lv_color_hex(0x9bd3ff), 0);
 
     g_timer_ui.value = lv_label_create(g_timer_ui.root);
     lv_obj_set_pos(g_timer_ui.value, margin, 44);
     lv_obj_set_size(g_timer_ui.value, LV_HOR_RES_MAX - margin * 2, 46);
     lv_obj_set_style_text_align(g_timer_ui.value, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_style_text_font(g_timer_ui.value, &lv_font_montserrat_36, 0);
     lv_obj_set_style_text_color(g_timer_ui.value, lv_color_white(), 0);
 
     g_timer_ui.state = lv_label_create(g_timer_ui.root);
     lv_obj_set_pos(g_timer_ui.state, margin, 94);
     lv_obj_set_size(g_timer_ui.state, LV_HOR_RES_MAX - margin * 2, 22);
     lv_obj_set_style_text_align(g_timer_ui.state, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_style_text_font(g_timer_ui.state, &lv_font_montserrat_16, 0);
     lv_obj_set_style_text_color(g_timer_ui.state, lv_color_hex(0x8ca4bf), 0);
 
     timer_create_button(g_timer_ui.root, "+1m", margin, 128, button_width, button_height,

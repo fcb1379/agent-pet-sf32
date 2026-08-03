@@ -306,7 +306,6 @@ static lv_obj_t *calculator_create_button(lv_obj_t *parent, const char *text,
 
     label = lv_label_create(button);
     lv_label_set_text(label, text);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(label, lv_color_white(), 0);
     lv_obj_center(label);
     return button;
@@ -351,7 +350,6 @@ static void calculator_on_start(void)
     lv_obj_set_pos(g_calculator_ui.expression, margin, 8);
     lv_obj_set_size(g_calculator_ui.expression, LV_HOR_RES_MAX - margin * 2, 18);
     lv_label_set_long_mode(g_calculator_ui.expression, LV_LABEL_LONG_DOT);
-    lv_obj_set_style_text_font(g_calculator_ui.expression, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_align(g_calculator_ui.expression, LV_TEXT_ALIGN_RIGHT, 0);
     lv_obj_set_style_text_color(g_calculator_ui.expression, lv_color_hex(0x8ca4bf), 0);
 
@@ -359,7 +357,6 @@ static void calculator_on_start(void)
     lv_obj_set_pos(g_calculator_ui.display, margin, 24);
     lv_obj_set_size(g_calculator_ui.display, LV_HOR_RES_MAX - margin * 2, 34);
     lv_label_set_long_mode(g_calculator_ui.display, LV_LABEL_LONG_DOT);
-    lv_obj_set_style_text_font(g_calculator_ui.display, &lv_font_montserrat_28, 0);
     lv_obj_set_style_text_align(g_calculator_ui.display, LV_TEXT_ALIGN_RIGHT, 0);
     lv_obj_set_style_text_color(g_calculator_ui.display, lv_color_white(), 0);
 
