@@ -1,0 +1,27 @@
+work/watch_bt_audio_template/README_SIMULATOR.md
+  s_5abfcd202c920f::t_27f08cb9d1ff97 3,5,7,9-11,13-14,16,18,20-23,25-26,28,30-33,36,38,40,42-44,46,48-52,54,56-59,61
+work/watch_bt_audio_template/preview_simulator.bat
+  s_5abfcd202c920f::t_a6d304dce908df 1-26
+work/watch_bt_audio_template/sim_src/SConscript
+  s_5abfcd202c920f::t_f2ca81f1a7fde1 1-4,13
+work/watch_bt_audio_template/simulator/build.bat
+  s_5abfcd202c920f::t_78bbcd82d9cbbf 6-7,9-16,18-29,32
+work/watch_bt_audio_template/simulator/msvc_setup.bat
+  s_5abfcd202c920f::t_6e18d1dbd01291 1-29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "16f3a89d3c40fa7d4ce43312fdf378088e4d1029",
+  "prompts": {},
+  "sessions": {
+    "s_5abfcd202c920f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc671-6dd7-7541-a0c4-d0731c870ebb",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}
