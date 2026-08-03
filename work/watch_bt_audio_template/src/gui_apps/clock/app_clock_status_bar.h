@@ -9,5 +9,6 @@
 
 extern void app_clock_main_status_bar_init(lv_obj_t *par, lv_obj_t *clock_tileview);
 extern void app_clock_main_status_bar_deinit(void);
+extern void app_clock_main_status_bar_set_hidden(rt_bool_t hidden);
 
 

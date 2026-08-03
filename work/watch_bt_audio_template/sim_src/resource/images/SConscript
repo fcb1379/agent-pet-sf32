@@ -1,16 +1,16 @@
 # Image resources for the pet simulator.
-# Uses the SDK's Env.ImgResource builder to convert PNG → RGB565 C arrays.
+# Convert the same mascot PNG used by the hardware resource tree.
 from building import *
+import os
 import rtconfig
 
 cwd = GetCurrentDir()
-
+shared_mascot = os.path.normpath(os.path.join(
+    cwd,
+    '../../../src/resource/images/common/ezip/agent_pet_mascot.png'))
 img_flags = '-rgb565 -section ROM3_IMG '
 
-if GetDepend('BSP_USING_PC_SIMULATOR'):
-    objs = Env.ImgResource(Glob('mascot/*.png'), img_flags + '-cfile 1 -simu')
-else:
-    objs = Env.ImgResource(Glob('mascot/*.png'), img_flags + '-cfile 1 -dpt 1')
+objs = Env.ImgResource([shared_mascot], img_flags + '-cfile 1 -simu')
 
 if GetOption('no_cc'):
     objs = []

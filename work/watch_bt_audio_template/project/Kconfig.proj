@@ -17,7 +17,7 @@ config FRAME_BUFFER_IN_PSRAM
     depends on BSP_USING_PSRAM
 
 config WATCH_UI_DISABLE_EPIC_GPU
-    bool
+    bool "Disable EPIC GPU for watch UI"
 
 menu "app cache Memory configuration"   
 

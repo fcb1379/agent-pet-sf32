@@ -6,30 +6,35 @@ import os
 cwd = GetCurrentDir()
 src = ['main.c']
 
-if GetDepend('BSP_BLE_SIBLES') and os.path.exists(os.path.join(cwd, 'ble_app.c')):
-    src+=['ble_app.c']
+if GetDepend('BSP_USING_PC_SIMULATOR'):
+    # The full UI target needs stable service state but has no BLE, flash,
+    # audio codec, or interrupt controller. Keep all PC behavior in one mock.
+    src += ['pc_simulator_services.c']
+else:
+    if GetDepend('BSP_BLE_SIBLES') and os.path.exists(os.path.join(cwd, 'ble_app.c')):
+        src += ['ble_app.c']
 
-if GetDepend('BSP_BT_APP') and os.path.exists(os.path.join(cwd, 'bt_app.c')):
-    src+=['bt_app.c']
+    if GetDepend('BSP_BT_APP') and os.path.exists(os.path.join(cwd, 'bt_app.c')):
+        src += ['bt_app.c']
 
-if GetDepend('BSP_SHARE_PREFS'):
-    src+=['watch_settings.c', 'watch_alarm_service.c']
+    if GetDepend('BSP_SHARE_PREFS'):
+        src += ['watch_settings.c', 'watch_alarm_service.c']
 
-if GetDepend('CFG_AV_SNK'):
-    src+=['bt_audio_sink.c']
+    if GetDepend('CFG_AV_SNK'):
+        src += ['bt_audio_sink.c']
 
-if GetDepend('AUDIO_LOCAL_MUSIC'):
-    src+=['local_music_player.c']
+    if GetDepend('AUDIO_LOCAL_MUSIC'):
+        src += ['local_music_player.c']
 
-if GetDepend('BSP_BLE_SIBLES'):
-    src+=['ble_watch_link.c', 'watch_protocol.c',
-          'agent_pet_protocol.c', 'agent_pet_ble_service.c']
+    if GetDepend('BSP_BLE_SIBLES'):
+        src += ['ble_watch_link.c', 'watch_protocol.c',
+                'agent_pet_protocol.c', 'agent_pet_ble_service.c']
 
-if GetDepend('BSP_BLE_WATCH_FACE'):
-    src+=['badge_transfer.c']
+    if GetDepend('BSP_BLE_WATCH_FACE'):
+        src += ['badge_transfer.c']
 
-if GetDepend('BSP_USING_DATA_SVC'):
-    src+=['ble_ios_services.c']
+    if GetDepend('BSP_USING_DATA_SVC'):
+        src += ['ble_ios_services.c']
 
 
 CPPPATH = [cwd]

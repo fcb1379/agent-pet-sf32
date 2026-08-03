@@ -48,6 +48,7 @@ typedef struct
     rt_list_t list;                    //!< head of all cocks list
 
     rt_timer_t soft_timer;             //!<  template vaiable for simulator
+    lv_obj_t *tileview;                //!< top-level clock face tileview, kept across pause/resume
 } app_clock_main_t;
 
 #ifndef BSP_USING_LVGL_INPUT_AGENT
@@ -463,6 +464,8 @@ static void app_clock_main_init(void)
     else
         last_active_clock_bak = 0;
 
+    p_app_clock_main->tileview = tileview;
+
     //3.create status bar at top
     app_clock_main_status_bar_init(lv_scr_act(), tileview);
 }
@@ -602,6 +605,11 @@ static void on_start(void)
 
 static void on_resume(void)
 {
+    if (p_app_clock_main && p_app_clock_main->tileview)
+    {
+        lv_obj_clear_flag(p_app_clock_main->tileview, LV_OBJ_FLAG_HIDDEN);
+    }
+    app_clock_main_status_bar_set_hidden(RT_FALSE);
 
     app_clock_main_select(last_active_clock);
 }
@@ -617,6 +625,14 @@ static void on_pause(void)
         clk_desc = rt_list_entry(pos, app_clock_desc_t, node);
         app_clock_change_state(clk_desc, STATE_DEINIT);
     }
+
+    //Hide the clock's top-level UI (kept alive for a fast resume) so it doesn't
+    //linger as a visible/touchable sibling under whichever app is foregrounded next.
+    if (p_app_clock_main && p_app_clock_main->tileview)
+    {
+        lv_obj_add_flag(p_app_clock_main->tileview, LV_OBJ_FLAG_HIDDEN);
+    }
+    app_clock_main_status_bar_set_hidden(RT_TRUE);
 }
 
 static void on_stop(void)

@@ -21,6 +21,8 @@ os.system('msvc_setup.bat')
 TARGET = rtconfig.OUTPUT_DIR + rtconfig.TARGET_NAME + '.' + rtconfig.TARGET_EXT	
 
 rtconfig.CFLAGS += ' /IX:\\include /IY:\\ucrt /IY:\\um /IY:\\shared '
+# Match the 390 x 490 product display so simulator layout is hardware-sized.
+rtconfig.CFLAGS += ' /DLCD_HOR_RES_MAX=390 /DLCD_VER_RES_MAX=490 '
 rtconfig.LFLAGS += ' /LIBPATH:L:\\ucrt\\x86  /LIBPATH:L:\\um\\x86 /LIBPATH:X:\\lib\\x86 user32.lib '    
 rtconfig.EXEC_PATH='X:/bin/Hostx64/x86/'
 

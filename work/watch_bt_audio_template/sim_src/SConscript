@@ -11,8 +11,18 @@ app_utils = os.path.normpath(os.path.join(cwd, '../src/app_utils'))
 
 src = Glob('*.c')
 src += Glob(os.path.join(pet_src, '*.c'))
+src.extend(SConscript(
+    os.path.join(cwd, 'resource/images/SConscript'),
+    variant_dir="resource/images",
+    duplicate=0))
 
 inc = [cwd, pet_src, app_utils]
 
-group = DefineGroup('pet_sim', src, depend = ['PKG_USING_LITTLEVGL2RTT'], CPPPATH = inc)
+sim_defines = [
+    'BSP_USING_PC_SIMULATOR',
+    'AGENT_PET_STANDALONE_PREVIEW'
+]
+group = DefineGroup('pet_sim', src,
+                    depend = ['PKG_USING_LITTLEVGL2RTT'],
+                    CPPPATH = inc, CPPDEFINES = sim_defines)
 Return('group')

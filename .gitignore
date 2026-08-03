@@ -42,6 +42,8 @@ phone_app/android/app/build/
 work/*/simulator/build/
 work/*/simulator/__pycache__/
 work/*/simulator/*.pdb
+*.pdb
+.embeddedskills/
 work/*/simulator/.sconsign.dblite
 *.exe
 *.obj
