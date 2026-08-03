@@ -1,0 +1,20 @@
+# PC simulator sources: pet UI + mock BLE service + image resources.
+# Kept separate from the firmware src/ so the hardware build is untouched.
+from building import *
+import os
+
+cwd = GetCurrentDir()
+pet_src = os.path.normpath(os.path.join(cwd, '../src/gui_apps/pet'))
+app_utils = os.path.normpath(os.path.join(cwd, '../src/app_utils'))
+
+src = Glob('*.c')
+src += [os.path.join(pet_src, 'app_pet.c')]
+
+# Image resources (mascot PNG → RGB565 C array)
+src.extend(SConscript(os.path.join(cwd, 'resource/images/SConscript'),
+           variant_dir="resource/images", duplicate=0))
+
+inc = [cwd, pet_src, app_utils]
+
+group = DefineGroup('pet_sim', src, depend = ['PKG_USING_LITTLEVGL2RTT'], CPPPATH = inc)
+Return('group')
