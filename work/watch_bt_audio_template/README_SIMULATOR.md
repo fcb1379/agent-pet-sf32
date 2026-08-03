@@ -1,61 +1,41 @@
-# PC 模拟器
+# PC 完整手表模拟器
 
-模拟器直接编译硬件工程的桌宠 UI 源码，不再维护一份容易过期的 UI 副本。
+模拟器直接编译硬件工程的完整 LVGL 应用图，包括主表盘、应用启动器、闹钟、计时器、音乐、计算器、状态页和宠物功能。硬件 UI 修改后不需要复制代码，重新构建即可在 PC 上预览。
 
-## 一键预览硬件 UI
+## 一键预览
 
 双击 `preview_simulator.bat`。脚本会：
 
-1. 从 `src/gui_apps/pet/` 编译最新硬件 UI；
-2. 编译 PC 模拟器；
-3. 启动 `simulator/build/bf0_ap.exe`。
+1. 使用 `project/pc_hcpu` 配置编译完整手表工程；
+2. 使用 PC 服务桩替代蓝牙、音频和持久化硬件接口；
+3. 启动 `project/build_pc_hcpu/main.exe`。
 
-修改该目录中已有的 `.c` 文件，或者新增 `.c` 文件后，再次双击脚本即可
-看到最新效果，不需要手工复制代码。
+默认模拟分辨率为 390×490，启动后首先显示主表盘，可通过手表界面进入各个应用。
+
+## 手动构建
+
+```bat
+cd simulator
+build.bat
+..\project\build_pc_hcpu\main.exe
+```
 
 ## 同步边界
 
 | 目录 | 用途 | 同步方式 |
 |---|---|---|
-| `src/gui_apps/pet/` | 硬件与模拟器共用的 LVGL UI | 模拟器直接编译，自动同步 |
-| `sim_src/main.c` | PC 程序入口 | 仅模拟器 |
-| `sim_src/mock_ble.c` | PC 端测试状态 | 仅模拟器 |
-| `src/app_utils/` | 硬件 BLE、音频、设置等实现 | 不复制；模拟器使用 mock |
+| `src/gui_apps/` | 硬件与模拟器共用的完整 LVGL 应用 | 模拟器直接编译，自动同步 |
+| `src/resource/` | 图片、字体和字符串资源 | 模拟器直接编译，自动同步 |
+| `src/app_utils/` | 应用服务接口 | 硬件使用真实服务，PC 使用 `pc_simulator_services.c` |
+| `project/pc_hcpu/` | PC 平台配置 | 仅模拟器 |
+| `sim_src/` | 旧的宠物单页预览入口 | 保留兼容，不是默认入口 |
 
-硬件和模拟器现在共用同一套宠物绘制、布局、颜色和动画代码。只有 GUI
-框架注册和 BLE 数据来源仍通过 `BSP_USING_PC_SIMULATOR` 保留平台适配。
-
-## 手工编译
-
-```bat
-cd simulator
-build.bat
-build\bf0_ap.exe
-```
-
-增量编译会自动检测 `src/gui_apps/pet/` 的修改。
-
-## 切换模拟状态
-
-编辑 `sim_src/mock_ble.c`：
-
-```c
-s_status.tSnapshot.ucAggregateState = AGENTPET_STATE_RUNNING;
-```
-
-可选值包括：
-
-- `AGENTPET_STATE_IDLE`
-- `AGENTPET_STATE_RUNNING`
-- `AGENTPET_STATE_NEEDS_INPUT`
-- `AGENTPET_STATE_COMPLETED`
-- `AGENTPET_STATE_ERROR`
+宠物布局、木鱼点击互动以及其他应用界面均来自硬件使用的同一套源码。平台差异仅通过 `BSP_USING_PC_SIMULATOR` 隔离硬件服务。
 
 ## 本机环境
 
 - `SIFLI_SIM_SDK`：可选，默认使用仓库根目录的 `sdk/`。
-- `SIFLI_ENV`：SiFli-ENV 工具目录；未设置时使用
-  `simulator/build.bat` 中的默认值。
-- Visual Studio 与 Windows SDK 路径由 `simulator/msvc_setup.bat` 配置。
+- `SIFLI_ENV`：可选；未配置时使用系统 Python、SCons 和 MSVC。
+- Visual Studio 与 Windows SDK 路径由 `simulator/msvc_setup.bat` 自动配置。
 
-若换电脑，请先确认以上工具路径可用。
+换用其他电脑时，请先确认 Python、SCons、MSVC 和 Windows SDK 可用。

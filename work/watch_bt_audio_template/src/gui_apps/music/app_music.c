@@ -4,7 +4,19 @@
 #include "littlevgl2rtt.h"
 #include "lv_ext_resource_manager.h"
 #include "gui_app_fwk.h"
+#ifdef BSP_USING_PC_SIMULATOR
+/* Keep the UI command IDs available when the hardware BLE stack is omitted. */
+typedef enum _PCSIM_AMS_COMMAND
+{
+    BLE_AMS_CMD_TOGGLE_PLAY_PAUSE = 2,
+    BLE_AMS_CMD_NEXT = 3,
+    BLE_AMS_CMD_PREV = 4,
+    BLE_AMS_CMD_VOL_UP = 5,
+    BLE_AMS_CMD_VOL_DOWN = 6
+} PCSIM_AMS_COMMAND;
+#else
 #include "bf0_ble_ams.h"
+#endif /* BSP_USING_PC_SIMULATOR */
 #include "ble_ios_services.h"
 #include "local_music_player.h"
 

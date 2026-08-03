@@ -22,6 +22,15 @@ AddLCPU(SIFLI_SDK,rtconfig.CHIP,"../src/lcpu_img.c")
 # Set default compile options
 SifliEnv()
 
+# SiFli-SDK v2.4 declares a few public APIs with uint8_t before including
+# stdint.h. The legacy VS2017 headers accepted that include order, while
+# current MSVC does not. Keep the compatibility include scoped to the PC
+# simulator so embedded builds are unchanged.
+if rtconfig.PLATFORM == 'cl':
+    rtconfig.CFLAGS += (' /FIstdint.h'
+                        ' /DLCD_HOR_RES_MAX=390'
+                        ' /DLCD_VER_RES_MAX=490')
+
 TARGET = rtconfig.OUTPUT_DIR + rtconfig.TARGET_NAME + '.' + rtconfig.TARGET_EXT
 # Prepare building environment
 objs = PrepareBuilding(None)

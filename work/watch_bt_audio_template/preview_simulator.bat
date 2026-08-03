@@ -3,7 +3,7 @@ setlocal
 
 set "APP_DIR=%~dp0"
 
-echo [1/2] Building the simulator from the latest hardware UI sources...
+echo [1/2] Building the complete watch UI simulator...
 call "%APP_DIR%simulator\build.bat"
 if errorlevel 1 (
     echo.
@@ -12,7 +12,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-set "SIMULATOR_EXE=%APP_DIR%simulator\build\bf0_ap.exe"
+set "SIMULATOR_EXE=%APP_DIR%project\build_pc_hcpu\main.exe"
 if not exist "%SIMULATOR_EXE%" (
     echo.
     echo Build succeeded, but the simulator executable was not found:
@@ -22,5 +22,7 @@ if not exist "%SIMULATOR_EXE%" (
 )
 
 echo [2/2] Starting the simulator...
-start "Agent Pet LVGL Simulator" "%SIMULATOR_EXE%"
+pushd "%APP_DIR%project\build_pc_hcpu"
+start "Agent Pet Complete UI Simulator" "%SIMULATOR_EXE%"
+popd
 exit /b 0

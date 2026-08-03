@@ -480,3 +480,45 @@ void app_clock_main_status_bar_deinit(void)
     ios_last_ams_count = 0;
     lv_ext_font_reset();
 }
+
+/*
+    Hide the status bar overlay (touch-catchers + pull-down/up tileview) while the
+    clock app is paused/backgrounded, so its leftover text doesn't linger on the
+    shared screen underneath whatever app gets foregrounded next; called again with
+    hidden = RT_FALSE on resume to restore the touch-catchers (the tileview itself
+    stays hidden, matching its normal closed state, until the user presses it open).
+*/
+void app_clock_main_status_bar_set_hidden(rt_bool_t hidden)
+{
+    if (status_bar_area_up)
+    {
+        if (hidden)
+        {
+            lv_obj_add_flag(status_bar_area_up, LV_OBJ_FLAG_HIDDEN);
+        }
+        else
+        {
+            lv_obj_clear_flag(status_bar_area_up, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+
+    if (status_bar_area_down)
+    {
+        if (hidden)
+        {
+            lv_obj_add_flag(status_bar_area_down, LV_OBJ_FLAG_HIDDEN);
+        }
+        else
+        {
+            lv_obj_clear_flag(status_bar_area_down, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+
+    if (app_clock_main_status_bar)
+    {
+        //Always fold the pull-down/up panel closed and hide it, whether entering or
+        //leaving pause, so it never renders (or catches touches) while backgrounded.
+        lv_obj_set_tile_id(app_clock_main_status_bar, 0, 1, false);
+        lv_obj_add_flag(app_clock_main_status_bar, LV_OBJ_FLAG_HIDDEN);
+    }
+}
