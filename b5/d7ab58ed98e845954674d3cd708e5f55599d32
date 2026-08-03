@@ -1,0 +1,23 @@
+work/watch_bt_audio_template/src/app_utils/agent_pet_ble_service.c
+  s_abbb2bd46b4afc::t_1d62ea40afe86f 83
+work/watch_bt_audio_template/src/app_utils/agent_pet_image_transfer.c
+  s_abbb2bd46b4afc::t_cb580215323870 25-30,59-71,73,79,323,467,477-478,486,490,493-494,540,578,580-581,586-587,591-592,598-601,604-605,642,645,655,665-666,674-676,683,685-686,688-692,699-702,708,712,714-715,717-726,734,736,738,740
+work/watch_bt_audio_template/src/app_utils/agent_pet_image_transfer.h
+  s_abbb2bd46b4afc::t_71d543f64261b4 8-9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "b5d7ab58ed98e845954674d3cd708e5f55599d32",
+  "prompts": {},
+  "sessions": {
+    "s_abbb2bd46b4afc": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc6ed-063f-7a23-889d-19eb899eb590",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}
