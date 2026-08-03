@@ -19,7 +19,10 @@ typedef struct _AGENTPET_BLE_STATUS
 {
     bool bConnected;
     bool bHasSnapshot;
+    bool bHasWoodenFishEvent;
     uint32_t ulGeneration;
+    uint32_t ulWoodenFishGeneration;
+    uint16_t usWoodenFishSequence;
     uint32_t ulAcceptedFrameCount;
     uint32_t ulRejectedFrameCount;
     AGENTPET_SNAPSHOT tSnapshot;

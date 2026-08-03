@@ -12,13 +12,17 @@
 #endif
 
 LV_IMG_DECLARE(agent_pet_mascot);
+LV_IMG_DECLARE(agent_pet_wooden_fish);
+LV_IMG_DECLARE(agent_pet_wooden_fish_mallet);
+LV_IMG_DECLARE(agent_pet_merit_plus_one);
 
 #define APP_ID "pet"
-#define PET_STATUS_REFRESH_MS (250U)
+#define PET_STATUS_REFRESH_MS (100U)
+#define PET_MAX_REMOTE_HITS_PER_REFRESH (4U)
 #define PET_MASCOT_SIZE (336)
 #define PET_MASCOT_X ((LV_HOR_RES_MAX - PET_MASCOT_SIZE) / 2)
 #define PET_MASCOT_Y (((LV_VER_RES_MAX - PET_MASCOT_SIZE) / 2) - 12)
-#define PET_WOODEN_FISH_IDLE_MS (950U)
+#define PET_WOODEN_FISH_IDLE_MS (1700U)
 #define PET_DAILY_SUMMARY_MS (1900U)
 #define PET_TURBO_INTERVAL_MS (180U)
 #define PET_FAST_INTERVAL_MS (360U)
@@ -39,8 +43,7 @@ typedef struct
     lv_obj_t *wooden_fish;
     lv_obj_t *fish_body;
     lv_obj_t *mallet;
-    lv_obj_t *merit_label;
-    lv_obj_t *speed_label;
+    lv_obj_t *merit_image;
     lv_obj_t *daily_summary;
     lv_obj_t *sparkle_a;
     lv_obj_t *sparkle_b;
@@ -54,6 +57,7 @@ typedef struct
     share_prefs_t *pPrefs;
 #endif
     uint32_t ulRenderedGeneration;
+    uint32_t ulRenderedWoodenFishGeneration;
     uint32_t ulLastHitTick;
     uint32_t ulMeritCount;
     uint32_t ulMeritDay;
@@ -64,6 +68,7 @@ typedef struct
 static pet_ui_t g_pet_ui;
 
 static void PET_ApplyStateAnimation(uint8_t ucState);
+static void PET_PlayWoodenFishAnimation(const lv_point_t *pPoint);
 
 static const char *PET_StateName(uint8_t ucState)
 {
@@ -147,12 +152,29 @@ static void PET_RefreshStatus(lv_timer_t *pTimer)
 {
     AGENTPET_BLE_STATUS tStatus;
     const AGENTPET_SESSION *pSession;
+    uint32_t ulPendingHitCount;
+    uint8_t ucHitIndex;
 
     (void)pTimer;
     if (!AGENTPETBLE_GetStatus(&tStatus))
     {
         return;
     }
+    if (tStatus.bHasWoodenFishEvent)
+    {
+        ulPendingHitCount = tStatus.ulWoodenFishGeneration -
+            g_pet_ui.ulRenderedWoodenFishGeneration;
+        if (PET_MAX_REMOTE_HITS_PER_REFRESH < ulPendingHitCount)
+        {
+            ulPendingHitCount = PET_MAX_REMOTE_HITS_PER_REFRESH;
+        }
+        for (ucHitIndex = 0U; ucHitIndex < ulPendingHitCount; ucHitIndex++)
+        {
+            PET_PlayWoodenFishAnimation(NULL);
+        }
+        g_pet_ui.ulRenderedWoodenFishGeneration += ulPendingHitCount;
+    }
+
     if (
         (g_pet_ui.ulRenderedGeneration == tStatus.ulGeneration) &&
         (g_pet_ui.bRenderedConnected == tStatus.bConnected)
@@ -411,13 +433,13 @@ static void PET_HideDailySummary(lv_timer_t *pTimer)
 
 /*
  * PET_SetMalletAngle
- * Function: Animate the wooden-fish mallet using LVGL transform angles.
+ * Function: Animate the wooden-fish mallet using the native image angle API.
  */
 static void PET_SetMalletAngle(void *pObject, int32_t lAngle)
 {
     if (NULL != pObject)
     {
-        lv_obj_set_style_transform_angle((lv_obj_t *)pObject, lAngle, 0);
+        lv_img_set_angle((lv_obj_t *)pObject, (int16_t)lAngle);
     }
 
     return;
@@ -456,7 +478,6 @@ static void PET_EndWoodenFish(lv_timer_t *pTimer)
     }
 
     g_pet_ui.ulLastHitTick = 0U;
-    PET_SaveMerit();
 
     return;
 }
@@ -465,31 +486,23 @@ static void PET_EndWoodenFish(lv_timer_t *pTimer)
  * PET_PlayWoodenFish
  * Function: Replace the mascot with a repeatable wooden-fish interaction.
  */
-static void PET_PlayWoodenFish(lv_event_t *pEvent)
+static void PET_PlayWoodenFishAnimation(const lv_point_t *pPoint)
 {
-    lv_indev_t *pInput;
-    lv_point_t tPoint;
     lv_anim_t tAnimation;
     lv_coord_t tFishX;
     lv_coord_t tFishY;
     uint32_t ulInterval;
     uint32_t ulAnimationTime;
-    uint32_t ulAccentColor;
-    const char *pSpeedText;
 
-    if ((NULL == pEvent) ||
-        (LV_EVENT_SHORT_CLICKED != lv_event_get_code(pEvent)) ||
-        (NULL == g_pet_ui.wooden_timer))
+    if (NULL == g_pet_ui.wooden_timer)
     {
         return;
     }
 
-    pInput = lv_indev_get_act();
-    if (NULL != pInput)
+    if (NULL != pPoint)
     {
-        lv_indev_get_point(pInput, &tPoint);
-        tFishX = tPoint.x - (PET_WOODEN_FISH_WIDTH / 2);
-        tFishY = tPoint.y - (PET_WOODEN_FISH_HEIGHT / 2);
+        tFishX = pPoint->x - (PET_WOODEN_FISH_WIDTH / 2);
+        tFishY = pPoint->y - (PET_WOODEN_FISH_HEIGHT / 2);
         tFishX = LV_MAX(0, LV_MIN(tFishX,
                                   LV_HOR_RES_MAX - PET_WOODEN_FISH_WIDTH));
         tFishY = LV_MAX(0, LV_MIN(tFishY,
@@ -513,45 +526,28 @@ static void PET_PlayWoodenFish(lv_event_t *pEvent)
 
     if (PET_TURBO_INTERVAL_MS >= ulInterval)
     {
-        pSpeedText = "Triple dong!";
         ulAnimationTime = 140U;
-        ulAccentColor = 0xFF6B7AU;
     }
     else if (PET_FAST_INTERVAL_MS >= ulInterval)
     {
-        pSpeedText = "Merit combo";
         ulAnimationTime = 190U;
-        ulAccentColor = 0x83EAFFU;
     }
     else if (PET_QUICK_INTERVAL_MS >= ulInterval)
     {
-        pSpeedText = "Quick tap";
         ulAnimationTime = 260U;
-        ulAccentColor = 0xFFE994U;
     }
     else
     {
-        pSpeedText = "Calm tap";
         ulAnimationTime = 330U;
-        ulAccentColor = 0xF6C75EU;
     }
 
     lv_obj_add_flag(g_pet_ui.stage, LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(g_pet_ui.wooden_fish, LV_OBJ_FLAG_HIDDEN);
-    lv_label_set_text_fmt(
-        g_pet_ui.merit_label,
-        "Merit +1   #%lu",
-        (unsigned long)g_pet_ui.ulMeritCount);
-    lv_label_set_text(g_pet_ui.speed_label, pSpeedText);
-    lv_obj_set_style_text_color(
-        g_pet_ui.speed_label,
-        lv_color_hex(ulAccentColor),
-        0);
 
     lv_anim_del(g_pet_ui.mallet, NULL);
     lv_anim_init(&tAnimation);
     lv_anim_set_var(&tAnimation, g_pet_ui.mallet);
-    lv_anim_set_values(&tAnimation, -360, 160);
+    lv_anim_set_values(&tAnimation, 140, 50);
     lv_anim_set_exec_cb(&tAnimation, PET_SetMalletAngle);
     lv_anim_set_time(&tAnimation, ulAnimationTime);
     lv_anim_set_playback_time(&tAnimation, 120U);
@@ -560,10 +556,20 @@ static void PET_PlayWoodenFish(lv_event_t *pEvent)
     lv_anim_del(g_pet_ui.fish_body, NULL);
     lv_anim_init(&tAnimation);
     lv_anim_set_var(&tAnimation, g_pet_ui.fish_body);
-    lv_anim_set_values(&tAnimation, 42, 35);
+    lv_anim_set_values(&tAnimation, 50, 43);
     lv_anim_set_exec_cb(&tAnimation, (lv_anim_exec_xcb_t)lv_obj_set_y);
     lv_anim_set_time(&tAnimation, ulAnimationTime);
     lv_anim_set_playback_time(&tAnimation, 120U);
+    lv_anim_start(&tAnimation);
+
+    lv_anim_del(g_pet_ui.merit_image, NULL);
+    lv_obj_set_y(g_pet_ui.merit_image, 18);
+    lv_obj_set_style_opa(g_pet_ui.merit_image, LV_OPA_COVER, 0);
+    lv_anim_init(&tAnimation);
+    lv_anim_set_var(&tAnimation, g_pet_ui.merit_image);
+    lv_anim_set_values(&tAnimation, 18, -10);
+    lv_anim_set_exec_cb(&tAnimation, (lv_anim_exec_xcb_t)lv_obj_set_y);
+    lv_anim_set_time(&tAnimation, 1400U);
     lv_anim_start(&tAnimation);
 
     lv_timer_set_period(g_pet_ui.wooden_timer, PET_WOODEN_FISH_IDLE_MS);
@@ -574,14 +580,39 @@ static void PET_PlayWoodenFish(lv_event_t *pEvent)
 }
 
 /*
+ * PET_PlayWoodenFish
+ * Function: Convert a local short click into the shared wooden-fish animation.
+ */
+static void PET_PlayWoodenFish(lv_event_t *pEvent)
+{
+    lv_indev_t *pInput;
+    lv_point_t tPoint;
+
+    if ((NULL == pEvent) ||
+        (LV_EVENT_SHORT_CLICKED != lv_event_get_code(pEvent)))
+    {
+        return;
+    }
+
+    pInput = lv_indev_get_act();
+    if (NULL == pInput)
+    {
+        PET_PlayWoodenFishAnimation(NULL);
+        return;
+    }
+
+    lv_indev_get_point(pInput, &tPoint);
+    PET_PlayWoodenFishAnimation(&tPoint);
+
+    return;
+}
+
+/*
  * PET_CreateWoodenFish
- * Function: Build the wooden fish from small LVGL primitives.
+ * Function: Build independent image layers exported from the desktop CSS.
  */
 static void PET_CreateWoodenFish(void)
 {
-    lv_obj_t *pMouth;
-    lv_obj_t *pMalletHead;
-
     g_pet_ui.wooden_fish = lv_obj_create(g_pet_ui.root);
     lv_obj_set_pos(g_pet_ui.wooden_fish, 90, 155);
     lv_obj_set_size(g_pet_ui.wooden_fish,
@@ -598,47 +629,19 @@ static void PET_CreateWoodenFish(void)
         LV_EVENT_SHORT_CLICKED,
         NULL);
 
-    g_pet_ui.fish_body = pet_shape(
-        g_pet_ui.wooden_fish, 38, 68, 132, 82, 0xC8651DU, 41);
-    lv_obj_set_style_border_width(g_pet_ui.fish_body, 4, 0);
-    lv_obj_set_style_border_color(
-        g_pet_ui.fish_body, lv_color_hex(0x4F250FU), 0);
-    pMouth = pet_shape(
-        g_pet_ui.fish_body, 23, 15, 70, 12, 0x3D1B0DU, 6);
-    (void)pMouth;
-    pet_shape(g_pet_ui.fish_body, 99, 52, 17, 15, 0xFFD877U, 8);
+    g_pet_ui.fish_body = lv_img_create(g_pet_ui.wooden_fish);
+    lv_img_set_src(g_pet_ui.fish_body, &agent_pet_wooden_fish);
+    lv_obj_set_pos(g_pet_ui.fish_body, 20, 50);
 
-    g_pet_ui.mallet = pet_shape(
-        g_pet_ui.wooden_fish, 57, 34, 116, 16, 0xC77A32U, 8);
-    lv_obj_set_style_border_width(g_pet_ui.mallet, 2, 0);
-    lv_obj_set_style_border_color(
-        g_pet_ui.mallet, lv_color_hex(0x633514U), 0);
-    lv_obj_set_style_transform_pivot_x(g_pet_ui.mallet, 10, 0);
-    lv_obj_set_style_transform_pivot_y(g_pet_ui.mallet, 8, 0);
-    pMalletHead = pet_shape(
-        g_pet_ui.mallet, -19, -12, 40, 40, 0xD99348U, 20);
-    lv_obj_set_style_border_width(pMalletHead, 2, 0);
-    lv_obj_set_style_border_color(
-        pMalletHead, lv_color_hex(0x633514U), 0);
+    g_pet_ui.mallet = lv_img_create(g_pet_ui.wooden_fish);
+    lv_img_set_src(g_pet_ui.mallet, &agent_pet_wooden_fish_mallet);
+    lv_obj_set_pos(g_pet_ui.mallet, 28, 18);
+    lv_img_set_pivot(g_pet_ui.mallet, 132, 50);
+    lv_img_set_angle(g_pet_ui.mallet, 140);
 
-    g_pet_ui.merit_label = lv_label_create(g_pet_ui.wooden_fish);
-    lv_obj_set_width(g_pet_ui.merit_label, PET_WOODEN_FISH_WIDTH);
-    lv_obj_set_pos(g_pet_ui.merit_label, 0, 3);
-    lv_obj_set_style_text_align(
-        g_pet_ui.merit_label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_style_text_font(g_pet_ui.merit_label, &lv_font_montserrat_20, 0);
-    lv_obj_set_style_text_color(
-        g_pet_ui.merit_label, lv_color_hex(0xFFF3A4U), 0);
-    lv_label_set_text(g_pet_ui.merit_label, "Merit +1");
-
-    g_pet_ui.speed_label = lv_label_create(g_pet_ui.wooden_fish);
-    lv_obj_set_width(g_pet_ui.speed_label, PET_WOODEN_FISH_WIDTH);
-    lv_obj_set_pos(g_pet_ui.speed_label, 0, 158);
-    lv_obj_set_style_text_align(
-        g_pet_ui.speed_label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_style_text_color(
-        g_pet_ui.speed_label, lv_color_hex(0xF6C75EU), 0);
-    lv_label_set_text(g_pet_ui.speed_label, "Calm tap");
+    g_pet_ui.merit_image = lv_img_create(g_pet_ui.wooden_fish);
+    lv_img_set_src(g_pet_ui.merit_image, &agent_pet_merit_plus_one);
+    lv_obj_set_pos(g_pet_ui.merit_image, 15, 0);
 
     return;
 }
@@ -663,7 +666,6 @@ static void pet_on_start(void)
     lv_obj_set_width(name, LV_HOR_RES_MAX);
     lv_obj_set_pos(name, 0, 8);
     lv_obj_set_style_text_align(name, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_style_text_font(name, &lv_font_montserrat_28, 0);
     lv_obj_set_style_text_color(name, lv_color_hex(0xd8f7ee), 0);
 
     floor = pet_shape(g_pet_ui.root, 40,
@@ -720,8 +722,6 @@ static void pet_on_start(void)
         g_pet_ui.daily_summary, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_color(
         g_pet_ui.daily_summary, lv_color_hex(0xFFF4AAU), 0);
-    lv_obj_set_style_text_font(
-        g_pet_ui.daily_summary, &lv_font_montserrat_20, 0);
     lv_label_set_text(g_pet_ui.daily_summary, "Today's merit  0");
     lv_obj_add_flag(g_pet_ui.daily_summary, LV_OBJ_FLAG_HIDDEN);
 
@@ -730,7 +730,6 @@ static void pet_on_start(void)
     lv_obj_set_pos(g_pet_ui.status_label, 12, LV_VER_RES_MAX - 72);
     lv_obj_set_style_text_align(g_pet_ui.status_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_color(g_pet_ui.status_label, lv_color_hex(0xA7B0B5), 0);
-    lv_obj_set_style_text_font(g_pet_ui.status_label, &lv_font_montserrat_20, 0);
 
     g_pet_ui.task_label = lv_label_create(g_pet_ui.root);
     lv_obj_set_width(g_pet_ui.task_label, LV_HOR_RES_MAX - 24);
@@ -785,6 +784,8 @@ static void pet_on_stop(void)
     if (NULL != g_pet_ui.pPrefs)
     {
         rt_err_t tCloseResult;
+
+        PET_SaveMerit();
 
         tCloseResult = share_prefs_close(g_pet_ui.pPrefs);
         if (RT_EOK != tCloseResult)

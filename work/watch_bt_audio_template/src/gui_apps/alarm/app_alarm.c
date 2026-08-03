@@ -128,7 +128,6 @@ static lv_obj_t *alarm_create_button(lv_obj_t *parent, const char *text, lv_coor
 
     label = lv_label_create(object);
     lv_label_set_text(label, text);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(label, lv_color_white(), 0);
     lv_obj_center(label);
     return object;
@@ -156,21 +155,18 @@ static void alarm_on_start(void)
     title = lv_label_create(g_alarm_ui.root);
     lv_label_set_text(title, "Alarm");
     lv_obj_set_pos(title, margin, 8);
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(title, lv_color_hex(0x9bd3ff), 0);
 
     g_alarm_ui.value = lv_label_create(g_alarm_ui.root);
     lv_obj_set_pos(g_alarm_ui.value, margin, 35);
     lv_obj_set_size(g_alarm_ui.value, LV_HOR_RES_MAX - margin * 2, 45);
     lv_obj_set_style_text_align(g_alarm_ui.value, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_style_text_font(g_alarm_ui.value, &lv_font_montserrat_36, 0);
     lv_obj_set_style_text_color(g_alarm_ui.value, lv_color_white(), 0);
 
     g_alarm_ui.state = lv_label_create(g_alarm_ui.root);
     lv_obj_set_pos(g_alarm_ui.state, margin, 82);
     lv_obj_set_size(g_alarm_ui.state, LV_HOR_RES_MAX - margin * 2, 20);
     lv_obj_set_style_text_align(g_alarm_ui.state, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_style_text_font(g_alarm_ui.state, &lv_font_montserrat_16, 0);
     lv_obj_set_style_text_color(g_alarm_ui.state, lv_color_hex(0x8ca4bf), 0);
 
     alarm_create_button(g_alarm_ui.root, "H-", margin, 110, button_width, button_height,
