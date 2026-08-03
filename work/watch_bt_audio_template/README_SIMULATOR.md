@@ -4,7 +4,9 @@
 
 ## 一键预览
 
-双击 `preview_simulator.bat`。脚本会：
+双击 `preview_simulator.bat`。普通 Git clone 首次运行时，脚本会自动初始化仓库固定版本的 `sdk` 子模块，无需手工执行子模块命令。首次运行需要能够访问 GitHub。
+
+脚本会：
 
 1. 使用 `project/pc_hcpu` 配置编译完整手表工程；
 2. 使用 PC 服务桩替代蓝牙、音频和持久化硬件接口；
