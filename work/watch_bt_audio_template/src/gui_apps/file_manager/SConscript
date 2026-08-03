@@ -1,0 +1,10 @@
+from building import *
+import os
+
+cwd = GetCurrentDir()
+src = Glob('*.c')
+inc = [cwd, os.path.join(cwd, '../../app_utils')]
+
+group = DefineGroup('App_file_manager', src, depend = [''], CPPPATH = inc)
+
+Return('group')
