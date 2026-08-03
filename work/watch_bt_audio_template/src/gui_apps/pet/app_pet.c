@@ -1,6 +1,7 @@
 #include <rtthread.h>
 
 #include "littlevgl2rtt.h"
+#include "app_mem.h"
 #include "agent_pet_ble_service.h"
 #if !defined(BSP_USING_PC_SIMULATOR) || !defined(AGENT_PET_STANDALONE_PREVIEW)
     #include "lv_ext_resource_manager.h"
@@ -68,6 +69,8 @@ typedef struct
     uint8_t ucRenderedState;
     uint8_t ucRenderedImageProgress;
     AGENTPET_IMAGE_STATE eRenderedImageState;
+    lv_img_dsc_t tCustomMascot;
+    uint8_t *pCustomMascotPixels;
     bool bRenderedConnected;
     bool bRenderedCustomImage;
 } pet_ui_t;
@@ -76,6 +79,97 @@ static pet_ui_t g_pet_ui;
 
 static void PET_ApplyStateAnimation(uint8_t ucState);
 static void PET_PlayWoodenFishAnimation(const lv_point_t *pPoint);
+
+static void PET_ReleaseCustomMascot(void)
+{
+    if (NULL == g_pet_ui.pCustomMascotPixels)
+    {
+        return;
+    }
+
+    lv_img_cache_invalidate_src(&g_pet_ui.tCustomMascot);
+    app_cache_free(g_pet_ui.pCustomMascotPixels);
+    g_pet_ui.pCustomMascotPixels = NULL;
+    rt_memset(&g_pet_ui.tCustomMascot, 0, sizeof(g_pet_ui.tCustomMascot));
+}
+
+static bool PET_DecodeCustomMascot(lv_img_header_t *pHeader)
+{
+    lv_img_decoder_dsc_t tDecoder;
+    uint32_t ulDataSize;
+    uint16_t usRow;
+    lv_res_t eResult;
+
+    if (NULL == pHeader)
+    {
+        return false;
+    }
+
+    lv_img_cache_invalidate_src(NULL);
+    eResult = lv_img_decoder_open(
+        &tDecoder,
+        AGENTPET_IMAGE_LVGL_PATH,
+        lv_color_black(),
+        0);
+    if ((LV_RES_OK != eResult) ||
+        (0U == tDecoder.header.w) ||
+        (0U == tDecoder.header.h) ||
+        (PET_MASCOT_SIZE < tDecoder.header.w) ||
+        (PET_MASCOT_SIZE < tDecoder.header.h))
+    {
+        rt_kprintf("agent pet: custom JPEG open failed %d (%u x %u)\n",
+                   eResult, tDecoder.header.w, tDecoder.header.h);
+        if (LV_RES_OK == eResult)
+        {
+            lv_img_decoder_close(&tDecoder);
+        }
+        return false;
+    }
+
+    ulDataSize = (uint32_t)tDecoder.header.w * tDecoder.header.h *
+        sizeof(lv_color_t);
+    g_pet_ui.pCustomMascotPixels = app_cache_alloc(
+        ulDataSize,
+        IMAGE_CACHE_PSRAM);
+    if (NULL == g_pet_ui.pCustomMascotPixels)
+    {
+        rt_kprintf("agent pet: custom RGB buffer allocation failed %lu\n",
+                   (unsigned long)ulDataSize);
+        lv_img_decoder_close(&tDecoder);
+        return false;
+    }
+
+    for (usRow = 0U; usRow < tDecoder.header.h; usRow++)
+    {
+        eResult = lv_img_decoder_read_line(
+            &tDecoder,
+            0,
+            usRow,
+            tDecoder.header.w,
+            g_pet_ui.pCustomMascotPixels +
+                ((uint32_t)usRow * tDecoder.header.w * sizeof(lv_color_t)));
+        if (LV_RES_OK != eResult)
+        {
+            rt_kprintf("agent pet: custom JPEG decode failed at row %u\n",
+                       usRow);
+            lv_img_decoder_close(&tDecoder);
+            PET_ReleaseCustomMascot();
+            return false;
+        }
+    }
+
+    *pHeader = tDecoder.header;
+    lv_img_decoder_close(&tDecoder);
+    g_pet_ui.tCustomMascot.header.always_zero = 0;
+    g_pet_ui.tCustomMascot.header.w = pHeader->w;
+    g_pet_ui.tCustomMascot.header.h = pHeader->h;
+    g_pet_ui.tCustomMascot.header.cf = LV_IMG_CF_TRUE_COLOR;
+    g_pet_ui.tCustomMascot.data_size = ulDataSize;
+    g_pet_ui.tCustomMascot.data = g_pet_ui.pCustomMascotPixels;
+    rt_kprintf("agent pet: custom JPEG decoded %u x %u\n",
+               pHeader->w, pHeader->h);
+    return true;
+}
 
 static const char *PET_StateName(uint8_t ucState)
 {
@@ -176,14 +270,10 @@ static void PET_RefreshMascotImage(const AGENTPET_IMAGE_STATUS *pStatus)
     g_pet_ui.bRenderedCustomImage = pStatus->bImageAvailable;
     lv_img_set_src(g_pet_ui.mascot, &agent_pet_mascot);
     lv_img_set_zoom(g_pet_ui.mascot, LV_IMG_ZOOM_NONE);
+    PET_ReleaseCustomMascot();
     if (pStatus->bImageAvailable)
     {
-        lv_img_cache_invalidate_src(AGENTPET_IMAGE_LVGL_PATH);
-        if (LV_RES_OK == lv_img_decoder_get_info(
-                AGENTPET_IMAGE_LVGL_PATH,
-                &tHeader) &&
-            (0U != tHeader.w) &&
-            (0U != tHeader.h))
+        if (PET_DecodeCustomMascot(&tHeader))
         {
             uint32_t ulZoomWidth;
             uint32_t ulZoomHeight;
@@ -195,7 +285,7 @@ static void PET_RefreshMascotImage(const AGENTPET_IMAGE_STATUS *pStatus)
             usZoom = (uint16_t)LV_MIN(
                 LV_IMG_ZOOM_NONE,
                 LV_MIN(ulZoomWidth, ulZoomHeight));
-            lv_img_set_src(g_pet_ui.mascot, AGENTPET_IMAGE_LVGL_PATH);
+            lv_img_set_src(g_pet_ui.mascot, &g_pet_ui.tCustomMascot);
             lv_img_set_zoom(g_pet_ui.mascot, usZoom);
         }
         else
@@ -968,6 +1058,11 @@ static void pet_on_stop(void)
 #endif
     if (g_pet_ui.root)
     {
+        if (NULL != g_pet_ui.mascot)
+        {
+            lv_img_set_src(g_pet_ui.mascot, &agent_pet_mascot);
+        }
+        PET_ReleaseCustomMascot();
         lv_obj_del(g_pet_ui.root);
     }
     rt_memset(&g_pet_ui, 0, sizeof(g_pet_ui));
