@@ -53,5 +53,6 @@
     "timer":"Timer",
     "alarm_app":"Alarm",
     "pet":"Momo",
+    "file_manager":"TF Files",
     "lvgl_demos":"LVGL demos"
 }
