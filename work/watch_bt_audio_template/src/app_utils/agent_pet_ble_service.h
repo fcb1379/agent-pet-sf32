@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #include "agent_pet_protocol.h"
+#include "agent_pet_image_transfer.h"
 
 /* AGENTPET_BLE_STATUS: BLE 链路和最近一次有效 Agent 快照的只读副本。
  * 成员说明：
@@ -26,6 +27,7 @@ typedef struct _AGENTPET_BLE_STATUS
     uint32_t ulAcceptedFrameCount;
     uint32_t ulRejectedFrameCount;
     AGENTPET_SNAPSHOT tSnapshot;
+    AGENTPET_IMAGE_STATUS tImageStatus;
 } AGENTPET_BLE_STATUS;
 
 void AGENTPETBLE_Init(void);

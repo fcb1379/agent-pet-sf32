@@ -58,11 +58,13 @@ typedef struct
 #endif
     uint32_t ulRenderedGeneration;
     uint32_t ulRenderedWoodenFishGeneration;
+    uint32_t ulRenderedImageGeneration;
     uint32_t ulLastHitTick;
     uint32_t ulMeritCount;
     uint32_t ulMeritDay;
     uint8_t ucRenderedState;
     bool bRenderedConnected;
+    bool bRenderedCustomImage;
 } pet_ui_t;
 
 static pet_ui_t g_pet_ui;
@@ -142,6 +144,65 @@ static const char *PET_ProviderName(uint8_t ucProvider)
 }
 
 /*
+ * PET_RefreshMascotImage
+ * Function: switch atomically committed custom JPEGs on the LVGL thread.
+ * Parameters:
+ *   - pStatus: read-only persistent image status.
+ * Return: none.
+ */
+static void PET_RefreshMascotImage(const AGENTPET_IMAGE_STATUS *pStatus)
+{
+    lv_img_header_t tHeader;
+    uint16_t usZoom;
+
+    if ((NULL == pStatus) || (NULL == g_pet_ui.mascot))
+    {
+        return;
+    }
+    if (
+        (g_pet_ui.ulRenderedImageGeneration == pStatus->ulGeneration) &&
+        (g_pet_ui.bRenderedCustomImage == pStatus->bImageAvailable)
+    )
+    {
+        return;
+    }
+
+    g_pet_ui.ulRenderedImageGeneration = pStatus->ulGeneration;
+    g_pet_ui.bRenderedCustomImage = pStatus->bImageAvailable;
+    lv_img_set_src(g_pet_ui.mascot, &agent_pet_mascot);
+    lv_img_set_zoom(g_pet_ui.mascot, LV_IMG_ZOOM_NONE);
+    if (pStatus->bImageAvailable)
+    {
+        lv_img_cache_invalidate_src(AGENTPET_IMAGE_LVGL_PATH);
+        if (LV_RES_OK == lv_img_decoder_get_info(
+                AGENTPET_IMAGE_LVGL_PATH,
+                &tHeader) &&
+            (0U != tHeader.w) &&
+            (0U != tHeader.h))
+        {
+            uint32_t ulZoomWidth;
+            uint32_t ulZoomHeight;
+
+            ulZoomWidth = (uint32_t)PET_MASCOT_SIZE *
+                LV_IMG_ZOOM_NONE / tHeader.w;
+            ulZoomHeight = (uint32_t)PET_MASCOT_SIZE *
+                LV_IMG_ZOOM_NONE / tHeader.h;
+            usZoom = (uint16_t)LV_MIN(
+                LV_IMG_ZOOM_NONE,
+                LV_MIN(ulZoomWidth, ulZoomHeight));
+            lv_img_set_src(g_pet_ui.mascot, AGENTPET_IMAGE_LVGL_PATH);
+            lv_img_set_zoom(g_pet_ui.mascot, usZoom);
+        }
+        else
+        {
+            g_pet_ui.bRenderedCustomImage = false;
+        }
+    }
+    lv_obj_center(g_pet_ui.mascot);
+
+    return;
+}
+/*
  * PET_RefreshStatus
  * 功能：在 LVGL 线程中读取已发布快照并刷新桌宠状态文字。
  * 参数：
@@ -160,6 +221,7 @@ static void PET_RefreshStatus(lv_timer_t *pTimer)
     {
         return;
     }
+    PET_RefreshMascotImage(&tStatus.tImageStatus);
     if (tStatus.bHasWoodenFishEvent)
     {
         ulPendingHitCount = tStatus.ulWoodenFishGeneration -
@@ -754,7 +816,9 @@ static void pet_on_start(void)
     }
 
     g_pet_ui.ulRenderedGeneration = 0xFFFFFFFFUL;
+    g_pet_ui.ulRenderedImageGeneration = 0xFFFFFFFFUL;
     g_pet_ui.bRenderedConnected = false;
+    g_pet_ui.bRenderedCustomImage = false;
     g_pet_ui.status_timer = lv_timer_create(
         PET_RefreshStatus,
         PET_STATUS_REFRESH_MS,
