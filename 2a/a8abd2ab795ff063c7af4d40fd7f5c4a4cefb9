@@ -1,0 +1,30 @@
+work/watch_bt_audio_template/src/app_utils/agent_pet_image_transfer.h
+  s_abbb2bd46b4afc::t_df81b3c18ee73a 1-54
+work/watch_bt_audio_template/src/app_utils/agent_pet_image_transfer.c
+  s_abbb2bd46b4afc::t_12a403e8d0bb20 1-634
+  s_abbb2bd46b4afc::t_2283f3962faa9c 635-765
+work/watch_bt_audio_template/src/app_utils/SConscript
+  s_abbb2bd46b4afc::t_fb28e3edd586c5 31-32
+work/watch_bt_audio_template/src/app_utils/agent_pet_ble_service.c
+  s_abbb2bd46b4afc::t_72ab7c47859e5b 29-35,42-43,72-83,106,109-114,138-158,174,234-237,282
+work/watch_bt_audio_template/src/app_utils/agent_pet_ble_service.h
+  s_abbb2bd46b4afc::t_38df8e40210fb9 8,30
+work/watch_bt_audio_template/src/gui_apps/pet/app_pet.c
+  s_abbb2bd46b4afc::t_fb54d291c0648a 61,67,146-204,224,819,821
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "2aa8abd2ab795ff063c7af4d40fd7f5c4a4cefb9",
+  "prompts": {},
+  "sessions": {
+    "s_abbb2bd46b4afc": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc6ed-063f-7a23-889d-19eb899eb590",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}
