@@ -5,8 +5,6 @@
 #ifndef BSP_USING_PC_SIMULATOR
     #include "lv_ext_resource_manager.h"
     #include "gui_app_fwk.h"
-#else
-    LV_IMG_DECLARE(mascot_small);
 #endif
 
 #define APP_ID "pet"
@@ -236,11 +234,9 @@ static void pet_on_start(void)
 {
     lv_obj_t *name;
     lv_obj_t *floor;
-#ifndef BSP_USING_PC_SIMULATOR
     lv_obj_t *head;
     lv_obj_t *body;
     lv_obj_t *ear;
-#endif
 
     rt_memset(&g_pet_ui, 0, sizeof(g_pet_ui));
     g_pet_ui.root = lv_obj_create(lv_scr_act());
@@ -273,13 +269,6 @@ static void pet_on_start(void)
     lv_obj_set_style_transform_pivot_x(g_pet_ui.tail, 8, 0);
     lv_obj_set_style_transform_pivot_y(g_pet_ui.tail, 38, 0);
 
-#ifdef BSP_USING_PC_SIMULATOR
-    {
-        lv_obj_t *mascot = lv_img_create(g_pet_ui.stage);
-        lv_img_set_src(mascot, &mascot_small);
-        lv_obj_set_pos(mascot, 8, 8);
-    }
-#else
     body = pet_shape(g_pet_ui.stage, 24, 67, 70, 54, 0x58d5c3, 28);
     pet_shape(body, 17, 20, 36, 25, 0xd8f7ee, 14);
     pet_shape(body, 6, 43, 22, 12, 0xf6c75e, 8);
@@ -302,7 +291,6 @@ static void pet_on_start(void)
     pet_shape(head, 37, 43, 8, 6, 0xff8aae, 5);
     pet_shape(head, 9, 49, 16, 7, 0xffb4c8, 5);
     pet_shape(head, 57, 49, 16, 7, 0xffb4c8, 5);
-#endif
 
     g_pet_ui.sparkle_a = pet_shape(g_pet_ui.root, 35, 84, 7, 7, 0xf6c75e, 7);
     g_pet_ui.sparkle_b = pet_shape(g_pet_ui.root, 196, 103, 6, 6, 0xff8aae, 6);
@@ -310,10 +298,8 @@ static void pet_on_start(void)
 
     pet_start_y_animation(g_pet_ui.stage, 48, 43, 800, 120);
     pet_start_x_animation(g_pet_ui.tail, 89, 96, 560);
-#ifndef BSP_USING_PC_SIMULATOR
     pet_start_blink_animation(g_pet_ui.left_eye);
     pet_start_blink_animation(g_pet_ui.right_eye);
-#endif
     pet_start_y_animation(g_pet_ui.sparkle_a, 84, 72, 1000, 250);
     pet_start_y_animation(g_pet_ui.sparkle_b, 103, 89, 1150, 80);
     pet_start_y_animation(g_pet_ui.sparkle_c, 58, 45, 900, 360);

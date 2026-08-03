@@ -1,113 +1,61 @@
 # PC 模拟器
 
-在 PC 上直接运行桌宠 UI，无需硬件。改代码 → 编译 → 双击运行即可看到效果。
+模拟器直接编译硬件工程的桌宠 UI 源码，不再维护一份容易过期的 UI 副本。
 
-## 1. 编译和运行
+## 一键预览硬件 UI
 
-```bash
-# 编译（在 simulator/ 目录下执行）
+双击 `preview_simulator.bat`。脚本会：
+
+1. 从 `src/gui_apps/pet/` 编译最新硬件 UI；
+2. 编译 PC 模拟器；
+3. 启动 `simulator/build/bf0_ap.exe`。
+
+修改该目录中已有的 `.c` 文件，或者新增 `.c` 文件后，再次双击脚本即可
+看到最新效果，不需要手工复制代码。
+
+## 同步边界
+
+| 目录 | 用途 | 同步方式 |
+|---|---|---|
+| `src/gui_apps/pet/` | 硬件与模拟器共用的 LVGL UI | 模拟器直接编译，自动同步 |
+| `sim_src/main.c` | PC 程序入口 | 仅模拟器 |
+| `sim_src/mock_ble.c` | PC 端测试状态 | 仅模拟器 |
+| `src/app_utils/` | 硬件 BLE、音频、设置等实现 | 不复制；模拟器使用 mock |
+
+硬件和模拟器现在共用同一套宠物绘制、布局、颜色和动画代码。只有 GUI
+框架注册和 BLE 数据来源仍通过 `BSP_USING_PC_SIMULATOR` 保留平台适配。
+
+## 手工编译
+
+```bat
 cd simulator
 build.bat
-
-# 运行（双击即可）
-simulator\build\bf0_ap.exe
+build\bf0_ap.exe
 ```
 
-增量编译只需几秒，全量编译约 1-2 分钟。窗口标题 "LVGL Simulator for Windows Desktop"。
+增量编译会自动检测 `src/gui_apps/pet/` 的修改。
 
-## 2. 常见操作
+## 切换模拟状态
 
-### 看不同状态的效果
-
-打开 `sim_src\mock_ble.c`，找到这一段：
+编辑 `sim_src/mock_ble.c`：
 
 ```c
-s_status.tSnapshot.ucAggregateState = AGENTPET_STATE_RUNNING;  // 改这里
+s_status.tSnapshot.ucAggregateState = AGENTPET_STATE_RUNNING;
 ```
 
-把 `RUNNING` 换成以下任意一个，重新编译运行：
+可选值包括：
 
-| 值 | 窗口效果 |
-|---|---|
-| `AGENTPET_STATE_IDLE` | 灰字 "Idle"，宠物缓慢浮动 |
-| `AGENTPET_STATE_RUNNING` | 蓝字 "Running"，宠物上下跳动 |
-| `AGENTPET_STATE_NEEDS_INPUT` | 黄字 "Needs input"，宠物左右摇摆 |
-| `AGENTPET_STATE_COMPLETED` | 绿字 "Completed"，宠物弹跳一次 |
-| `AGENTPET_STATE_ERROR` | 红字 "Error"，宠物快速抖动 |
+- `AGENTPET_STATE_IDLE`
+- `AGENTPET_STATE_RUNNING`
+- `AGENTPET_STATE_NEEDS_INPUT`
+- `AGENTPET_STATE_COMPLETED`
+- `AGENTPET_STATE_ERROR`
 
-### 换一张宠物图片
+## 本机环境
 
-把 `sim_src\resource\images\mascot\mascot_small.png` 替换成自己的图片（建议 100×100 以内），重新编译。
+- `SIFLI_SIM_SDK`：可选，默认使用仓库根目录的 `sdk/`。
+- `SIFLI_ENV`：SiFli-ENV 工具目录；未设置时使用
+  `simulator/build.bat` 中的默认值。
+- Visual Studio 与 Windows SDK 路径由 `simulator/msvc_setup.bat` 配置。
 
-### 调整颜色、位置、动画
-
-编辑 `src\gui_apps\pet\app_pet.c`，找到 `pet_on_start()` 函数里的这一段：
-
-```c
-#ifdef BSP_USING_PC_SIMULATOR
-    {
-        lv_obj_t *mascot = lv_img_create(g_pet_ui.stage);
-        lv_img_set_src(mascot, &mascot_small);
-        lv_obj_set_pos(mascot, 8, 8);       // 图片在舞台中的位置
-    }
-```
-
-这段代码的上方和下方分别是背景、标题、尾巴、火花粒子和状态文字，都可以直接改。
-
-**常用改法：**
-
-| 代码位置 | 改什么 | 示例 |
-|---|---|---|
-| `lv_color_hex(0x10232b)` | 背景色 | 换成 `0x000000`（纯黑）|
-| `lv_obj_set_pos(g_pet_ui.stage, 62, 48)` | 宠物在窗口中的位置 | 增大 x 值右移 |
-| `pet_start_y_animation(..., 800, 120)` | 浮动动画的速度和幅度 | 减小时长 = 更快 |
-| `pet_shape(..., 0x58d5c3, 10)` | 尾巴颜色 | 换成 `0xff6b7a`（红色）|
-
-## 3. 文件说明
-
-```
-simulator/          ← 编译这套东西
-sim_src/
-  main.c            ← 程序入口
-  mock_ble.c        ← 假数据（改状态改这里）
-  resource/images/
-    mascot_small.png  ← 宠物图片
-src/gui_apps/pet/
-  app_pet.c         ← UI 代码（改外观改这里）
-```
-
-`sim_src/` 和 `app_pet.c` 中的 `#ifdef BSP_USING_PC_SIMULATOR` 只在模拟器编译时生效，**不影响正式硬件固件**。
-
-## 4. 换机器后的配置
-
-**SiFli-SDK**：`git clone --recurse-submodules` 自动拉取到仓库 `sdk/`，不需要额外配置。
-
-**SiFli-ENV 工具包**：从 SiFli 官网下载，参考第2点：https://docs.sifli.com/projects/solution/1.get-started/development_env.html，在本地解压后修改 `simulator\build.bat` 顶部：
-
-```batch
-if not defined SIFLI_ENV  set SIFLI_ENV=你的env路径
-```
-
-**Visual Studio + Windows SDK**：修改 `simulator\msvc_setup.bat` 的 3 行：
-
-```batch
-subst x: "你的VS安装目录\VC\Tools\MSVC\版本号"
-subst y: "你的Windows Kits目录\10\Include\版本号"
-subst l: "你的Windows Kits目录\10\Lib\版本号"
-```
-
-如果不清楚本机路径，打开 **Visual Studio Installer → 单个组件**，搜索 "MSVC" 和 "Windows SDK" 查看已安装的版本号。
-
-## 5. 常见问题
-
-**编译报错 `无法打开包括文件`**
-
-IDE 的 IntelliSense 误报，不影响 scons 编译，忽略即可。
-
-**运行立即闪退**
-
-用命令行启动看退出码。若为 `0xC0000094`，说明 `sim_src\main.c` 中 `lv_ex_data_pool_init()` 缺失或未在 `littlevgl2rtt_init()` 之后调用。
-
-**图片没显示**
-
-确认 `mascot_small.png` 在 `sim_src\resource\images\mascot\` 下，且文件名不含中文。图片标识符由 ezip 自动生成：`mascot_small.png` → `LV_IMG_DECLARE(mascot_small)`。
+若换电脑，请先确认以上工具路径可用。
