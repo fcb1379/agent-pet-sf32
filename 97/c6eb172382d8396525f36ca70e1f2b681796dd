@@ -1,0 +1,21 @@
+work/watch_bt_audio_template/README_SIMULATOR.md
+  s_8f821ae819d670::t_5eb255aaa41c97 7-9
+work/watch_bt_audio_template/simulator/build.bat
+  s_8f821ae819d670::t_2ddbc92db3eb22 7-9,13-31,68-76
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "97c6eb172382d8396525f36ca70e1f2b681796dd",
+  "prompts": {},
+  "sessions": {
+    "s_8f821ae819d670": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e6d67970-0811-4a26-96cf-132762ee6c5c",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}
