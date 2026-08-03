@@ -5,7 +5,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define AGENTPET_IMAGE_FRAME_SIZE       (20U)
+#define AGENTPET_IMAGE_CONTROL_FRAME_SIZE (20U)
+#define AGENTPET_IMAGE_MAX_PACKET_SIZE    (244U)
 #define AGENTPET_IMAGE_MAX_FILE_SIZE    (128U * 1024U)
 #define AGENTPET_IMAGE_PATH             "/pet.jpg"
 #define AGENTPET_IMAGE_LVGL_PATH        "/:/pet.jpg"

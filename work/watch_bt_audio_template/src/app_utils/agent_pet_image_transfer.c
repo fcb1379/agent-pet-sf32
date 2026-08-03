@@ -22,12 +22,12 @@
 #define AGENTPET_IMAGE_COMMAND_COMMIT   (3U)
 #define AGENTPET_IMAGE_COMMAND_RESET    (4U)
 #define AGENTPET_IMAGE_FORMAT_JPEG      (1U)
-#define AGENTPET_IMAGE_DATA_OFFSET      (8U)
-#define AGENTPET_IMAGE_DATA_SIZE        (11U)
-#define AGENTPET_IMAGE_CRC_OFFSET       (19U)
-#define AGENTPET_IMAGE_WRITE_BUFFER_SIZE (512U)
-#define AGENTPET_IMAGE_CRC32_INIT       (0xFFFFFFFFUL)
-#define AGENTPET_IMAGE_QUEUE_DEPTH      (32U)
+#define AGENTPET_IMAGE_DATA_OFFSET       (8U)
+#define AGENTPET_IMAGE_DATA_MAX_SIZE      (235U)
+#define AGENTPET_IMAGE_PACKET_OVERHEAD    (9U)
+#define AGENTPET_IMAGE_WRITE_BUFFER_SIZE  (512U)
+#define AGENTPET_IMAGE_CRC32_INIT         (0xFFFFFFFFUL)
+#define AGENTPET_IMAGE_QUEUE_DEPTH        (8U)
 #define AGENTPET_IMAGE_THREAD_STACK_SIZE (2048U)
 #define AGENTPET_IMAGE_THREAD_TIME_SLICE (10U)
 
@@ -56,16 +56,27 @@ typedef struct _AGENTPET_IMAGE_ENV
     uint8_t aWriteBuffer[AGENTPET_IMAGE_WRITE_BUFFER_SIZE];
 } AGENTPET_IMAGE_ENV;
 
-/* Module-local transfer state. The fixed 512-byte buffer bounds RAM usage and is
- * accessed only from the serialized GATT callback; LVGL reads a copied snapshot. */
+/* AGENTPET_IMAGE_PACKET: one variable-length GATT write copied into the worker queue.
+ * Members:
+ *   - usLength: validated packet length, range 9..244 bytes
+ *   - aData: fixed-capacity packet storage; only bytes below usLength are processed
+ */
+typedef struct _AGENTPET_IMAGE_PACKET
+{
+    uint16_t usLength;
+    uint8_t aData[AGENTPET_IMAGE_MAX_PACKET_SIZE];
+} AGENTPET_IMAGE_PACKET;
+
+/* Module-local transfer state. The worker serializes filesystem writes while LVGL
+ * reads copied status snapshots under the module mutex. */
 /* Static RTOS resources keep GATT writes bounded and avoid heap fragmentation.
- * Queue capacity: 32 frames (640 payload bytes); worker stack: 2048 bytes. */
+ * Queue capacity: 8 packets (up to 1952 payload bytes); worker stack: 2048 bytes. */
 static struct rt_messagequeue l_tImageQueue;
 static struct rt_mutex l_tImageMutex;
 static struct rt_thread l_tImageThread;
 static uint8_t l_aImageThreadStack[AGENTPET_IMAGE_THREAD_STACK_SIZE];
 static uint8_t l_aImageQueuePool[
-    (RT_ALIGN(AGENTPET_IMAGE_FRAME_SIZE, RT_ALIGN_SIZE) +
+    (RT_ALIGN(sizeof(AGENTPET_IMAGE_PACKET), RT_ALIGN_SIZE) +
      sizeof(void *)) * AGENTPET_IMAGE_QUEUE_DEPTH];
 static bool l_bImageWorkerReady;
 static AGENTPET_IMAGE_ENV l_tImageEnv =
@@ -309,7 +320,7 @@ static AGENTPET_IMAGE_RESULT Local_AppendData(
         (AGENTPET_IMAGE_RECEIVING != l_tImageEnv.eState) ||
         (NULL == pData) ||
         (0U == ucLength) ||
-        (AGENTPET_IMAGE_DATA_SIZE < ucLength)
+        (AGENTPET_IMAGE_DATA_MAX_SIZE < ucLength)
     )
     {
         return AGENTPET_IMAGE_ERROR_STATE;
@@ -453,7 +464,7 @@ static AGENTPET_IMAGE_RESULT Local_ResetImage(void)
 
 static void Local_ImageWorker(void *pParameter)
 {
-    uint8_t aFrame[AGENTPET_IMAGE_FRAME_SIZE];
+    AGENTPET_IMAGE_PACKET tPacket;
 
     (void)pParameter;
     while (true)
@@ -463,8 +474,8 @@ static void Local_ImageWorker(void *pParameter)
 
         tResult = rt_mq_recv(
             &l_tImageQueue,
-            aFrame,
-            sizeof(aFrame),
+            &tPacket,
+            sizeof(tPacket),
             RT_WAITING_FOREVER);
         if (RT_EOK != tResult)
         {
@@ -472,13 +483,15 @@ static void Local_ImageWorker(void *pParameter)
         }
 
         (void)rt_mutex_take(&l_tImageMutex, RT_WAITING_FOREVER);
-        eResult = AGENTPETIMAGE_ProcessFrame(aFrame, sizeof(aFrame));
+        eResult = AGENTPETIMAGE_ProcessFrame(tPacket.aData, tPacket.usLength);
         (void)rt_mutex_release(&l_tImageMutex);
         if (AGENTPET_IMAGE_ERROR_INVALID_PARAMETER <= eResult)
         {
-            LOG_E("Custom mascot worker rejected frame result=%d", eResult);
+            LOG_E("Custom mascot worker rejected packet result=%d", eResult);
         }
     }
+
+    return;
 }
 /*
  * AGENTPETIMAGE_Init
@@ -524,7 +537,7 @@ void AGENTPETIMAGE_Init(void)
         &l_tImageQueue,
         "pet_img_q",
         l_aImageQueuePool,
-        AGENTPET_IMAGE_FRAME_SIZE,
+        sizeof(AGENTPET_IMAGE_PACKET),
         sizeof(l_aImageQueuePool),
         RT_IPC_FLAG_FIFO);
     if (RT_EOK != tResult)
@@ -562,27 +575,34 @@ void AGENTPETIMAGE_Init(void)
 
 /*
  * AGENTPETIMAGE_QueueFrame
- * Function: copy one fixed frame into the bounded worker queue without blocking the GATT callback.
+ * Function: copy one variable-length packet into the bounded worker queue without blocking the GATT callback.
  * Parameters:
- *   - pFrame: read-only 20-byte image frame.
- *   - ulLength: frame length, must equal 20 bytes.
+ *   - pFrame: read-only image packet, 9..244 bytes.
+ *   - ulLength: actual packet length, 9..244 bytes.
  * Return: true when queued; false for invalid input, unavailable worker, or queue exhaustion.
  */
 bool AGENTPETIMAGE_QueueFrame(const uint8_t *pFrame, size_t ulLength)
 {
+    AGENTPET_IMAGE_PACKET tPacket;
+
     if (
         (!l_bImageWorkerReady) ||
         (NULL == pFrame) ||
-        (AGENTPET_IMAGE_FRAME_SIZE != ulLength)
+        (AGENTPET_IMAGE_PACKET_OVERHEAD > ulLength) ||
+        (AGENTPET_IMAGE_MAX_PACKET_SIZE < ulLength)
     )
     {
         return false;
     }
 
+    (void)memset(&tPacket, 0, sizeof(tPacket));
+    tPacket.usLength = (uint16_t)ulLength;
+    (void)memcpy(tPacket.aData, pFrame, ulLength);
+
     return (RT_EOK == rt_mq_send(
         &l_tImageQueue,
-        (void *)pFrame,
-        AGENTPET_IMAGE_FRAME_SIZE));
+        &tPacket,
+        sizeof(tPacket)));
 }
 
 /*
@@ -619,10 +639,10 @@ void AGENTPETIMAGE_ResetTransfer(void)
 
 /*
  * AGENTPETIMAGE_ProcessFrame
- * Function: validate and process one fixed 20-byte custom mascot transfer frame.
+ * Function: validate and process one variable-length custom mascot transfer packet.
  * Parameters:
  *   - pFrame: read-only frame data.
- *   - ulLength: frame length, must equal 20 bytes.
+ *   - ulLength: actual packet length, 9..244 bytes.
  * Return: accepted/committed/reset or a bounded protocol/storage error.
  */
 AGENTPET_IMAGE_RESULT AGENTPETIMAGE_ProcessFrame(
@@ -632,6 +652,7 @@ AGENTPET_IMAGE_RESULT AGENTPETIMAGE_ProcessFrame(
     AGENTPET_IMAGE_RESULT eResult;
     uint32_t ulValue;
     uint32_t ulCrc;
+    size_t ulCrcOffset;
     uint8_t ucCommand;
     uint8_t ucIndex;
     uint8_t ucPayloadLength;
@@ -641,7 +662,8 @@ AGENTPET_IMAGE_RESULT AGENTPETIMAGE_ProcessFrame(
         return AGENTPET_IMAGE_ERROR_INVALID_PARAMETER;
     }
     if (
-        (AGENTPET_IMAGE_FRAME_SIZE != ulLength) ||
+        (AGENTPET_IMAGE_PACKET_OVERHEAD > ulLength) ||
+        (AGENTPET_IMAGE_MAX_PACKET_SIZE < ulLength) ||
         (AGENTPET_IMAGE_MAGIC_FIRST != pFrame[0]) ||
         (AGENTPET_IMAGE_MAGIC_SECOND != pFrame[1]) ||
         (AGENTPET_IMAGE_PROTOCOL_VERSION != pFrame[2])
@@ -649,42 +671,59 @@ AGENTPET_IMAGE_RESULT AGENTPETIMAGE_ProcessFrame(
     {
         return AGENTPET_IMAGE_ERROR_FRAME;
     }
-    if (pFrame[AGENTPET_IMAGE_CRC_OFFSET] !=
-        AGENTPET_Crc8Atm(pFrame, AGENTPET_IMAGE_CRC_OFFSET))
+
+    ulCrcOffset = ulLength - 1U;
+    if (pFrame[ulCrcOffset] != AGENTPET_Crc8Atm(pFrame, ulCrcOffset))
     {
         return AGENTPET_IMAGE_ERROR_CRC;
     }
 
     ucCommand = pFrame[3];
     ulValue = Local_ReadLe24(&pFrame[4]);
-    ulCrc = Local_ReadLe32(&pFrame[8]);
+    ulCrc = 0U;
     eResult = AGENTPET_IMAGE_ERROR_FRAME;
-    if (AGENTPET_IMAGE_COMMAND_BEGIN == ucCommand)
+    if ((AGENTPET_IMAGE_COMMAND_BEGIN == ucCommand) ||
+        (AGENTPET_IMAGE_COMMAND_COMMIT == ucCommand))
     {
-        for (ucIndex = 12U; ucIndex < AGENTPET_IMAGE_CRC_OFFSET; ucIndex++)
+        if (AGENTPET_IMAGE_CONTROL_FRAME_SIZE != ulLength)
+        {
+            return AGENTPET_IMAGE_ERROR_FRAME;
+        }
+        for (ucIndex = 12U; ucIndex < AGENTPET_IMAGE_CONTROL_FRAME_SIZE - 1U; ucIndex++)
         {
             if (0U != pFrame[ucIndex])
             {
                 return AGENTPET_IMAGE_ERROR_FRAME;
             }
         }
-        eResult = Local_BeginTransfer(ulValue, ulCrc, pFrame[7]);
+        ulCrc = Local_ReadLe32(&pFrame[8]);
+        eResult = (AGENTPET_IMAGE_COMMAND_BEGIN == ucCommand) ?
+            Local_BeginTransfer(ulValue, ulCrc, pFrame[7]) :
+            Local_CommitTransfer(ulValue, ulCrc, pFrame[7]);
     }
     else if (AGENTPET_IMAGE_COMMAND_DATA == ucCommand)
     {
         ucPayloadLength = pFrame[7];
         if ((0U == ucPayloadLength) ||
-            (AGENTPET_IMAGE_DATA_SIZE < ucPayloadLength))
+            (AGENTPET_IMAGE_DATA_MAX_SIZE < ucPayloadLength))
         {
             return AGENTPET_IMAGE_ERROR_SIZE;
         }
-        for (ucIndex = (uint8_t)(AGENTPET_IMAGE_DATA_OFFSET + ucPayloadLength);
-             ucIndex < AGENTPET_IMAGE_CRC_OFFSET;
-             ucIndex++)
+        if ((size_t)(AGENTPET_IMAGE_PACKET_OVERHEAD + ucPayloadLength) != ulLength)
         {
-            if (0U != pFrame[ucIndex])
+            if ((AGENTPET_IMAGE_CONTROL_FRAME_SIZE != ulLength) ||
+                (11U < ucPayloadLength))
             {
-                return AGENTPET_IMAGE_ERROR_FRAME;
+                return AGENTPET_IMAGE_ERROR_SIZE;
+            }
+            for (ucIndex = (uint8_t)(AGENTPET_IMAGE_DATA_OFFSET + ucPayloadLength);
+                 ucIndex < AGENTPET_IMAGE_CONTROL_FRAME_SIZE - 1U;
+                 ucIndex++)
+            {
+                if (0U != pFrame[ucIndex])
+                {
+                    return AGENTPET_IMAGE_ERROR_FRAME;
+                }
             }
         }
         eResult = Local_AppendData(
@@ -692,20 +731,13 @@ AGENTPET_IMAGE_RESULT AGENTPETIMAGE_ProcessFrame(
             &pFrame[AGENTPET_IMAGE_DATA_OFFSET],
             ucPayloadLength);
     }
-    else if (AGENTPET_IMAGE_COMMAND_COMMIT == ucCommand)
-    {
-        for (ucIndex = 12U; ucIndex < AGENTPET_IMAGE_CRC_OFFSET; ucIndex++)
-        {
-            if (0U != pFrame[ucIndex])
-            {
-                return AGENTPET_IMAGE_ERROR_FRAME;
-            }
-        }
-        eResult = Local_CommitTransfer(ulValue, ulCrc, pFrame[7]);
-    }
     else if (AGENTPET_IMAGE_COMMAND_RESET == ucCommand)
     {
-        for (ucIndex = 4U; ucIndex < AGENTPET_IMAGE_CRC_OFFSET; ucIndex++)
+        if (AGENTPET_IMAGE_CONTROL_FRAME_SIZE != ulLength)
+        {
+            return AGENTPET_IMAGE_ERROR_FRAME;
+        }
+        for (ucIndex = 4U; ucIndex < AGENTPET_IMAGE_CONTROL_FRAME_SIZE - 1U; ucIndex++)
         {
             if (0U != pFrame[ucIndex])
             {
@@ -713,10 +745,6 @@ AGENTPET_IMAGE_RESULT AGENTPETIMAGE_ProcessFrame(
             }
         }
         eResult = Local_ResetImage();
-    }
-    else
-    {
-        eResult = AGENTPET_IMAGE_ERROR_FRAME;
     }
 
     if ((AGENTPET_IMAGE_ERROR_INVALID_PARAMETER <= eResult) &&

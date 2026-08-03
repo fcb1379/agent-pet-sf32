@@ -80,7 +80,7 @@ BLE_GATT_SERVICE_DEFINE_128(l_tAgentPetAttributeDatabase)
         BLE_GATT_PERM_WRITE_COMMAND_ENABLE,
         BLE_GATT_VALUE_PERM_UUID_128 |
         BLE_GATT_VALUE_PERM_RI_ENABLE,
-        AGENTPET_IMAGE_FRAME_SIZE),
+        AGENTPET_IMAGE_MAX_PACKET_SIZE),
 };
 
 static uint8_t *Local_GattReadCallback(
