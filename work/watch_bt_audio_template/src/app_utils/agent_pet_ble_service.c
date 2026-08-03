@@ -8,6 +8,9 @@
 #define LOG_TAG "agent_pet_ble"
 #include "log.h"
 
+#define AGENTPET_UUID_16_LE(x) \
+    { ((uint8_t)((x) & 0xFFU)), ((uint8_t)((x) >> 8U)) }
+
 #define AGENTPET_SERVICE_UUID_BYTES \
 { \
     0x00U, 0x10U, 0x0BU, 0x1AU, \
@@ -44,11 +47,11 @@ BLE_GATT_SERVICE_DEFINE_128(l_tAgentPetAttributeDatabase)
 {
     BLE_GATT_SERVICE_DECLARE(
         AGENTPET_ATT_SERVICE,
-        SERIAL_UUID_16_PRI_SERVICE,
+        AGENTPET_UUID_16_LE(0x2800U),
         BLE_GATT_PERM_READ_ENABLE),
     BLE_GATT_CHAR_DECLARE(
         AGENTPET_ATT_STATUS_CHAR,
-        SERIAL_UUID_16_CHARACTERISTIC,
+        AGENTPET_UUID_16_LE(0x2803U),
         BLE_GATT_PERM_READ_ENABLE),
     BLE_GATT_CHAR_VALUE_DECLARE(
         AGENTPET_ATT_STATUS_VALUE,
