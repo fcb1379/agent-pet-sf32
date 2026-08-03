@@ -1,0 +1,35 @@
+work/watch_bt_audio_template/src/app_utils/agent_pet_ble_service.c
+  s_abbb2bd46b4afc::t_74659aec0e8fc5 100,111-115,208-210,220-222,229-234
+work/watch_bt_audio_template/src/app_utils/agent_pet_ble_service.h
+  s_abbb2bd46b4afc::t_4a480998a848d1 22,24-25
+work/watch_bt_audio_template/src/app_utils/agent_pet_protocol.c
+  s_abbb2bd46b4afc::t_ed9e48d548bdef 9-11,34,51-56,179-181,249,270-271,282,308-328,392-419
+work/watch_bt_audio_template/src/app_utils/agent_pet_protocol.h
+  s_abbb2bd46b4afc::t_bf3bb70f9ac142 29,36-37,81
+work/watch_bt_audio_template/src/gui_apps/pet/app_pet.c
+  s_8f821ae819d670::t_c258ba72ea593f 17-18,58,69,153-154,161-175,488,498,503,505-506,590-617
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "73382aed527783c863a72bf21220d95a75c26905",
+  "prompts": {},
+  "sessions": {
+    "s_8f821ae819d670": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e6d67970-0811-4a26-96cf-132762ee6c5c",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    },
+    "s_abbb2bd46b4afc": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc6ed-063f-7a23-889d-19eb899eb590",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}
