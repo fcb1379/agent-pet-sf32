@@ -47,12 +47,40 @@ typedef struct
 
 static calculator_ui_t g_calculator_ui;
 
+static void calculator_trim_trailing_zeros(char *text)
+{
+    char *dot;
+    char *end;
+
+    dot = strchr(text, '.');
+    if (dot == RT_NULL)
+    {
+        return;
+    }
+
+    end = text + rt_strlen(text) - 1;
+    while (end > dot && *end == '0')
+    {
+        *end-- = '\0';
+    }
+    if (end == dot)
+    {
+        *end = '\0';
+    }
+}
+
 static void calculator_set_value(double value)
 {
-    rt_snprintf(g_calculator_ui.value, sizeof(g_calculator_ui.value), "%.10g", value);
+    /* rt_snprintf() (RT-Thread's minimal printf) only dispatches %f for
+     * floating point, not %g/%e, so %g silently prints as literal "%g".
+     * Format with %f and trim trailing zeros ourselves instead. */
+    rt_snprintf(g_calculator_ui.value, sizeof(g_calculator_ui.value), "%.6f", value);
+    calculator_trim_trailing_zeros(g_calculator_ui.value);
+
     if (rt_strlen(g_calculator_ui.value) > CALC_MAX_DIGITS)
     {
-        rt_snprintf(g_calculator_ui.value, sizeof(g_calculator_ui.value), "%.7g", value);
+        rt_snprintf(g_calculator_ui.value, sizeof(g_calculator_ui.value), "%.2f", value);
+        calculator_trim_trailing_zeros(g_calculator_ui.value);
     }
 }
 
@@ -75,8 +103,11 @@ static void calculator_refresh(void)
     lv_label_set_text(g_calculator_ui.display, g_calculator_ui.value);
     if (g_calculator_ui.pending_operator)
     {
-        rt_snprintf(expression, sizeof(expression), "%.8g %c", g_calculator_ui.accumulator,
-                    g_calculator_ui.pending_operator);
+        /* %g is not supported by rt_snprintf(), see calculator_set_value() */
+        rt_snprintf(expression, sizeof(expression), "%.6f", g_calculator_ui.accumulator);
+        calculator_trim_trailing_zeros(expression);
+        rt_snprintf(expression + rt_strlen(expression), sizeof(expression) - rt_strlen(expression),
+                    " %c", g_calculator_ui.pending_operator);
         lv_label_set_text(g_calculator_ui.expression, expression);
     }
     else
@@ -203,7 +234,7 @@ static void calculator_button_event(lv_event_t *event)
 {
     calculator_key_t key = (calculator_key_t)(uintptr_t)lv_event_get_user_data(event);
 
-    if (lv_event_get_code(event) != LV_EVENT_CLICKED && lv_event_get_code(event) != LV_EVENT_SHORT_CLICKED)
+    if (lv_event_get_code(event) != LV_EVENT_CLICKED)
     {
         return;
     }
