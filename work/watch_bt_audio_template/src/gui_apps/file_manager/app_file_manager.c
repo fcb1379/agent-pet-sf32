@@ -762,8 +762,8 @@ static int FileManager_AppMain(intent_t tIntent)
     return 0;
 }
 
-LV_IMG_DECLARE(img_photos);
+LV_IMG_DECLARE(img_file_manager);
 BUILTIN_APP_EXPORT(LV_EXT_STR_ID(file_manager),
-                   LV_EXT_IMG_GET(img_photos),
+                   LV_EXT_IMG_GET(img_file_manager),
                    APP_ID,
                    FileManager_AppMain);

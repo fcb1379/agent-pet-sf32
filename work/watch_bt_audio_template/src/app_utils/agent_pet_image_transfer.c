@@ -23,6 +23,8 @@
 #define AGENTPET_IMAGE_COMMAND_COMMIT   (3U)
 #define AGENTPET_IMAGE_COMMAND_RESET    (4U)
 #define AGENTPET_IMAGE_FORMAT_JPEG      (1U)
+#define AGENTPET_IMAGE_WIDTH            (336U)
+#define AGENTPET_IMAGE_HEIGHT           (336U)
 #define AGENTPET_IMAGE_DATA_OFFSET       (8U)
 #define AGENTPET_IMAGE_DATA_MAX_SIZE      (235U)
 #define AGENTPET_IMAGE_PACKET_OVERHEAD    (9U)
@@ -278,47 +280,202 @@ static void Local_FailTransfer(AGENTPET_IMAGE_RESULT eResult)
     return;
 }
 
-static AGENTPET_IMAGE_RESULT Local_ValidateJpeg(void)
+static bool Local_ReadExact(
+    int lFileDescriptor,
+    uint8_t *pData,
+    uint16_t usLength)
 {
-    uint8_t aHeader[2];
-    uint8_t aFooter[2];
-    int lFileDescriptor;
-    int lReadLength;
+    uint16_t usOffset;
 
-    lFileDescriptor = open(AGENTPET_IMAGE_TEMP_PATH, O_RDONLY | O_BINARY, 0);
+    if ((0 > lFileDescriptor) || (NULL == pData) || (0U == usLength))
+    {
+        return false;
+    }
+
+    usOffset = 0U;
+    while (usOffset < usLength)
+    {
+        int lReadLength;
+
+        lReadLength = read(
+            lFileDescriptor,
+            &pData[usOffset],
+            (uint16_t)(usLength - usOffset));
+        if (0 >= lReadLength)
+        {
+            return false;
+        }
+        usOffset += (uint16_t)lReadLength;
+    }
+
+    return true;
+}
+
+static uint16_t Local_ReadBigEndian16(const uint8_t *pData)
+{
+    if (NULL == pData)
+    {
+        return 0U;
+    }
+
+    return (uint16_t)(((uint16_t)pData[0] << 8U) | pData[1]);
+}
+
+static bool Local_IsStartOfFrameMarker(uint8_t ucMarker)
+{
+    return (
+        (0xC0U <= ucMarker) &&
+        (0xCFU >= ucMarker) &&
+        (0xC4U != ucMarker) &&
+        (0xC8U != ucMarker) &&
+        (0xCCU != ucMarker)
+    );
+}
+
+static AGENTPET_IMAGE_RESULT Local_ValidateJpeg(const char *pPath)
+{
+    struct stat tStatus;
+    uint8_t aMarker[2];
+    uint8_t aLength[2];
+    uint8_t aSofPayload[15];
+    int lFileDescriptor;
+    bool bFoundFrame;
+    AGENTPET_IMAGE_RESULT eResult;
+
+    if (NULL == pPath)
+    {
+        return AGENTPET_IMAGE_ERROR_INVALID_PARAMETER;
+    }
+    if ((0 != stat(pPath, &tStatus)) ||
+        (32 > tStatus.st_size) ||
+        (AGENTPET_IMAGE_MAX_FILE_SIZE < (uint32_t)tStatus.st_size))
+    {
+        return AGENTPET_IMAGE_ERROR_SIZE;
+    }
+
+    lFileDescriptor = open(pPath, O_RDONLY | O_BINARY, 0);
     if (0 > lFileDescriptor)
     {
         return AGENTPET_IMAGE_ERROR_STORAGE;
     }
 
-    lReadLength = read(lFileDescriptor, aHeader, sizeof(aHeader));
-    if ((int)sizeof(aHeader) != lReadLength)
+    eResult = AGENTPET_IMAGE_ERROR_FORMAT;
+    bFoundFrame = false;
+    if (!Local_ReadExact(lFileDescriptor, aMarker, sizeof(aMarker)) ||
+        (0xFFU != aMarker[0]) ||
+        (0xD8U != aMarker[1]))
     {
-        (void)close(lFileDescriptor);
-        return AGENTPET_IMAGE_ERROR_FORMAT;
+        goto cleanup;
     }
-    if (0 > lseek(lFileDescriptor, -(int)sizeof(aFooter), SEEK_END))
+    if (0 > lseek(lFileDescriptor, -2, SEEK_END))
     {
-        (void)close(lFileDescriptor);
-        return AGENTPET_IMAGE_ERROR_STORAGE;
+        eResult = AGENTPET_IMAGE_ERROR_STORAGE;
+        goto cleanup;
     }
-    lReadLength = read(lFileDescriptor, aFooter, sizeof(aFooter));
-    (void)close(lFileDescriptor);
-    if ((int)sizeof(aFooter) != lReadLength)
+    if (!Local_ReadExact(lFileDescriptor, aMarker, sizeof(aMarker)) ||
+        (0xFFU != aMarker[0]) ||
+        (0xD9U != aMarker[1]))
     {
-        return AGENTPET_IMAGE_ERROR_FORMAT;
+        goto cleanup;
     }
-    if (
-        (0xFFU != aHeader[0]) ||
-        (0xD8U != aHeader[1]) ||
-        (0xFFU != aFooter[0]) ||
-        (0xD9U != aFooter[1])
-    )
+    if (0 > lseek(lFileDescriptor, 2, SEEK_SET))
     {
-        return AGENTPET_IMAGE_ERROR_FORMAT;
+        eResult = AGENTPET_IMAGE_ERROR_STORAGE;
+        goto cleanup;
     }
 
-    return AGENTPET_IMAGE_RESULT_ACCEPTED;
+    while (true)
+    {
+        uint16_t usSegmentLength;
+        uint16_t usPayloadLength;
+        uint8_t ucMarker;
+        off_t tCurrentOffset;
+
+        if (!Local_ReadExact(lFileDescriptor, aMarker, 1U) ||
+            (0xFFU != aMarker[0]))
+        {
+            break;
+        }
+        do
+        {
+            if (!Local_ReadExact(lFileDescriptor, &ucMarker, 1U))
+            {
+                goto cleanup;
+            }
+        } while (0xFFU == ucMarker);
+
+        if ((0x00U == ucMarker) || (0xD9U == ucMarker))
+        {
+            break;
+        }
+        if ((0xD8U == ucMarker) || (0x01U == ucMarker) ||
+            ((0xD0U <= ucMarker) && (0xD7U >= ucMarker)))
+        {
+            continue;
+        }
+        if (!Local_ReadExact(lFileDescriptor, aLength, sizeof(aLength)))
+        {
+            break;
+        }
+        usSegmentLength = Local_ReadBigEndian16(aLength);
+        if (2U > usSegmentLength)
+        {
+            break;
+        }
+        usPayloadLength = (uint16_t)(usSegmentLength - 2U);
+        tCurrentOffset = lseek(lFileDescriptor, 0, SEEK_CUR);
+        if ((0 > tCurrentOffset) ||
+            ((off_t)usPayloadLength > tStatus.st_size - tCurrentOffset))
+        {
+            break;
+        }
+
+        if (0xC0U == ucMarker)
+        {
+            if (bFoundFrame ||
+                (sizeof(aSofPayload) != usPayloadLength) ||
+                !Local_ReadExact(
+                    lFileDescriptor,
+                    aSofPayload,
+                    sizeof(aSofPayload)))
+            {
+                break;
+            }
+            if ((8U != aSofPayload[0]) ||
+                (AGENTPET_IMAGE_HEIGHT != Local_ReadBigEndian16(&aSofPayload[1])) ||
+                (AGENTPET_IMAGE_WIDTH != Local_ReadBigEndian16(&aSofPayload[3])) ||
+                (3U != aSofPayload[5]) ||
+                (0x22U != aSofPayload[7]) ||
+                (0x11U != aSofPayload[10]) ||
+                (0x11U != aSofPayload[13]))
+            {
+                break;
+            }
+            bFoundFrame = true;
+            continue;
+        }
+        if (Local_IsStartOfFrameMarker(ucMarker))
+        {
+            break;
+        }
+        if (0xDAU == ucMarker)
+        {
+            if (bFoundFrame)
+            {
+                eResult = AGENTPET_IMAGE_RESULT_ACCEPTED;
+            }
+            break;
+        }
+        if (0 > lseek(lFileDescriptor, usPayloadLength, SEEK_CUR))
+        {
+            eResult = AGENTPET_IMAGE_ERROR_STORAGE;
+            break;
+        }
+    }
+
+cleanup:
+    (void)close(lFileDescriptor);
+    return eResult;
 }
 
 static AGENTPET_IMAGE_RESULT Local_BeginTransfer(
@@ -458,7 +615,7 @@ static AGENTPET_IMAGE_RESULT Local_CommitTransfer(
         return AGENTPET_IMAGE_ERROR_STORAGE;
     }
     Local_CloseTemporaryFile();
-    eResult = Local_ValidateJpeg();
+    eResult = Local_ValidateJpeg(AGENTPET_IMAGE_TEMP_PATH);
     if (AGENTPET_IMAGE_RESULT_ACCEPTED != eResult)
     {
         return eResult;
@@ -592,6 +749,14 @@ void AGENTPETIMAGE_Init(void)
     l_tImageEnv.ulCalculatedCrc = AGENTPET_IMAGE_CRC32_INIT;
     l_tImageEnv.usPendingLength = 0U;
     l_tImageEnv.bImageAvailable = (0 == stat(AGENTPET_IMAGE_PATH, &tStatus));
+    if (l_tImageEnv.bImageAvailable &&
+        (AGENTPET_IMAGE_RESULT_ACCEPTED !=
+         Local_ValidateJpeg(AGENTPET_IMAGE_PATH)))
+    {
+        LOG_E("Persistent mascot JPEG is unsafe; removing it");
+        (void)unlink(AGENTPET_IMAGE_PATH);
+        l_tImageEnv.bImageAvailable = false;
+    }
     (void)memset(l_tImageEnv.aImageMd5, 0, AGENTPET_IMAGE_MD5_SIZE);
     if (l_tImageEnv.bImageAvailable &&
         !Local_CalculateFileMd5(AGENTPET_IMAGE_PATH, l_tImageEnv.aImageMd5))

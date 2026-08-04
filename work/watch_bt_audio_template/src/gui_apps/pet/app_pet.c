@@ -30,6 +30,10 @@ LV_IMG_DECLARE(agent_pet_merit_plus_one);
 #define PET_QUICK_INTERVAL_MS (700U)
 #define PET_WOODEN_FISH_WIDTH (210)
 #define PET_WOODEN_FISH_HEIGHT (180)
+#define PET_ATTENTION_PANEL_WIDTH (286)
+#define PET_ATTENTION_PANEL_HEIGHT (72)
+#define PET_ATTENTION_PANEL_X ((LV_HOR_RES_MAX - PET_ATTENTION_PANEL_WIDTH) / 2)
+#define PET_ATTENTION_PANEL_Y (38)
 #ifndef BSP_USING_PC_SIMULATOR
     #define PET_PREF_NAME "agent_pet_daily_merit_pref_v1__"
     #define PET_PREF_DAY_KEY "merit_day"
@@ -49,6 +53,9 @@ typedef struct
     lv_obj_t *sparkle_a;
     lv_obj_t *sparkle_b;
     lv_obj_t *sparkle_c;
+    lv_obj_t *attention_panel;
+    lv_obj_t *attention_title;
+    lv_obj_t *attention_hint;
     lv_obj_t *status_label;
     lv_obj_t *task_label;
     lv_obj_t *image_progress_panel;
@@ -79,6 +86,57 @@ static pet_ui_t g_pet_ui;
 
 static void PET_ApplyStateAnimation(uint8_t ucState);
 static void PET_PlayWoodenFishAnimation(const lv_point_t *pPoint);
+
+/*
+ * PET_CreateAttentionCue
+ * Function: Create the bounded task-attention overlay used for blocked and
+ * completed states. The objects remain allocated for the page lifetime and
+ * are only hidden or restyled during state changes.
+ * Parameters: none.
+ * Return: none.
+ */
+static void PET_CreateAttentionCue(void)
+{
+    g_pet_ui.attention_panel = lv_obj_create(g_pet_ui.root);
+    lv_obj_set_pos(
+        g_pet_ui.attention_panel,
+        PET_ATTENTION_PANEL_X,
+        PET_ATTENTION_PANEL_Y);
+    lv_obj_set_size(
+        g_pet_ui.attention_panel,
+        PET_ATTENTION_PANEL_WIDTH,
+        PET_ATTENTION_PANEL_HEIGHT);
+    lv_obj_set_style_bg_opa(g_pet_ui.attention_panel, LV_OPA_90, 0);
+    lv_obj_set_style_border_width(g_pet_ui.attention_panel, 2, 0);
+    lv_obj_set_style_radius(g_pet_ui.attention_panel, 18, 0);
+    lv_obj_set_style_pad_all(g_pet_ui.attention_panel, 8, 0);
+    lv_obj_clear_flag(g_pet_ui.attention_panel, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(g_pet_ui.attention_panel, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_flag(g_pet_ui.attention_panel, LV_OBJ_FLAG_HIDDEN);
+
+    g_pet_ui.attention_title = lv_label_create(g_pet_ui.attention_panel);
+    lv_obj_set_width(g_pet_ui.attention_title, LV_PCT(100));
+    lv_obj_set_style_text_align(
+        g_pet_ui.attention_title,
+        LV_TEXT_ALIGN_CENTER,
+        0);
+    lv_obj_align(g_pet_ui.attention_title, LV_ALIGN_TOP_MID, 0, 0);
+
+    g_pet_ui.attention_hint = lv_label_create(g_pet_ui.attention_panel);
+    lv_obj_set_width(g_pet_ui.attention_hint, LV_PCT(100));
+    lv_label_set_text(g_pet_ui.attention_hint, "Check your computer");
+    lv_obj_set_style_text_align(
+        g_pet_ui.attention_hint,
+        LV_TEXT_ALIGN_CENTER,
+        0);
+    lv_obj_set_style_text_color(
+        g_pet_ui.attention_hint,
+        lv_color_hex(0xD8F7EEU),
+        0);
+    lv_obj_align(g_pet_ui.attention_hint, LV_ALIGN_BOTTOM_MID, 0, 0);
+
+    return;
+}
 
 static void PET_ReleaseCustomMascot(void)
 {
@@ -482,6 +540,7 @@ static void pet_start_y_animation(lv_obj_t *object, lv_coord_t from, lv_coord_t 
 static void PET_ApplyStateAnimation(uint8_t ucState)
 {
     lv_anim_t tAnimation;
+    lv_anim_t tAttentionAnimation;
     lv_anim_exec_xcb_t pExecCallback;
     int32_t lFrom;
     int32_t lTo;
@@ -489,6 +548,7 @@ static void PET_ApplyStateAnimation(uint8_t ucState)
     uint16_t usRepeatCount;
 
     if ((NULL == g_pet_ui.stage) ||
+        (NULL == g_pet_ui.attention_panel) ||
         (g_pet_ui.ucRenderedState == ucState))
     {
         return;
@@ -496,7 +556,13 @@ static void PET_ApplyStateAnimation(uint8_t ucState)
 
     g_pet_ui.ucRenderedState = ucState;
     lv_anim_del(g_pet_ui.stage, NULL);
+    lv_anim_del(g_pet_ui.attention_panel, NULL);
     lv_obj_set_pos(g_pet_ui.stage, PET_MASCOT_X, PET_MASCOT_Y);
+    lv_obj_set_pos(
+        g_pet_ui.attention_panel,
+        PET_ATTENTION_PANEL_X,
+        PET_ATTENTION_PANEL_Y);
+    lv_obj_add_flag(g_pet_ui.attention_panel, LV_OBJ_FLAG_HIDDEN);
     pExecCallback = (lv_anim_exec_xcb_t)lv_obj_set_y;
     lFrom = PET_MASCOT_Y + 2;
     lTo = PET_MASCOT_Y - 2;
@@ -515,6 +581,20 @@ static void PET_ApplyStateAnimation(uint8_t ucState)
         lFrom = PET_MASCOT_X - 4;
         lTo = PET_MASCOT_X + 4;
         ulTime = 275U;
+        lv_label_set_text(g_pet_ui.attention_title, "ACTION NEEDED");
+        lv_obj_set_style_bg_color(
+            g_pet_ui.attention_panel,
+            lv_color_hex(0x5C3A0DU),
+            0);
+        lv_obj_set_style_border_color(
+            g_pet_ui.attention_panel,
+            lv_color_hex(0xF6C75EU),
+            0);
+        lv_obj_set_style_text_color(
+            g_pet_ui.attention_title,
+            lv_color_hex(0xFFF4AAU),
+            0);
+        lv_obj_clear_flag(g_pet_ui.attention_panel, LV_OBJ_FLAG_HIDDEN);
     }
     else if (AGENTPET_STATE_COMPLETED == ucState)
     {
@@ -522,6 +602,20 @@ static void PET_ApplyStateAnimation(uint8_t ucState)
         lTo = PET_MASCOT_Y - 14;
         ulTime = 375U;
         usRepeatCount = 2U;
+        lv_label_set_text(g_pet_ui.attention_title, "TASK COMPLETE");
+        lv_obj_set_style_bg_color(
+            g_pet_ui.attention_panel,
+            lv_color_hex(0x123C2BU),
+            0);
+        lv_obj_set_style_border_color(
+            g_pet_ui.attention_panel,
+            lv_color_hex(0x65D69EU),
+            0);
+        lv_obj_set_style_text_color(
+            g_pet_ui.attention_title,
+            lv_color_hex(0x8FFFC2U),
+            0);
+        lv_obj_clear_flag(g_pet_ui.attention_panel, LV_OBJ_FLAG_HIDDEN);
     }
     else if (AGENTPET_STATE_ERROR == ucState)
     {
@@ -540,6 +634,28 @@ static void PET_ApplyStateAnimation(uint8_t ucState)
     lv_anim_set_repeat_delay(&tAnimation, 100U);
     lv_anim_set_repeat_count(&tAnimation, usRepeatCount);
     lv_anim_start(&tAnimation);
+
+    if ((AGENTPET_STATE_NEEDS_INPUT == ucState) ||
+        (AGENTPET_STATE_COMPLETED == ucState))
+    {
+        lv_obj_move_foreground(g_pet_ui.attention_panel);
+        lv_anim_init(&tAttentionAnimation);
+        lv_anim_set_var(&tAttentionAnimation, g_pet_ui.attention_panel);
+        lv_anim_set_values(
+            &tAttentionAnimation,
+            PET_ATTENTION_PANEL_Y + 3,
+            PET_ATTENTION_PANEL_Y - 5);
+        lv_anim_set_exec_cb(
+            &tAttentionAnimation,
+            (lv_anim_exec_xcb_t)lv_obj_set_y);
+        lv_anim_set_time(&tAttentionAnimation, 520U);
+        lv_anim_set_playback_time(&tAttentionAnimation, 520U);
+        lv_anim_set_repeat_delay(&tAttentionAnimation, 120U);
+        lv_anim_set_repeat_count(
+            &tAttentionAnimation,
+            LV_ANIM_REPEAT_INFINITE);
+        lv_anim_start(&tAttentionAnimation);
+    }
 
     return;
 }
@@ -937,6 +1053,8 @@ static void pet_on_start(void)
         g_pet_ui.daily_summary, lv_color_hex(0xFFF4AAU), 0);
     lv_label_set_text(g_pet_ui.daily_summary, "Today's merit  0");
     lv_obj_add_flag(g_pet_ui.daily_summary, LV_OBJ_FLAG_HIDDEN);
+
+    PET_CreateAttentionCue();
 
     g_pet_ui.status_label = lv_label_create(g_pet_ui.root);
     lv_obj_set_width(g_pet_ui.status_label, LV_HOR_RES_MAX - 24);

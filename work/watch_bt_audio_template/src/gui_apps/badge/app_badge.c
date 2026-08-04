@@ -170,5 +170,9 @@ static int badge_app_main(intent_t intent)
     return 0;
 }
 
-LV_IMG_DECLARE(img_photos);
-BUILTIN_APP_EXPORT(LV_EXT_STR_ID(badge), LV_EXT_IMG_GET(img_photos), APP_ID, badge_app_main);
+LV_IMG_DECLARE(img_photo_album);
+BUILTIN_APP_EXPORT(
+    LV_EXT_STR_ID(badge),
+    LV_EXT_IMG_GET(img_photo_album),
+    APP_ID,
+    badge_app_main);
