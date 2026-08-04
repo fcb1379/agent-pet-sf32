@@ -26,12 +26,21 @@
     0x5CU, 0x4FU, 0x5FU, 0x6BU, \
     0x02U, 0x00U, 0x1EU, 0x7AU \
 }
+#define AGENTPET_IMAGE_UUID_BYTES \
+{ \
+    0x00U, 0x10U, 0x0BU, 0x1AU, \
+    0x2FU, 0x3EU, 0x9DU, 0x8CU, \
+    0x5CU, 0x4FU, 0x5FU, 0x6BU, \
+    0x03U, 0x00U, 0x1EU, 0x7AU \
+}
 
 enum AGENTPET_ATT_INDEX
 {
     AGENTPET_ATT_SERVICE = 0,
     AGENTPET_ATT_STATUS_CHAR,
     AGENTPET_ATT_STATUS_VALUE,
+    AGENTPET_ATT_IMAGE_CHAR,
+    AGENTPET_ATT_IMAGE_VALUE,
     AGENTPET_ATT_COUNT
 };
 
@@ -60,7 +69,18 @@ BLE_GATT_SERVICE_DEFINE_128(l_tAgentPetAttributeDatabase)
         BLE_GATT_PERM_WRITE_COMMAND_ENABLE,
         BLE_GATT_VALUE_PERM_UUID_128 |
         BLE_GATT_VALUE_PERM_RI_ENABLE,
-        AGENTPET_FRAME_SIZE),
+        AGENTPET_FRAME_SIZE),    BLE_GATT_CHAR_DECLARE(
+        AGENTPET_ATT_IMAGE_CHAR,
+        AGENTPET_UUID_16_LE(0x2803U),
+        BLE_GATT_PERM_READ_ENABLE),
+    BLE_GATT_CHAR_VALUE_DECLARE(
+        AGENTPET_ATT_IMAGE_VALUE,
+        AGENTPET_IMAGE_UUID_BYTES,
+        BLE_GATT_PERM_WRITE_REQ_ENABLE |
+        BLE_GATT_PERM_WRITE_COMMAND_ENABLE,
+        BLE_GATT_VALUE_PERM_UUID_128 |
+        BLE_GATT_VALUE_PERM_RI_ENABLE,
+        AGENTPET_IMAGE_MAX_PACKET_SIZE),
 };
 
 static uint8_t *Local_GattReadCallback(
@@ -83,14 +103,15 @@ static uint8_t Local_GattWriteCallback(
     sibles_set_cbk_t *pParameter)
 {
     AGENTPET_RESULT eResult;
+    bool bQueued;
 
     (void)ucConnectionIndex;
-    eResult = AGENTPET_ERROR_INVALID_PARAMETER;
-    if (
-        (NULL != pParameter) &&
-        (AGENTPET_ATT_STATUS_VALUE == pParameter->idx) &&
-        (NULL != pParameter->value)
-    )
+    if ((NULL == pParameter) || (NULL == pParameter->value))
+    {
+        return 0U;
+    }
+
+    if (AGENTPET_ATT_STATUS_VALUE == pParameter->idx)
     {
         rt_enter_critical();
         eResult = AGENTPET_ProcessFrame(pParameter->value, pParameter->len);
@@ -114,10 +135,30 @@ static uint8_t Local_GattWriteCallback(
                   pParameter->value[4] | ((uint16_t)pParameter->value[5] << 8U));
         }
     }
+    else if (AGENTPET_ATT_IMAGE_VALUE == pParameter->idx)
+    {
+        bQueued = AGENTPETIMAGE_QueueFrame(
+            pParameter->value,
+            pParameter->len);
+        rt_enter_critical();
+        if (bQueued)
+        {
+            l_tAgentPetBleStatus.ulAcceptedFrameCount++;
+        }
+        else
+        {
+            l_tAgentPetBleStatus.ulRejectedFrameCount++;
+        }
+        rt_exit_critical();
+        if (!bQueued)
+        {
+            LOG_E("Custom mascot frame queue full or invalid");
+            return 1U;
+        }
+    }
 
     return 0U;
 }
-
 /*
  * AGENTPETBLE_Init
  * 功能：初始化 BLE 服务状态和纯 C 协议重组器。
@@ -130,6 +171,7 @@ void AGENTPETBLE_Init(void)
     (void)rt_memset(&l_tAgentPetBleStatus, 0, sizeof(l_tAgentPetBleStatus));
     AGENTPET_ProtocolInit();
     rt_exit_critical();
+    AGENTPETIMAGE_Init();
     l_tAgentPetServiceHandle = 0U;
 
     return;
@@ -189,6 +231,10 @@ void AGENTPETBLE_SetConnected(bool bConnected)
         AGENTPET_ResetAssembly();
     }
     rt_exit_critical();
+    if (!bConnected)
+    {
+        AGENTPETIMAGE_ResetTransfer();
+    }
 
     return;
 }
@@ -233,6 +279,7 @@ bool AGENTPETBLE_GetStatus(AGENTPET_BLE_STATUS *pStatus)
         pStatus->ulWoodenFishGeneration = ulWoodenFishGeneration;
     }
     rt_exit_critical();
+    (void)AGENTPETIMAGE_GetStatus(&pStatus->tImageStatus);
 
     return true;
 }

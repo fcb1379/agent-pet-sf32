@@ -28,7 +28,8 @@ else:
 
     if GetDepend('BSP_BLE_SIBLES'):
         src += ['ble_watch_link.c', 'watch_protocol.c',
-                'agent_pet_protocol.c', 'agent_pet_ble_service.c']
+                'agent_pet_protocol.c', 'agent_pet_image_transfer.c',
+                'agent_pet_ble_service.c']
 
     if GetDepend('BSP_BLE_WATCH_FACE'):
         src += ['badge_transfer.c']

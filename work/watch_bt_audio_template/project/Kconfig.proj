@@ -12,6 +12,14 @@ config FREETYPE_TINY_FONT_FULL
     bool
     default y
 
+config AGENT_PET_DISABLE_CLASSIC_BT_AUDIO
+    bool "Disable classic Bluetooth audio for Agent Pet BLE image sync"
+    default n
+    help
+        Keep the BLE services used by Agent Pet enabled, but do not start the
+        A2DP/AVRCP sink. This avoids accessing classic Bluetooth persistence
+        partitions on boards whose flash layout only provisions the BLE app.
+
 config FRAME_BUFFER_IN_PSRAM
     bool
     depends on BSP_USING_PSRAM

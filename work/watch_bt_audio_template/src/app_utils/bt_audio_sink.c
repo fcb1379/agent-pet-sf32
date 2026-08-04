@@ -42,6 +42,7 @@ static watch_bt_audio_t g_watch_bt_audio;
 static rt_mailbox_t g_watch_bt_audio_mb;
 
 extern void bt_av_snk_open(void);
+extern uint8_t bt_open_bt_request(void);
 
 static int watch_bt_audio_event_handle(uint16_t type, uint16_t event_id, uint8_t *data, uint16_t data_len)
 {
@@ -175,27 +176,35 @@ static void watch_bt_audio_thread(void *parameter)
 
         if (value == BT_AUDIO_READY && !g_watch_bt_audio.stack_ready)
         {
+#ifndef AGENT_PET_DISABLE_CLASSIC_BT_AUDIO
             const char *local_name = "Huangshan-Watch";
+#endif
 
             g_watch_bt_audio.stack_ready = 1;
             g_watch_bt_audio.last_error = 0;
             g_watch_bt_audio.last_event_tick = rt_tick_get();
+#ifdef AGENT_PET_DISABLE_CLASSIC_BT_AUDIO
+            LOG_I("watch bt audio: BLE stack ready, classic audio disabled");
+#else
             bt_interface_set_local_name(strlen(local_name), (void *)local_name);
             bt_interface_register_av_snk_sdp();
             bt_av_snk_open();
             bt_interface_open_avrcp();
             watch_settings_apply_audio();
-            bt_cm_open_bt();
+            (void)bt_open_bt_request();
             LOG_I("watch bt audio: stack ready, name=%s", local_name);
+#endif
         }
+#ifndef AGENT_PET_DISABLE_CLASSIC_BT_AUDIO
         else if (value == BT_AUDIO_RECOVER && g_watch_bt_audio.stack_ready)
         {
             g_watch_bt_audio.recovery_count++;
             g_watch_bt_audio.last_event_tick = rt_tick_get();
-            bt_cm_open_bt();
+            (void)bt_open_bt_request();
             LOG_I("watch bt audio: recovery scan requested, count=%lu",
                   (unsigned long)g_watch_bt_audio.recovery_count);
         }
+#endif
     }
 }
 
@@ -304,7 +313,7 @@ __ROM_USED void btaudio(int argc, char **argv)
     }
     else if (strcmp(argv[1], "discover") == 0)
     {
-        bt_cm_open_bt();
+        (void)bt_open_bt_request();
         rt_kprintf("Classic BT inquiry/page scan enabled\n");
     }
     else if (strcmp(argv[1], "open") == 0)
@@ -312,7 +321,7 @@ __ROM_USED void btaudio(int argc, char **argv)
         bt_interface_register_av_snk_sdp();
         bt_av_snk_open();
         bt_interface_open_avrcp();
-        bt_cm_open_bt();
+        (void)bt_open_bt_request();
         rt_kprintf("A2DP sink/AVRCP opened and scan enabled\n");
     }
     else if (strcmp(argv[1], "clear") == 0)

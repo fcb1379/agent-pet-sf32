@@ -198,7 +198,7 @@ static int watch_protocol_alarm(const char *payload, char *result, size_t result
     {
         ret = watch_alarm_dismiss();
     }
-    else if (rt_strncmp(payload, "ON,", 3) == 0 && rt_strlen(payload) < sizeof(value))
+    else if (strncmp(payload, "ON,", 3) == 0 && rt_strlen(payload) < sizeof(value))
     {
         rt_strncpy(value, payload + 3, sizeof(value) - 1);
         value[sizeof(value) - 1] = '\0';

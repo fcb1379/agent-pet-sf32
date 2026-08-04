@@ -1,6 +1,7 @@
 #include <rtthread.h>
 
 #include "littlevgl2rtt.h"
+#include "app_mem.h"
 #include "agent_pet_ble_service.h"
 #if !defined(BSP_USING_PC_SIMULATOR) || !defined(AGENT_PET_STANDALONE_PREVIEW)
     #include "lv_ext_resource_manager.h"
@@ -50,6 +51,9 @@ typedef struct
     lv_obj_t *sparkle_c;
     lv_obj_t *status_label;
     lv_obj_t *task_label;
+    lv_obj_t *image_progress_panel;
+    lv_obj_t *image_progress_label;
+    lv_obj_t *image_progress_bar;
     lv_timer_t *status_timer;
     lv_timer_t *wooden_timer;
     lv_timer_t *daily_timer;
@@ -58,17 +62,114 @@ typedef struct
 #endif
     uint32_t ulRenderedGeneration;
     uint32_t ulRenderedWoodenFishGeneration;
+    uint32_t ulRenderedImageGeneration;
     uint32_t ulLastHitTick;
     uint32_t ulMeritCount;
     uint32_t ulMeritDay;
     uint8_t ucRenderedState;
+    uint8_t ucRenderedImageProgress;
+    AGENTPET_IMAGE_STATE eRenderedImageState;
+    lv_img_dsc_t tCustomMascot;
+    uint8_t *pCustomMascotPixels;
     bool bRenderedConnected;
+    bool bRenderedCustomImage;
 } pet_ui_t;
 
 static pet_ui_t g_pet_ui;
 
 static void PET_ApplyStateAnimation(uint8_t ucState);
 static void PET_PlayWoodenFishAnimation(const lv_point_t *pPoint);
+
+static void PET_ReleaseCustomMascot(void)
+{
+    if (NULL == g_pet_ui.pCustomMascotPixels)
+    {
+        return;
+    }
+
+    lv_img_cache_invalidate_src(&g_pet_ui.tCustomMascot);
+    app_cache_free(g_pet_ui.pCustomMascotPixels);
+    g_pet_ui.pCustomMascotPixels = NULL;
+    rt_memset(&g_pet_ui.tCustomMascot, 0, sizeof(g_pet_ui.tCustomMascot));
+}
+
+static bool PET_DecodeCustomMascot(lv_img_header_t *pHeader)
+{
+    lv_img_decoder_dsc_t tDecoder;
+    uint32_t ulDataSize;
+    uint16_t usRow;
+    lv_res_t eResult;
+
+    if (NULL == pHeader)
+    {
+        return false;
+    }
+
+    lv_img_cache_invalidate_src(NULL);
+    eResult = lv_img_decoder_open(
+        &tDecoder,
+        AGENTPET_IMAGE_LVGL_PATH,
+        lv_color_black(),
+        0);
+    if ((LV_RES_OK != eResult) ||
+        (0U == tDecoder.header.w) ||
+        (0U == tDecoder.header.h) ||
+        (PET_MASCOT_SIZE < tDecoder.header.w) ||
+        (PET_MASCOT_SIZE < tDecoder.header.h))
+    {
+        rt_kprintf("agent pet: custom JPEG open failed %d (%u x %u)\n",
+                   eResult, tDecoder.header.w, tDecoder.header.h);
+        if (LV_RES_OK == eResult)
+        {
+            lv_img_decoder_close(&tDecoder);
+        }
+        return false;
+    }
+
+    ulDataSize = (uint32_t)tDecoder.header.w * tDecoder.header.h *
+        sizeof(lv_color_t);
+    g_pet_ui.pCustomMascotPixels = app_cache_alloc(
+        ulDataSize,
+        IMAGE_CACHE_PSRAM);
+    if (NULL == g_pet_ui.pCustomMascotPixels)
+    {
+        rt_kprintf("agent pet: custom RGB buffer allocation failed %lu\n",
+                   (unsigned long)ulDataSize);
+        lv_img_decoder_close(&tDecoder);
+        return false;
+    }
+
+    for (usRow = 0U; usRow < tDecoder.header.h; usRow++)
+    {
+        eResult = lv_img_decoder_read_line(
+            &tDecoder,
+            0,
+            usRow,
+            tDecoder.header.w,
+            g_pet_ui.pCustomMascotPixels +
+                ((uint32_t)usRow * tDecoder.header.w * sizeof(lv_color_t)));
+        if (LV_RES_OK != eResult)
+        {
+            rt_kprintf("agent pet: custom JPEG decode failed at row %u\n",
+                       usRow);
+            lv_img_decoder_close(&tDecoder);
+            PET_ReleaseCustomMascot();
+            return false;
+        }
+    }
+
+    *pHeader = tDecoder.header;
+    lv_img_decoder_close(&tDecoder);
+    g_pet_ui.tCustomMascot.header.always_zero = 0;
+    g_pet_ui.tCustomMascot.header.w = pHeader->w;
+    g_pet_ui.tCustomMascot.header.h = pHeader->h;
+    g_pet_ui.tCustomMascot.header.cf = LV_IMG_CF_TRUE_COLOR;
+    g_pet_ui.tCustomMascot.data_size = ulDataSize;
+    g_pet_ui.tCustomMascot.data = g_pet_ui.pCustomMascotPixels;
+    rt_kprintf("agent pet: custom JPEG decoded %u x %u\n",
+               pHeader->w, pHeader->h);
+    return true;
+}
 
 static const char *PET_StateName(uint8_t ucState)
 {
@@ -142,6 +243,119 @@ static const char *PET_ProviderName(uint8_t ucProvider)
 }
 
 /*
+ * PET_RefreshMascotImage
+ * Function: switch atomically committed custom JPEGs on the LVGL thread.
+ * Parameters:
+ *   - pStatus: read-only persistent image status.
+ * Return: none.
+ */
+static void PET_RefreshMascotImage(const AGENTPET_IMAGE_STATUS *pStatus)
+{
+    lv_img_header_t tHeader;
+    uint16_t usZoom;
+
+    if ((NULL == pStatus) || (NULL == g_pet_ui.mascot))
+    {
+        return;
+    }
+    if (
+        (g_pet_ui.ulRenderedImageGeneration == pStatus->ulGeneration) &&
+        (g_pet_ui.bRenderedCustomImage == pStatus->bImageAvailable)
+    )
+    {
+        return;
+    }
+
+    g_pet_ui.ulRenderedImageGeneration = pStatus->ulGeneration;
+    g_pet_ui.bRenderedCustomImage = pStatus->bImageAvailable;
+    lv_img_set_src(g_pet_ui.mascot, &agent_pet_mascot);
+    lv_img_set_zoom(g_pet_ui.mascot, LV_IMG_ZOOM_NONE);
+    PET_ReleaseCustomMascot();
+    if (pStatus->bImageAvailable)
+    {
+        if (PET_DecodeCustomMascot(&tHeader))
+        {
+            uint32_t ulZoomWidth;
+            uint32_t ulZoomHeight;
+
+            ulZoomWidth = (uint32_t)PET_MASCOT_SIZE *
+                LV_IMG_ZOOM_NONE / tHeader.w;
+            ulZoomHeight = (uint32_t)PET_MASCOT_SIZE *
+                LV_IMG_ZOOM_NONE / tHeader.h;
+            usZoom = (uint16_t)LV_MIN(
+                LV_IMG_ZOOM_NONE,
+                LV_MIN(ulZoomWidth, ulZoomHeight));
+            lv_img_set_src(g_pet_ui.mascot, &g_pet_ui.tCustomMascot);
+            lv_img_set_zoom(g_pet_ui.mascot, usZoom);
+        }
+        else
+        {
+            g_pet_ui.bRenderedCustomImage = false;
+        }
+    }
+    lv_obj_center(g_pet_ui.mascot);
+
+    return;
+}
+
+/*
+ * PET_RefreshImageProgress
+ * Function: show live BLE image-transfer progress on the pet screen.
+ * Parameters:
+ *   - pStatus: read-only image receiver status.
+ * Return: none.
+ */
+static void PET_RefreshImageProgress(const AGENTPET_IMAGE_STATUS *pStatus)
+{
+    uint8_t ucProgress;
+
+    if ((NULL == pStatus) || (NULL == g_pet_ui.image_progress_panel))
+    {
+        return;
+    }
+
+    if (AGENTPET_IMAGE_RECEIVING != pStatus->eState)
+    {
+        if (AGENTPET_IMAGE_RECEIVING == g_pet_ui.eRenderedImageState)
+        {
+            lv_obj_add_flag(
+                g_pet_ui.image_progress_panel,
+                LV_OBJ_FLAG_HIDDEN);
+        }
+        g_pet_ui.eRenderedImageState = pStatus->eState;
+        g_pet_ui.ucRenderedImageProgress = 0xFFU;
+        return;
+    }
+
+    ucProgress = 0U;
+    if (0U != pStatus->ulTotal)
+    {
+        ucProgress = (uint8_t)(((uint64_t)pStatus->ulReceived * 100ULL) /
+                               pStatus->ulTotal);
+        if (100U < ucProgress)
+        {
+            ucProgress = 100U;
+        }
+    }
+
+    if ((AGENTPET_IMAGE_RECEIVING != g_pet_ui.eRenderedImageState) ||
+        (ucProgress != g_pet_ui.ucRenderedImageProgress))
+    {
+        lv_label_set_text_fmt(
+            g_pet_ui.image_progress_label,
+            "Receiving image  %u%%",
+            ucProgress);
+        lv_bar_set_value(g_pet_ui.image_progress_bar, ucProgress, LV_ANIM_OFF);
+        lv_obj_clear_flag(
+            g_pet_ui.image_progress_panel,
+            LV_OBJ_FLAG_HIDDEN);
+    }
+
+    g_pet_ui.eRenderedImageState = pStatus->eState;
+    g_pet_ui.ucRenderedImageProgress = ucProgress;
+}
+
+/*
  * PET_RefreshStatus
  * 功能：在 LVGL 线程中读取已发布快照并刷新桌宠状态文字。
  * 参数：
@@ -160,6 +374,8 @@ static void PET_RefreshStatus(lv_timer_t *pTimer)
     {
         return;
     }
+    PET_RefreshImageProgress(&tStatus.tImageStatus);
+    PET_RefreshMascotImage(&tStatus.tImageStatus);
     if (tStatus.bHasWoodenFishEvent)
     {
         ulPendingHitCount = tStatus.ulWoodenFishGeneration -
@@ -737,6 +953,47 @@ static void pet_on_start(void)
     lv_obj_set_style_text_align(g_pet_ui.task_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_color(g_pet_ui.task_label, lv_color_hex(0xD8F7EE), 0);
 
+    g_pet_ui.image_progress_panel = lv_obj_create(g_pet_ui.root);
+    lv_obj_set_size(g_pet_ui.image_progress_panel, 280, 88);
+    lv_obj_align(g_pet_ui.image_progress_panel, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_style_bg_color(
+        g_pet_ui.image_progress_panel, lv_color_hex(0x10232BU), 0);
+    lv_obj_set_style_bg_opa(g_pet_ui.image_progress_panel, LV_OPA_90, 0);
+    lv_obj_set_style_border_width(g_pet_ui.image_progress_panel, 2, 0);
+    lv_obj_set_style_border_color(
+        g_pet_ui.image_progress_panel, lv_color_hex(0x7CC8FFU), 0);
+    lv_obj_set_style_radius(g_pet_ui.image_progress_panel, 18, 0);
+    lv_obj_set_style_pad_all(g_pet_ui.image_progress_panel, 14, 0);
+    lv_obj_clear_flag(g_pet_ui.image_progress_panel, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(g_pet_ui.image_progress_panel, LV_OBJ_FLAG_HIDDEN);
+
+    g_pet_ui.image_progress_label = lv_label_create(
+        g_pet_ui.image_progress_panel);
+    lv_obj_set_width(g_pet_ui.image_progress_label, LV_PCT(100));
+    lv_label_set_text(g_pet_ui.image_progress_label, "Receiving image  0%");
+    lv_obj_set_style_text_align(
+        g_pet_ui.image_progress_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_color(
+        g_pet_ui.image_progress_label, lv_color_hex(0xD8F7EEU), 0);
+    lv_obj_align(g_pet_ui.image_progress_label, LV_ALIGN_TOP_MID, 0, 0);
+
+    g_pet_ui.image_progress_bar = lv_bar_create(
+        g_pet_ui.image_progress_panel);
+    lv_obj_set_size(g_pet_ui.image_progress_bar, LV_PCT(100), 14);
+    lv_obj_align(g_pet_ui.image_progress_bar, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_bar_set_range(g_pet_ui.image_progress_bar, 0, 100);
+    lv_bar_set_value(g_pet_ui.image_progress_bar, 0, LV_ANIM_OFF);
+    lv_obj_set_style_bg_color(
+        g_pet_ui.image_progress_bar, lv_color_hex(0x183942U),
+        LV_PART_MAIN);
+    lv_obj_set_style_bg_color(
+        g_pet_ui.image_progress_bar, lv_color_hex(0x65D69EU),
+        LV_PART_INDICATOR);
+    lv_obj_set_style_radius(
+        g_pet_ui.image_progress_bar, LV_RADIUS_CIRCLE, LV_PART_MAIN);
+    lv_obj_set_style_radius(
+        g_pet_ui.image_progress_bar, LV_RADIUS_CIRCLE, LV_PART_INDICATOR);
+
     PET_LoadMerit();
     g_pet_ui.wooden_timer = lv_timer_create(
         PET_EndWoodenFish,
@@ -754,7 +1011,11 @@ static void pet_on_start(void)
     }
 
     g_pet_ui.ulRenderedGeneration = 0xFFFFFFFFUL;
+    g_pet_ui.ulRenderedImageGeneration = 0xFFFFFFFFUL;
+    g_pet_ui.ucRenderedImageProgress = 0xFFU;
+    g_pet_ui.eRenderedImageState = AGENTPET_IMAGE_IDLE;
     g_pet_ui.bRenderedConnected = false;
+    g_pet_ui.bRenderedCustomImage = false;
     g_pet_ui.status_timer = lv_timer_create(
         PET_RefreshStatus,
         PET_STATUS_REFRESH_MS,
@@ -797,6 +1058,11 @@ static void pet_on_stop(void)
 #endif
     if (g_pet_ui.root)
     {
+        if (NULL != g_pet_ui.mascot)
+        {
+            lv_img_set_src(g_pet_ui.mascot, &agent_pet_mascot);
+        }
+        PET_ReleaseCustomMascot();
         lv_obj_del(g_pet_ui.root);
     }
     rt_memset(&g_pet_ui, 0, sizeof(g_pet_ui));
