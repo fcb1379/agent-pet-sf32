@@ -8,10 +8,8 @@ cwd = GetCurrentDir()
 src = []
 inc = [cwd]
 
-# The hardware SDK already supplies app_mem.c. Keep the local implementation
-# only for the PC simulator, where the SDK object is not available.
-if GetDepend('BSP_USING_PC_SIMULATOR'):
-    src = src + Glob('*.c')
+# add LittlevGL common include
+src = src + Glob('*.c')
 
 LOCAL_CCFLAGS = ''
 

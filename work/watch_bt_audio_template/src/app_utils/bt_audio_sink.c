@@ -42,7 +42,9 @@ static watch_bt_audio_t g_watch_bt_audio;
 static rt_mailbox_t g_watch_bt_audio_mb;
 
 extern void bt_av_snk_open(void);
+#ifndef AGENT_PET_DISABLE_CLASSIC_BT_AUDIO
 extern uint8_t bt_open_bt_request(void);
+#endif /* AGENT_PET_DISABLE_CLASSIC_BT_AUDIO */
 
 static int watch_bt_audio_event_handle(uint16_t type, uint16_t event_id, uint8_t *data, uint16_t data_len)
 {
@@ -280,6 +282,7 @@ int bt_audio_sink_request_recovery(void)
     return rt_mb_send(g_watch_bt_audio_mb, BT_AUDIO_RECOVER);
 }
 
+#ifndef AGENT_PET_DISABLE_CLASSIC_BT_AUDIO
 __ROM_USED void btaudio(int argc, char **argv)
 {
     if (argc < 2)
@@ -351,3 +354,4 @@ __ROM_USED void btaudio(int argc, char **argv)
     }
 }
 MSH_CMD_EXPORT(btaudio, watch BT audio command);
+#endif /* AGENT_PET_DISABLE_CLASSIC_BT_AUDIO */
