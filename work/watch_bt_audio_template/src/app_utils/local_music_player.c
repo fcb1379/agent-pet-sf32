@@ -37,31 +37,21 @@ typedef enum
     LOCAL_MUSIC_CMD_RESUME,
 } local_music_cmd_t;
 
-typedef enum
-{
-    LOCAL_MUSIC_STATE_IDLE = 0,
-    LOCAL_MUSIC_STATE_PLAYING,
-    LOCAL_MUSIC_STATE_PAUSED,
-    LOCAL_MUSIC_STATE_SUSPENDED,
-    LOCAL_MUSIC_STATE_ENDED,
-    LOCAL_MUSIC_STATE_ERROR,
-} local_music_state_t;
-
 typedef struct
 {
     local_music_cmd_t cmd;
     uint32_t loop;
-    char path[96];
+    char path[LOCAL_MUSIC_PATH_LENGTH];
 } local_music_msg_t;
 
 static mp3ctrl_handle g_music_handle;
 static rt_mq_t g_music_mq;
 static rt_thread_t g_music_thread;
-static local_music_state_t g_music_state = LOCAL_MUSIC_STATE_IDLE;
-static char g_music_path[96] = LOCAL_MUSIC_DEFAULT_PATH;
+static LOCAL_MUSIC_STATE g_music_state = LOCAL_MUSIC_STATE_IDLE;
+static char g_music_path[LOCAL_MUSIC_PATH_LENGTH] = LOCAL_MUSIC_DEFAULT_PATH;
 static uint32_t g_music_last_callback;
 
-static const char *local_music_state_name(local_music_state_t state)
+static const char *local_music_state_name(LOCAL_MUSIC_STATE state)
 {
     switch (state)
     {
@@ -243,6 +233,24 @@ static rt_err_t local_music_send(local_music_cmd_t cmd, const char *path, uint32
     return rt_mq_send(g_music_mq, &msg, sizeof(msg));
 }
 
+int local_music_get_snapshot(LOCAL_MUSIC_SNAPSHOT *pSnapshot)
+{
+    rt_base_t tLevel;
+
+    if (NULL == pSnapshot)
+    {
+        return -RT_EINVAL;
+    }
+
+    tLevel = rt_hw_interrupt_disable();
+    pSnapshot->eState = g_music_state;
+    rt_strncpy(pSnapshot->aPath, g_music_path, sizeof(pSnapshot->aPath) - 1U);
+    pSnapshot->ulLastCallback = g_music_last_callback;
+    rt_hw_interrupt_enable(tLevel);
+    pSnapshot->aPath[sizeof(pSnapshot->aPath) - 1U] = '\0';
+
+    return RT_EOK;
+}
 int local_music_play_file(const char *path, uint32_t loop)
 {
     if (bt_audio_sink_is_streaming())

@@ -38,6 +38,8 @@ typedef struct
     char artist[BLE_IOS_TEXT_MEDIA_LEN];
     char album[BLE_IOS_TEXT_MEDIA_LEN];
     char track[BLE_IOS_TEXT_MEDIA_LEN];
+    char duration[BLE_IOS_TEXT_MEDIA_LEN];
+    char volume[BLE_IOS_TEXT_MEDIA_LEN];
 } ble_ios_env_t;
 
 static ble_ios_env_t g_ble_ios_env;
@@ -95,6 +97,8 @@ void ble_ios_services_get_snapshot(ble_ios_services_snapshot_t *snapshot)
     rt_strncpy(snapshot->artist, env->artist, sizeof(snapshot->artist) - 1);
     rt_strncpy(snapshot->album, env->album, sizeof(snapshot->album) - 1);
     rt_strncpy(snapshot->track, env->track, sizeof(snapshot->track) - 1);
+    rt_strncpy(snapshot->duration, env->duration, sizeof(snapshot->duration) - 1);
+    rt_strncpy(snapshot->volume, env->volume, sizeof(snapshot->volume) - 1);
     rt_hw_interrupt_enable(level);
 
     snapshot->last_app[sizeof(snapshot->last_app) - 1] = '\0';
@@ -105,6 +109,8 @@ void ble_ios_services_get_snapshot(ble_ios_services_snapshot_t *snapshot)
     snapshot->artist[sizeof(snapshot->artist) - 1] = '\0';
     snapshot->album[sizeof(snapshot->album) - 1] = '\0';
     snapshot->track[sizeof(snapshot->track) - 1] = '\0';
+    snapshot->duration[sizeof(snapshot->duration) - 1] = '\0';
+    snapshot->volume[sizeof(snapshot->volume) - 1] = '\0';
 }
 
 #ifdef BSP_USING_ANCS_SVC
@@ -249,6 +255,10 @@ static void ble_ios_store_ams_attr(ble_ams_entity_attr_value_t *value)
         {
             ios_copy_text(env->playback, sizeof(env->playback), value->value, value->len);
         }
+        else if (value->attr_id == BLE_AMS_PLAYER_ATTR_ID_VOL)
+        {
+            ios_copy_text(env->volume, sizeof(env->volume), value->value, value->len);
+        }
         break;
     case BLE_AMS_ENTITY_ID_TRACK:
         if (value->attr_id == BLE_AMS_TRACK_ATTR_ID_ARTIST)
@@ -262,6 +272,10 @@ static void ble_ios_store_ams_attr(ble_ams_entity_attr_value_t *value)
         else if (value->attr_id == BLE_AMS_TRACK_ATTR_ID_TILTE)
         {
             ios_copy_text(env->track, sizeof(env->track), value->value, value->len);
+        }
+        else if (value->attr_id == BLE_AMS_TRACK_ATTR_ID_DURATION)
+        {
+            ios_copy_text(env->duration, sizeof(env->duration), value->value, value->len);
         }
         break;
     default:

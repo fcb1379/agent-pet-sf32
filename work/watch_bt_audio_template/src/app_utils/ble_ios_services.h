@@ -22,6 +22,8 @@ typedef struct
     char artist[BLE_IOS_TEXT_MEDIA_LEN];
     char album[BLE_IOS_TEXT_MEDIA_LEN];
     char track[BLE_IOS_TEXT_MEDIA_LEN];
+    char duration[BLE_IOS_TEXT_MEDIA_LEN];
+    char volume[BLE_IOS_TEXT_MEDIA_LEN];
 } ble_ios_services_snapshot_t;
 
 void ble_ios_services_get_snapshot(ble_ios_services_snapshot_t *snapshot);
