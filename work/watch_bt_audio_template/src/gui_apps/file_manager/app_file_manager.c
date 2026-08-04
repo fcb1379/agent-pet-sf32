@@ -175,6 +175,7 @@ static bool FileManager_BuildPath(char *pOutput,
  ***************************/
 static bool FileManager_MountTf(void)
 {
+#ifndef BSP_USING_PC_SIMULATOR
     rt_device_t pDevice;
     int lResult;
 
@@ -218,6 +219,10 @@ static bool FileManager_MountTf(void)
                FILE_MANAGER_DEVICE_NAME,
                FILE_MANAGER_ROOT_PATH);
     return true;
+#else
+    (void)l_bTfMounted;
+    return false;
+#endif
 }
 
 /***************************
