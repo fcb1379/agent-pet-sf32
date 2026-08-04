@@ -105,6 +105,7 @@ static bool PET_DecodeCustomMascot(lv_img_header_t *pHeader)
         return false;
     }
 
+    (void)rt_memset(&tDecoder, 0, sizeof(tDecoder));
     lv_img_cache_invalidate_src(NULL);
     eResult = lv_img_decoder_open(
         &tDecoder,
@@ -287,10 +288,6 @@ static void PET_RefreshMascotImage(const AGENTPET_IMAGE_STATUS *pStatus)
                 LV_MIN(ulZoomWidth, ulZoomHeight));
             lv_img_set_src(g_pet_ui.mascot, &g_pet_ui.tCustomMascot);
             lv_img_set_zoom(g_pet_ui.mascot, usZoom);
-        }
-        else
-        {
-            g_pet_ui.bRenderedCustomImage = false;
         }
     }
     lv_obj_center(g_pet_ui.mascot);

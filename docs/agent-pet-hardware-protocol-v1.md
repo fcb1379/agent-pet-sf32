@@ -1,12 +1,12 @@
 # Agent Pet 硬件联动协议 v1.0
 
-状态：**冻结**
+状态：**维护中**
 协议版本：`1`
 传输方向：桌面端 BLE Central → 外设 BLE Peripheral
 
 ## 1. 范围与安全边界
 
-本协议只同步聚合状态和有限的 Agent 会话元数据。它不传输任务正文、工作目录、
+本协议同步设备时间、聚合状态和有限的 Agent 会话元数据。它不传输任务正文、工作目录、
 命令、文件名、授权内容或用户输入。外设只能显示状态，不能修改任务状态、执行
 批准/拒绝或控制 Agent。
 
@@ -34,8 +34,8 @@
 |---:|---:|---|---|
 | 0 | 2 | `magic` | ASCII `AP`，即 `41 50` |
 | 2 | 1 | `protocol_version` | 固定 `1` |
-| 3 | 1 | `message_type` | `1`：完整状态快照 |
-| 4 | 2 | `sequence` | 16 位循环快照序号 |
+| 3 | 1 | `message_type` | `1`：完整状态快照；`2`：木鱼事件；`3`：时间同步 |
+| 4 | 2 | `sequence` | 16 位循环消息序号 |
 | 6 | 1 | `chunk_index` | 从 `0` 开始 |
 | 7 | 1 | `chunk_count` | `1..13` |
 | 8 | 1 | `payload_length` | `1..10` |
@@ -111,7 +111,20 @@ Flags：bit0=`approval_pending`、bit1=`aggregate_active`，bit2..7 保留并忽
 
 `task_hash` 只用于同屏稳定区分任务，不是安全标识，不得用于授权。
 
-## 5. 接收状态机
+## 5. 时间同步载荷
+
+时间同步使用 `message_type=3`，固定为单帧：`chunk_index=0`、`chunk_count=1`、
+`payload_length=6`。
+
+| 相对偏移 | 长度 | 字段 |
+|---:|---:|---|
+| 0 | 4 | `utc_epoch`，UTC Unix 秒，范围 `1577836800..2145916800` |
+| 4 | 2 | `timezone_offset_minutes`，有符号 16 位整数，范围 `-840..840` |
+
+设备本地时间按 `utc_epoch + timezone_offset_minutes * 60` 计算。桌面端在每次 GATT
+连接或自动重连成功后首先发送当前时间；固件在协议层完成 CRC、补零和范围校验，
+随后通过静态工作线程更新 RTC 并持久化时区，GATT 回调本身不写 Flash、不阻塞。
+## 6. 接收状态机
 
 1. 校验固定长度、头部、CRC、分片范围和补零。
 2. 新 `sequence` 到来时清空未完成重组并开始新快照。
@@ -126,21 +139,26 @@ Flags：bit0=`approval_pending`、bit1=`aggregate_active`，bit2..7 保留并忽
 接收端必须使用固定容量缓冲区；BLE 写回调中不得调用 LVGL、写 Flash、阻塞
 等待或打印整帧日志。
 
-## 6. 同步行为
+## 7. 同步行为
 
 - 桌面端只扫描广播中包含 Agent Pet Service UUID 的设备。
-- 连接成功后立即发送完整快照。
+- 连接成功后先发送时间同步帧，再发送完整快照和宠物图片。
 - 状态变化时发送新的完整快照，不发送增量。
 - 分片默认用串行 Write Request。
 - 外设断线后自动恢复可连接广播。
 - 外设可以显示最后快照，但必须明确标记离线。
 
-## 7. 黄金向量
+## 8. 黄金向量
 
 空闲、0 会话、`sequence=0x1234`、`generated_at=0`：
 
 ```text
 41 50 01 01 34 12 00 01 06 00 00 00 00 00 00 00 00 00 00 18
+```
+时间同步、`sequence=0x2468`、`utc_epoch=1785812521`、`timezone_offset_minutes=480`：
+
+```text
+41 50 01 03 68 24 00 01 06 29 56 71 6A E0 01 00 00 00 00 27
 ```
 
 本仓库的 `tests/agent_pet_protocol_host_test.c` 还覆盖 CRC、乱序分片、重复

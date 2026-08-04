@@ -27,6 +27,7 @@ typedef enum _AGENTPET_RESULT
     AGENTPET_RESULT_SNAPSHOT_PUBLISHED = 1,
     AGENTPET_RESULT_DUPLICATE = 2,
     AGENTPET_RESULT_EVENT_PUBLISHED = 3,
+    AGENTPET_RESULT_TIME_SYNC_PUBLISHED = 4,
     AGENTPET_ERROR_INVALID_PARAMETER = 100,
     AGENTPET_ERROR_FRAME_LENGTH = 101,
     AGENTPET_ERROR_HEADER = 102,
@@ -34,7 +35,8 @@ typedef enum _AGENTPET_RESULT
     AGENTPET_ERROR_CHUNK = 104,
     AGENTPET_ERROR_PADDING = 105,
     AGENTPET_ERROR_SNAPSHOT = 106,
-    AGENTPET_ERROR_EVENT = 107
+    AGENTPET_ERROR_EVENT = 107,
+    AGENTPET_ERROR_TIME_SYNC = 108
 } AGENTPET_RESULT;
 
 /* AGENTPET_SESSION: Agent 会话的固定资源状态记录。
@@ -73,11 +75,25 @@ typedef struct _AGENTPET_SNAPSHOT
     AGENTPET_SESSION aSessions[AGENTPET_MAX_SESSION_COUNT];
 } AGENTPET_SNAPSHOT;
 
+/* AGENTPET_TIME_SYNC: Validated desktop clock update received over GATT.
+ * Members:
+ *   - ulUtcEpoch: UTC Unix timestamp in seconds, range 1577836800~2145916800
+ *   - sTimezoneOffsetMinutes: local offset from UTC, range -840~840 minutes
+ *   - usSequence: protocol frame sequence used for diagnostics
+ */
+typedef struct _AGENTPET_TIME_SYNC
+{
+    uint32_t ulUtcEpoch;
+    int16_t sTimezoneOffsetMinutes;
+    uint16_t usSequence;
+} AGENTPET_TIME_SYNC;
+
 void AGENTPET_ProtocolInit(void);
 void AGENTPET_ResetAssembly(void);
 uint8_t AGENTPET_Crc8Atm(const uint8_t *pData, size_t ulLength);
 AGENTPET_RESULT AGENTPET_ProcessFrame(const uint8_t *pFrame, size_t ulLength);
 bool AGENTPET_GetSnapshot(AGENTPET_SNAPSHOT *pSnapshot, uint32_t *pGeneration);
 bool AGENTPET_GetWoodenFishEvent(uint16_t *pSequence, uint32_t *pGeneration);
+bool AGENTPET_GetTimeSync(AGENTPET_TIME_SYNC *pTimeSync, uint32_t *pGeneration);
 
 #endif /* AGENT_PET_PROTOCOL_H */

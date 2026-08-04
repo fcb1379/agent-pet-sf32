@@ -7,8 +7,14 @@
 #define AGENTPET_PROTOCOL_VERSION        (1U)
 #define AGENTPET_MESSAGE_TYPE_SNAPSHOT   (1U)
 #define AGENTPET_MESSAGE_TYPE_WOODEN_FISH (2U)
+#define AGENTPET_MESSAGE_TYPE_TIME_SYNC  (3U)
 #define AGENTPET_WOODEN_FISH_ACTION      (1U)
 #define AGENTPET_WOODEN_FISH_PAYLOAD_SIZE (1U)
+#define AGENTPET_TIME_SYNC_PAYLOAD_SIZE  (6U)
+#define AGENTPET_TIME_MIN                (1577836800UL)
+#define AGENTPET_TIME_MAX                (2145916800UL)
+#define AGENTPET_TIMEZONE_MIN            (-840)
+#define AGENTPET_TIMEZONE_MAX            (840)
 #define AGENTPET_FRAME_HEADER_SIZE       (9U)
 #define AGENTPET_FRAME_CRC_OFFSET        (19U)
 #define AGENTPET_MAX_SNAPSHOT_SIZE       (126U)
@@ -54,6 +60,12 @@ static uint16_t l_usWoodenFishSequence;
 static uint32_t l_ulWoodenFishGeneration;
 /* 木鱼事件有效标志，false 表示设备启动后尚未收到上位机木鱼事件。 */
 static bool l_bHasWoodenFishEvent;
+/* Latest validated time synchronization payload; protected by the caller's critical section. */
+static AGENTPET_TIME_SYNC l_tTimeSync;
+/* Time synchronization publication generation, range 0~4294967295. */
+static uint32_t l_ulTimeSyncGeneration;
+/* True after at least one valid time synchronization frame has been received. */
+static bool l_bHasTimeSync;
 
 static uint16_t Local_ReadLe16(const uint8_t *pData)
 {
@@ -179,6 +191,9 @@ void AGENTPET_ProtocolInit(void)
     l_usWoodenFishSequence = 0U;
     l_ulWoodenFishGeneration = 0U;
     l_bHasWoodenFishEvent = false;
+    (void)memset(&l_tTimeSync, 0, sizeof(l_tTimeSync));
+    l_ulTimeSyncGeneration = 0U;
+    l_bHasTimeSync = false;
 
     return;
 }
@@ -268,7 +283,8 @@ AGENTPET_RESULT AGENTPET_ProcessFrame(const uint8_t *pFrame, size_t ulLength)
         (AGENTPET_MAGIC_SECOND != pFrame[1]) ||
         (AGENTPET_PROTOCOL_VERSION != pFrame[2]) ||
         ((AGENTPET_MESSAGE_TYPE_SNAPSHOT != pFrame[3]) &&
-         (AGENTPET_MESSAGE_TYPE_WOODEN_FISH != pFrame[3]))
+         (AGENTPET_MESSAGE_TYPE_WOODEN_FISH != pFrame[3]) &&
+         (AGENTPET_MESSAGE_TYPE_TIME_SYNC != pFrame[3]))
     )
     {
         return AGENTPET_ERROR_HEADER;
@@ -305,6 +321,39 @@ AGENTPET_RESULT AGENTPET_ProcessFrame(const uint8_t *pFrame, size_t ulLength)
         }
     }
 
+    if (AGENTPET_MESSAGE_TYPE_TIME_SYNC == ucMessageType)
+    {
+        int16_t sTimezoneOffsetMinutes;
+        uint32_t ulUtcEpoch;
+
+        if (
+            (0U != ucChunkIndex) ||
+            (1U != ucChunkCount) ||
+            (AGENTPET_TIME_SYNC_PAYLOAD_SIZE != ucPayloadLength)
+        )
+        {
+            return AGENTPET_ERROR_TIME_SYNC;
+        }
+        ulUtcEpoch = Local_ReadLe32(&pFrame[AGENTPET_FRAME_HEADER_SIZE]);
+        sTimezoneOffsetMinutes = (int16_t)Local_ReadLe16(
+            &pFrame[AGENTPET_FRAME_HEADER_SIZE + 4U]);
+        if (
+            (AGENTPET_TIME_MIN > ulUtcEpoch) ||
+            (AGENTPET_TIME_MAX < ulUtcEpoch) ||
+            (AGENTPET_TIMEZONE_MIN > sTimezoneOffsetMinutes) ||
+            (AGENTPET_TIMEZONE_MAX < sTimezoneOffsetMinutes)
+        )
+        {
+            return AGENTPET_ERROR_TIME_SYNC;
+        }
+
+        l_tTimeSync.ulUtcEpoch = ulUtcEpoch;
+        l_tTimeSync.sTimezoneOffsetMinutes = sTimezoneOffsetMinutes;
+        l_tTimeSync.usSequence = usSequence;
+        l_ulTimeSyncGeneration++;
+        l_bHasTimeSync = true;
+        return AGENTPET_RESULT_TIME_SYNC_PUBLISHED;
+    }
     if (AGENTPET_MESSAGE_TYPE_WOODEN_FISH == ucMessageType)
     {
         if (
@@ -414,6 +463,34 @@ bool AGENTPET_GetWoodenFishEvent(uint16_t *pSequence, uint32_t *pGeneration)
         *pSequence = l_usWoodenFishSequence;
     }
     *pGeneration = l_ulWoodenFishGeneration;
+
+    return true;
+}
+
+/*
+ * AGENTPET_GetTimeSync
+ * Function: Copy the latest validated time synchronization payload.
+ * Parameters:
+ *   - pTimeSync: output payload; must not be NULL.
+ *   - pGeneration: optional publication generation output.
+ * Return: true when a valid time synchronization frame has been received.
+ */
+bool AGENTPET_GetTimeSync(AGENTPET_TIME_SYNC *pTimeSync, uint32_t *pGeneration)
+{
+    if (NULL == pTimeSync)
+    {
+        return false;
+    }
+    if (!l_bHasTimeSync)
+    {
+        return false;
+    }
+
+    (void)memcpy(pTimeSync, &l_tTimeSync, sizeof(*pTimeSync));
+    if (NULL != pGeneration)
+    {
+        *pGeneration = l_ulTimeSyncGeneration;
+    }
 
     return true;
 }

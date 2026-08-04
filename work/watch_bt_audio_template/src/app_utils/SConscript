@@ -29,7 +29,7 @@ else:
     if GetDepend('BSP_BLE_SIBLES'):
         src += ['ble_watch_link.c', 'watch_protocol.c',
                 'agent_pet_protocol.c', 'agent_pet_image_transfer.c',
-                'agent_pet_ble_service.c']
+                'agent_pet_ble_service.c', 'agent_pet_md5_backend.c']
 
     if GetDepend('BSP_BLE_WATCH_FACE'):
         src += ['badge_transfer.c']
@@ -38,7 +38,7 @@ else:
         src += ['ble_ios_services.c']
 
 
-CPPPATH = [cwd]
+CPPPATH = [cwd, os.path.normpath(os.path.join(RTT_ROOT, '..', '..', 'external', 'mbedtls', 'include'))]
 
 group = DefineGroup('App_utils', src, depend = [''], CPPPATH = CPPPATH)
 

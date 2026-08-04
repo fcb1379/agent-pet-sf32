@@ -6,6 +6,7 @@
 #include <stdint.h>
 
 #define AGENTPET_IMAGE_CONTROL_FRAME_SIZE (20U)
+#define AGENTPET_IMAGE_MD5_SIZE           (16U)
 #define AGENTPET_IMAGE_MAX_PACKET_SIZE    (244U)
 #define AGENTPET_IMAGE_MAX_FILE_SIZE    (128U * 1024U)
 #define AGENTPET_IMAGE_PATH             "/pet.jpg"
@@ -51,5 +52,6 @@ AGENTPET_IMAGE_RESULT AGENTPETIMAGE_ProcessFrame(
     const uint8_t *pFrame,
     size_t ulLength);
 bool AGENTPETIMAGE_GetStatus(AGENTPET_IMAGE_STATUS *pStatus);
+bool AGENTPETIMAGE_GetDigest(bool *pAvailable, uint8_t *pDigest);
 
 #endif /* AGENT_PET_IMAGE_TRANSFER_H */

@@ -119,6 +119,51 @@ static int TEST_OutOfOrderSnapshot(void)
     return 0;
 }
 
+static int TEST_TimeSync(void)
+{
+    uint8_t aFrame[AGENTPET_FRAME_SIZE] = {0U};
+    const uint32_t ulUtcEpoch = 1785812521UL;
+    const int16_t sTimezoneOffsetMinutes = 480;
+    AGENTPET_TIME_SYNC tTimeSync;
+    uint32_t ulGeneration;
+
+    aFrame[0] = 0x41U;
+    aFrame[1] = 0x50U;
+    aFrame[2] = 1U;
+    aFrame[3] = 3U;
+    aFrame[4] = 0x68U;
+    aFrame[5] = 0x24U;
+    aFrame[6] = 0U;
+    aFrame[7] = 1U;
+    aFrame[8] = 6U;
+    aFrame[9] = (uint8_t)ulUtcEpoch;
+    aFrame[10] = (uint8_t)(ulUtcEpoch >> 8U);
+    aFrame[11] = (uint8_t)(ulUtcEpoch >> 16U);
+    aFrame[12] = (uint8_t)(ulUtcEpoch >> 24U);
+    aFrame[13] = (uint8_t)sTimezoneOffsetMinutes;
+    aFrame[14] = (uint8_t)((uint16_t)sTimezoneOffsetMinutes >> 8U);
+    TEST_FinalizeFrame(aFrame);
+
+    AGENTPET_ProtocolInit();
+    TEST_ASSERT(
+        AGENTPET_RESULT_TIME_SYNC_PUBLISHED ==
+        AGENTPET_ProcessFrame(aFrame, sizeof(aFrame)));
+    TEST_ASSERT(AGENTPET_GetTimeSync(&tTimeSync, &ulGeneration));
+    TEST_ASSERT(ulUtcEpoch == tTimeSync.ulUtcEpoch);
+    TEST_ASSERT(sTimezoneOffsetMinutes == tTimeSync.sTimezoneOffsetMinutes);
+    TEST_ASSERT(0x2468U == tTimeSync.usSequence);
+    TEST_ASSERT(1U == ulGeneration);
+
+    aFrame[13] = 0x49U;
+    aFrame[14] = 0x03U;
+    TEST_FinalizeFrame(aFrame);
+    TEST_ASSERT(
+        AGENTPET_ERROR_TIME_SYNC ==
+        AGENTPET_ProcessFrame(aFrame, sizeof(aFrame)));
+
+    return 0;
+}
+
 static int TEST_RejectInvalidFrame(void)
 {
     uint8_t aFrame[AGENTPET_FRAME_SIZE] =
@@ -153,6 +198,11 @@ int main(void)
         return lRetVal;
     }
     lRetVal = TEST_OutOfOrderSnapshot();
+    if (0 != lRetVal)
+    {
+        return lRetVal;
+    }
+    lRetVal = TEST_TimeSync();
     if (0 != lRetVal)
     {
         return lRetVal;

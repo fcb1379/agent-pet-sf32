@@ -8,6 +8,7 @@
 
 #include "agent_pet_protocol.h"
 #include "dfs_posix.h"
+#include "mbedtls/md5.h"
 
 #define LOG_TAG "agent_pet_img"
 #include "log.h"
@@ -26,6 +27,7 @@
 #define AGENTPET_IMAGE_DATA_MAX_SIZE      (235U)
 #define AGENTPET_IMAGE_PACKET_OVERHEAD    (9U)
 #define AGENTPET_IMAGE_WRITE_BUFFER_SIZE  (512U)
+#define AGENTPET_IMAGE_MD5_READ_SIZE       (512U)
 #define AGENTPET_IMAGE_CRC32_INIT         (0xFFFFFFFFUL)
 #define AGENTPET_IMAGE_QUEUE_DEPTH        (8U)
 #define AGENTPET_IMAGE_THREAD_STACK_SIZE (2048U)
@@ -53,6 +55,7 @@ typedef struct _AGENTPET_IMAGE_ENV
     AGENTPET_IMAGE_STATE eState;
     AGENTPET_IMAGE_RESULT eLastResult;
     bool bImageAvailable;
+    uint8_t aImageMd5[AGENTPET_IMAGE_MD5_SIZE];
     uint8_t aWriteBuffer[AGENTPET_IMAGE_WRITE_BUFFER_SIZE];
 } AGENTPET_IMAGE_ENV;
 
@@ -139,6 +142,66 @@ static uint32_t Local_Crc32Mpeg2(
     }
 
     return ulCrc;
+}
+
+/*
+ * Local_CalculateFileMd5
+ * Function: calculate the MD5 digest of one bounded persistent image file.
+ * Parameters:
+ *   - pPath: input file path; must not be NULL.
+ *   - pDigest: 16-byte output buffer; must not be NULL.
+ * Return: true when the complete file was hashed, otherwise false.
+ */
+static bool Local_CalculateFileMd5(
+    const char *pPath,
+    uint8_t *pDigest)
+{
+    mbedtls_md5_context tContext;
+    uint8_t aReadBuffer[AGENTPET_IMAGE_MD5_READ_SIZE];
+    int lFileDescriptor;
+    int lReadLength;
+    bool bSuccess;
+
+    if ((NULL == pPath) || (NULL == pDigest))
+    {
+        return false;
+    }
+
+    lFileDescriptor = open(pPath, O_RDONLY | O_BINARY, 0);
+    if (0 > lFileDescriptor)
+    {
+        return false;
+    }
+
+    bSuccess = true;
+    mbedtls_md5_init(&tContext);
+    mbedtls_md5_starts(&tContext);
+    while (true)
+    {
+        lReadLength = read(lFileDescriptor, aReadBuffer, sizeof(aReadBuffer));
+        if (0 > lReadLength)
+        {
+            bSuccess = false;
+            break;
+        }
+        if (0 == lReadLength)
+        {
+            break;
+        }
+        mbedtls_md5_update(&tContext, aReadBuffer, (size_t)lReadLength);
+    }
+    (void)close(lFileDescriptor);
+    if (bSuccess)
+    {
+        mbedtls_md5_finish(&tContext, pDigest);
+    }
+    else
+    {
+        (void)memset(pDigest, 0, AGENTPET_IMAGE_MD5_SIZE);
+    }
+    mbedtls_md5_free(&tContext);
+
+    return bSuccess;
 }
 
 static void Local_CloseTemporaryFile(void)
@@ -371,6 +434,7 @@ static AGENTPET_IMAGE_RESULT Local_CommitTransfer(
     uint8_t ucFormat)
 {
     AGENTPET_IMAGE_RESULT eResult;
+    uint8_t aImageMd5[AGENTPET_IMAGE_MD5_SIZE];
 
     if (
         (AGENTPET_IMAGE_RECEIVING != l_tImageEnv.eState) ||
@@ -399,6 +463,10 @@ static AGENTPET_IMAGE_RESULT Local_CommitTransfer(
     {
         return eResult;
     }
+    if (!Local_CalculateFileMd5(AGENTPET_IMAGE_TEMP_PATH, aImageMd5))
+    {
+        return AGENTPET_IMAGE_ERROR_STORAGE;
+    }
 
     (void)unlink(AGENTPET_IMAGE_BACKUP_PATH);
     if ((0 == access(AGENTPET_IMAGE_PATH, 0)) &&
@@ -413,6 +481,7 @@ static AGENTPET_IMAGE_RESULT Local_CommitTransfer(
     }
     (void)unlink(AGENTPET_IMAGE_BACKUP_PATH);
 
+    (void)memcpy(l_tImageEnv.aImageMd5, aImageMd5, AGENTPET_IMAGE_MD5_SIZE);
     l_tImageEnv.bImageAvailable = true;
     l_tImageEnv.ulGeneration++;
     l_tImageEnv.eState = AGENTPET_IMAGE_READY;
@@ -454,6 +523,7 @@ static AGENTPET_IMAGE_RESULT Local_ResetImage(void)
     l_tImageEnv.ulReceived = 0U;
     l_tImageEnv.usPendingLength = 0U;
     l_tImageEnv.bImageAvailable = false;
+    (void)memset(l_tImageEnv.aImageMd5, 0, AGENTPET_IMAGE_MD5_SIZE);
     l_tImageEnv.ulGeneration++;
     l_tImageEnv.eState = AGENTPET_IMAGE_IDLE;
     l_tImageEnv.eLastResult = AGENTPET_IMAGE_RESULT_RESET;
@@ -522,6 +592,12 @@ void AGENTPETIMAGE_Init(void)
     l_tImageEnv.ulCalculatedCrc = AGENTPET_IMAGE_CRC32_INIT;
     l_tImageEnv.usPendingLength = 0U;
     l_tImageEnv.bImageAvailable = (0 == stat(AGENTPET_IMAGE_PATH, &tStatus));
+    (void)memset(l_tImageEnv.aImageMd5, 0, AGENTPET_IMAGE_MD5_SIZE);
+    if (l_tImageEnv.bImageAvailable &&
+        !Local_CalculateFileMd5(AGENTPET_IMAGE_PATH, l_tImageEnv.aImageMd5))
+    {
+        LOG_E("Persistent mascot MD5 calculation failed");
+    }
     l_tImageEnv.ulGeneration = l_tImageEnv.bImageAvailable ? 1U : 0U;
     l_tImageEnv.eState = l_tImageEnv.bImageAvailable ?
         AGENTPET_IMAGE_READY : AGENTPET_IMAGE_IDLE;
@@ -784,6 +860,34 @@ bool AGENTPETIMAGE_GetStatus(AGENTPET_IMAGE_STATUS *pStatus)
     pStatus->ulTotal = l_tImageEnv.ulTotal;
     pStatus->ulGeneration = l_tImageEnv.ulGeneration;
     pStatus->eLastResult = l_tImageEnv.eLastResult;
+    if (l_bImageWorkerReady)
+    {
+        (void)rt_mutex_release(&l_tImageMutex);
+    }
+
+    return true;
+}
+/*
+ * AGENTPETIMAGE_GetDigest
+ * Function: copy the availability flag and cached MD5 of the committed persistent image.
+ * Parameters:
+ *   - pAvailable: output availability flag; must not be NULL.
+ *   - pDigest: 16-byte output digest buffer; must not be NULL.
+ * Return: true when copied, otherwise false.
+ */
+bool AGENTPETIMAGE_GetDigest(bool *pAvailable, uint8_t *pDigest)
+{
+    if ((NULL == pAvailable) || (NULL == pDigest))
+    {
+        return false;
+    }
+
+    if (l_bImageWorkerReady)
+    {
+        (void)rt_mutex_take(&l_tImageMutex, RT_WAITING_FOREVER);
+    }
+    *pAvailable = l_tImageEnv.bImageAvailable;
+    (void)memcpy(pDigest, l_tImageEnv.aImageMd5, AGENTPET_IMAGE_MD5_SIZE);
     if (l_bImageWorkerReady)
     {
         (void)rt_mutex_release(&l_tImageMutex);

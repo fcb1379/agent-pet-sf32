@@ -55,7 +55,9 @@ static FILE_MANAGER_UI l_tFileManagerUi;
 /* The card remains mounted while switching between applications. */
 static bool l_bTfMounted;
 
+#ifdef RT_USING_SPI_MSD
 extern int rt_spi_msd_init(void);
+#endif /* RT_USING_SPI_MSD */
 
 static void FileManager_Refresh(void);
 
@@ -175,7 +177,11 @@ static bool FileManager_BuildPath(char *pOutput,
  ***************************/
 static bool FileManager_MountTf(void)
 {
-#ifndef BSP_USING_PC_SIMULATOR
+#if defined(BSP_USING_PC_SIMULATOR) || !defined(RT_USING_SPI_MSD)
+    rt_kprintf("[TF] SPI card is not supported on this board\n");
+    (void)l_bTfMounted;
+    return false;
+#else
     rt_device_t pDevice;
     int lResult;
 
@@ -219,10 +225,7 @@ static bool FileManager_MountTf(void)
                FILE_MANAGER_DEVICE_NAME,
                FILE_MANAGER_ROOT_PATH);
     return true;
-#else
-    (void)l_bTfMounted;
-    return false;
-#endif
+#endif /* BSP_USING_PC_SIMULATOR || !RT_USING_SPI_MSD */
 }
 
 /***************************
