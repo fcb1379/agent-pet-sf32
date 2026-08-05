@@ -24,6 +24,7 @@ typedef struct _LOCAL_MUSIC_SNAPSHOT
 
 int local_music_get_snapshot(LOCAL_MUSIC_SNAPSHOT *pSnapshot);
 int local_music_play_file(const char *path, uint32_t loop);
+int LOCALMUSIC_PlayEffect(const char *pPath);
 int local_music_stop(void);
 int local_music_pause(void);
 int local_music_resume(void);

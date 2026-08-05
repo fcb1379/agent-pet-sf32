@@ -354,6 +354,22 @@ int local_music_play_file(const char *pPath, uint32_t ulLoop)
     return RT_EOK;
 }
 
+/***************************
+ * LOCALMUSIC_PlayEffect: Simulate successful short sound-effect playback.
+ * Parameters:
+ *   - pPath: Sound-effect file path.
+ * Return value: RT_EOK on success, -RT_EINVAL for a NULL path.
+ ***************************/
+int LOCALMUSIC_PlayEffect(const char *pPath)
+{
+    if (RT_NULL == pPath)
+    {
+        return -RT_EINVAL;
+    }
+
+    return RT_EOK;
+}
+
 int local_music_stop(void)
 {
     l_tBtHealth.state = BT_AUDIO_SINK_STATE_CONNECTED;

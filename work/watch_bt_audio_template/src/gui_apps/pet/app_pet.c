@@ -3,6 +3,7 @@
 #include "littlevgl2rtt.h"
 #include "app_mem.h"
 #include "agent_pet_ble_service.h"
+#include "local_music_player.h"
 #if !defined(BSP_USING_PC_SIMULATOR) || !defined(AGENT_PET_STANDALONE_PREVIEW)
     #include "lv_ext_resource_manager.h"
     #include "gui_app_fwk.h"
@@ -27,6 +28,7 @@ LV_IMG_DECLARE(agent_pet_merit_plus_one);
 #define PET_MASCOT_X ((LV_HOR_RES_MAX - PET_MASCOT_SIZE) / 2)
 #define PET_MASCOT_Y (((LV_VER_RES_MAX - PET_MASCOT_SIZE) / 2) - 12)
 #define PET_WOODEN_FISH_IDLE_MS (1700U)
+#define PET_WOODEN_FISH_SOUND_PATH "/940muyu3.wav"
 #define PET_DAILY_SUMMARY_MS (1900U)
 #define PET_TURBO_INTERVAL_MS (180U)
 #define PET_FAST_INTERVAL_MS (360U)
@@ -1240,6 +1242,11 @@ static void PET_PlayWoodenFishAnimation(const lv_point_t *pPoint)
     if (NULL == g_pet_ui.wooden_timer)
     {
         return;
+    }
+
+    if (RT_EOK != LOCALMUSIC_PlayEffect(PET_WOODEN_FISH_SOUND_PATH))
+    {
+        rt_kprintf("agent pet: wooden fish sound playback failed\n");
     }
 
     if (NULL != pPoint)
