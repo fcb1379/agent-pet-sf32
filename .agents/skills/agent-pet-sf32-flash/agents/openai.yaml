@@ -1,0 +1,4 @@
+interface:
+  display_name: "Agent Pet SF32 Flash"
+  short_description: "Build and flash Agent Pet SF32 firmware"
+  default_prompt: "Use $agent-pet-sf32-flash to build and flash this project firmware to the specified COM port."
