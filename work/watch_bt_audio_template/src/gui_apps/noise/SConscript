@@ -1,0 +1,19 @@
+from building import *
+import os
+
+cwd = GetCurrentDir()
+src = Glob('*.c')
+app_utils = os.path.join(cwd, '..', '..', 'app_utils')
+local_ccflags = ''
+
+if not GetDepend('BSP_USING_PC_SIMULATOR'):
+    local_ccflags = ' -Wall -Wextra -Wno-cast-function-type -Werror'
+
+group = DefineGroup(
+    'App_noise_monitor',
+    src,
+    depend = [''],
+    CPPPATH = [cwd, app_utils],
+    LOCAL_CCFLAGS = local_ccflags)
+
+Return('group')

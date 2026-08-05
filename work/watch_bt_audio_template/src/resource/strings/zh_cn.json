@@ -53,6 +53,7 @@
     "timer":"计时器",
     "alarm_app":"闹钟",
     "pet":"萌宠",
+    "noise":"噪声",
     "file_manager":"文件管理",
     "lvgl_demos":"LVGL示例DEMO"
 }

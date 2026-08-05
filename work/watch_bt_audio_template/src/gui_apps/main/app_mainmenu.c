@@ -276,6 +276,10 @@ static const char *app_mainmenu_display_name(const builtin_app_desc_t *app)
     {
         return "Momo";
     }
+    if (strcmp(app->id, "noise") == 0)
+    {
+        return "Noise";
+    }
 
     return app->id;
 }
