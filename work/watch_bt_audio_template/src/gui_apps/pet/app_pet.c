@@ -11,6 +11,9 @@
     #include <time.h>
     #include "share_prefs.h"
 #endif
+#if defined(AGENT_PET_USING_IMU) && !defined(BSP_USING_PC_SIMULATOR)
+    #include "pet_imu.h"
+#endif
 
 LV_IMG_DECLARE(agent_pet_mascot);
 LV_IMG_DECLARE(agent_pet_wooden_fish);
@@ -30,14 +33,59 @@ LV_IMG_DECLARE(agent_pet_merit_plus_one);
 #define PET_QUICK_INTERVAL_MS (700U)
 #define PET_WOODEN_FISH_WIDTH (210)
 #define PET_WOODEN_FISH_HEIGHT (180)
+#define PET_WOODEN_FISH_MALLET_X (50)
+#define PET_WOODEN_FISH_MALLET_Y (18)
 #define PET_ATTENTION_PANEL_WIDTH (286)
 #define PET_ATTENTION_PANEL_HEIGHT (72)
 #define PET_ATTENTION_PANEL_X ((LV_HOR_RES_MAX - PET_ATTENTION_PANEL_WIDTH) / 2)
 #define PET_ATTENTION_PANEL_Y (38)
+#define PET_MOTION_SAMPLE_MS (20U)
+#define PET_MOTION_SWING_DYN_MG (120U)
+#define PET_MOTION_SWING_GYRO_MDPS (60000U)
+#define PET_MOTION_IMPACT_DYN_MG (800U)
+#define PET_MOTION_IMPACT_GYRO_MDPS (25000U)
+#define PET_MOTION_MAX_IMPACT_DELAY_MS (300U)
+#define PET_MOTION_COOLDOWN_MS (180U)
+#define PET_MOTION_FILTER_DIVISOR (2U)
+#define PET_MOTION_MAX_READ_ERRORS (5U)
+#define PET_MOTION_LABEL_X (LV_HOR_RES_MAX - 202)
+#define PET_MOTION_LABEL_Y (13)
+#define PET_MOTION_LABEL_WIDTH (82)
+#define PET_MOTION_SWITCH_X (LV_HOR_RES_MAX - 112)
+#define PET_MOTION_SWITCH_Y (8)
+#define PET_MOTION_SWITCH_WIDTH (52)
+#define PET_MOTION_SWITCH_HEIGHT (26)
 #ifndef BSP_USING_PC_SIMULATOR
     #define PET_PREF_NAME "agent_pet_daily_merit_pref_v1__"
     #define PET_PREF_DAY_KEY "merit_day"
     #define PET_PREF_COUNT_KEY "merit_count"
+#endif
+
+#if defined(AGENT_PET_USING_IMU) && !defined(BSP_USING_PC_SIMULATOR)
+/* PET_MOTION_STATE: 体感敲木鱼动作识别状态。 */
+typedef enum _PET_MOTION_STATE
+{
+    PET_MOTION_STATE_IDLE = 0,
+    PET_MOTION_STATE_SWING,
+    PET_MOTION_STATE_COOLDOWN
+} PET_MOTION_STATE;
+
+/* PET_MOTION_DETECTOR: 体感动作状态机，仅保存定点滤波结果和阶段计时。
+ * 成员说明：
+ *   - eState: 当前识别阶段
+ *   - ulFilteredDynamicMg: 滤波后的动态加速度，单位mg
+ *   - ulFilteredGyroMdps: 滤波后的角速度模长，单位mdps
+ *   - usStateTimeMs: 摆动阶段累计时间，范围0~450ms
+ *   - usCooldownMs: 防重复触发冷却时间，范围0~280ms
+ */
+typedef struct _PET_MOTION_DETECTOR
+{
+    PET_MOTION_STATE eState;
+    uint32_t ulFilteredDynamicMg;
+    uint32_t ulFilteredGyroMdps;
+    uint16_t usStateTimeMs;
+    uint16_t usCooldownMs;
+} PET_MOTION_DETECTOR;
 #endif
 
 typedef struct
@@ -64,6 +112,9 @@ typedef struct
     lv_timer_t *status_timer;
     lv_timer_t *wooden_timer;
     lv_timer_t *daily_timer;
+    lv_timer_t *motion_timer;
+    lv_obj_t *motion_label;
+    lv_obj_t *motion_switch;
 #ifndef BSP_USING_PC_SIMULATOR
     share_prefs_t *pPrefs;
 #endif
@@ -80,12 +131,375 @@ typedef struct
     uint8_t *pCustomMascotPixels;
     bool bRenderedConnected;
     bool bRenderedCustomImage;
+#if defined(AGENT_PET_USING_IMU) && !defined(BSP_USING_PC_SIMULATOR)
+    PET_MOTION_DETECTOR tMotionDetector;
+    uint8_t ucMotionReadErrors;
+    bool bMotionEnabled;
+#endif
 } pet_ui_t;
 
 static pet_ui_t g_pet_ui;
 
 static void PET_ApplyStateAnimation(uint8_t ucState);
 static void PET_PlayWoodenFishAnimation(const lv_point_t *pPoint);
+
+#if defined(AGENT_PET_USING_IMU) && !defined(BSP_USING_PC_SIMULATOR)
+/***************************
+ * PET_IntegerSquareRoot: 计算64位无符号整数平方根的向下取整值
+ * 参数：
+ *   - udValue: 待开方数
+ * 返回值：平方根的向下取整值
+ ***************************/
+static uint32_t PET_IntegerSquareRoot(uint64_t udValue)
+{
+    uint64_t udBit;
+    uint64_t udResult;
+
+    udBit = 1ULL << 62U;
+    udResult = 0ULL;
+    while (udValue < udBit)
+    {
+        udBit >>= 2U;
+    }
+
+    while (0ULL != udBit)
+    {
+        if (udResult + udBit <= udValue)
+        {
+            udValue -= udResult + udBit;
+            udResult = (udResult >> 1U) + udBit;
+        }
+        else
+        {
+            udResult >>= 1U;
+        }
+        udBit >>= 2U;
+    }
+
+    return (uint32_t)udResult;
+}
+
+/***************************
+ * PET_VectorMagnitude: 计算三轴有符号向量的模长
+ * 参数：
+ *   - lX/lY/lZ: 三轴输入，三轴必须使用相同单位
+ * 返回值：三轴向量模长，保持输入单位
+ ***************************/
+static uint32_t PET_VectorMagnitude(int32_t lX, int32_t lY, int32_t lZ)
+{
+    int64_t dX;
+    int64_t dY;
+    int64_t dZ;
+    uint64_t udSum;
+
+    dX = lX;
+    dY = lY;
+    dZ = lZ;
+    udSum = (uint64_t)(dX * dX) + (uint64_t)(dY * dY) +
+        (uint64_t)(dZ * dZ);
+
+    return PET_IntegerSquareRoot(udSum);
+}
+
+/***************************
+ * PET_LowPassFilter: 对无符号传感器幅值执行四分之一权重低通滤波
+ * 参数：
+ *   - ulFiltered: 上一次滤波结果
+ *   - ulInput: 本次输入值
+ * 返回值：更新后的滤波结果
+ ***************************/
+static uint32_t PET_LowPassFilter(uint32_t ulFiltered, uint32_t ulInput)
+{
+    int64_t dFiltered;
+    int64_t dInput;
+
+    dFiltered = ulFiltered;
+    dInput = ulInput;
+    dFiltered += (dInput - dFiltered) / (int64_t)PET_MOTION_FILTER_DIVISOR;
+
+    return (uint32_t)dFiltered;
+}
+
+/***************************
+ * PET_MotionDetectorReset: 重置体感动作状态机和滤波历史
+ * 参数：
+ *   - pDetector: 状态机指针
+ * 返回值：无
+ ***************************/
+static void PET_MotionDetectorReset(PET_MOTION_DETECTOR *pDetector)
+{
+    if (NULL != pDetector)
+    {
+        rt_memset(pDetector, 0, sizeof(*pDetector));
+        pDetector->eState = PET_MOTION_STATE_IDLE;
+    }
+
+    return;
+}
+
+/***************************
+ * PET_MotionDetectorUpdate: 使用一次六轴采样更新敲木鱼动作状态机
+ * 参数：
+ *   - pDetector: 状态机指针
+ *   - pSample: 六轴采样输入指针
+ *   - usDeltaMs: 本次采样与上次采样的间隔，单位ms
+ * 返回值：检测到一次有效敲击返回true，否则返回false
+ ***************************/
+static bool PET_MotionDetectorUpdate(PET_MOTION_DETECTOR *pDetector,
+                                     const PET_IMU_SAMPLE *pSample,
+                                     uint16_t usDeltaMs)
+{
+    uint32_t ulAccelMagnitude;
+    uint32_t ulGyroMagnitude;
+    uint32_t ulDynamicMg;
+
+    if ((NULL == pDetector) || (NULL == pSample))
+    {
+        return false;
+    }
+
+    ulAccelMagnitude = PET_VectorMagnitude(
+        pSample->lAccelXMg,
+        pSample->lAccelYMg,
+        pSample->lAccelZMg);
+    ulGyroMagnitude = PET_VectorMagnitude(
+        pSample->lGyroXMdps,
+        pSample->lGyroYMdps,
+        pSample->lGyroZMdps);
+    ulDynamicMg = (1000U < ulAccelMagnitude) ?
+        (ulAccelMagnitude - 1000U) : (1000U - ulAccelMagnitude);
+
+    pDetector->ulFilteredDynamicMg = PET_LowPassFilter(
+        pDetector->ulFilteredDynamicMg,
+        ulDynamicMg);
+    pDetector->ulFilteredGyroMdps = PET_LowPassFilter(
+        pDetector->ulFilteredGyroMdps,
+        ulGyroMagnitude);
+
+    switch (pDetector->eState)
+    {
+    case PET_MOTION_STATE_IDLE:
+        if ((PET_MOTION_IMPACT_DYN_MG < ulDynamicMg) &&
+            (PET_MOTION_IMPACT_GYRO_MDPS <
+             pDetector->ulFilteredGyroMdps))
+        {
+            pDetector->eState = PET_MOTION_STATE_COOLDOWN;
+            pDetector->usCooldownMs = 0U;
+            return true;
+        }
+        if ((PET_MOTION_SWING_DYN_MG < pDetector->ulFilteredDynamicMg) ||
+            (PET_MOTION_SWING_GYRO_MDPS < pDetector->ulFilteredGyroMdps))
+        {
+            pDetector->eState = PET_MOTION_STATE_SWING;
+            pDetector->usStateTimeMs = 0U;
+        }
+        break;
+
+    case PET_MOTION_STATE_SWING:
+        pDetector->usStateTimeMs = (uint16_t)(pDetector->usStateTimeMs + usDeltaMs);
+        if ((PET_MOTION_IMPACT_DYN_MG < ulDynamicMg) &&
+            (PET_MOTION_IMPACT_GYRO_MDPS < pDetector->ulFilteredGyroMdps))
+        {
+            pDetector->eState = PET_MOTION_STATE_COOLDOWN;
+            pDetector->usCooldownMs = 0U;
+            return true;
+        }
+        if (PET_MOTION_MAX_IMPACT_DELAY_MS < pDetector->usStateTimeMs)
+        {
+            pDetector->eState = PET_MOTION_STATE_IDLE;
+            pDetector->usStateTimeMs = 0U;
+        }
+        break;
+
+    case PET_MOTION_STATE_COOLDOWN:
+        pDetector->usCooldownMs = (uint16_t)(pDetector->usCooldownMs + usDeltaMs);
+        if (PET_MOTION_COOLDOWN_MS <= pDetector->usCooldownMs)
+        {
+            pDetector->eState = PET_MOTION_STATE_IDLE;
+            pDetector->usStateTimeMs = 0U;
+        }
+        break;
+
+    default:
+        PET_MotionDetectorReset(pDetector);
+        break;
+    }
+
+    return false;
+}
+
+/***************************
+ * PET_StopMotionDetection: 停止体感采样并关闭六轴数据通道
+ * 参数：无
+ * 返回值：无
+ ***************************/
+static void PET_StopMotionDetection(void)
+{
+    g_pet_ui.bMotionEnabled = false;
+    g_pet_ui.ucMotionReadErrors = 0U;
+    PET_MotionDetectorReset(&g_pet_ui.tMotionDetector);
+    if (NULL != g_pet_ui.motion_timer)
+    {
+        lv_timer_pause(g_pet_ui.motion_timer);
+    }
+    if (PETIMU_IsReady())
+    {
+        (void)PETIMU_SetEnabled(false);
+    }
+
+    return;
+}
+
+/***************************
+ * PET_MotionSample: 周期读取六轴并在检测到有效动作时触发木鱼动画
+ * 参数：
+ *   - pTimer: 20ms LVGL采样定时器
+ * 返回值：无
+ ***************************/
+static void PET_MotionSample(lv_timer_t *pTimer)
+{
+    PET_IMU_SAMPLE tSample;
+    int32_t lRetVal;
+
+    (void)pTimer;
+    if (false == g_pet_ui.bMotionEnabled)
+    {
+        return;
+    }
+
+    lRetVal = PETIMU_Read(&tSample);
+    if (RT_EOK != lRetVal)
+    {
+        g_pet_ui.ucMotionReadErrors++;
+        if (PET_MOTION_MAX_READ_ERRORS <= g_pet_ui.ucMotionReadErrors)
+        {
+            PET_StopMotionDetection();
+            if (NULL != g_pet_ui.motion_switch)
+            {
+                lv_obj_clear_state(g_pet_ui.motion_switch, LV_STATE_CHECKED);
+            }
+            if (NULL != g_pet_ui.motion_label)
+            {
+                lv_label_set_text(g_pet_ui.motion_label, "Motion error");
+            }
+            rt_kprintf("agent pet: motion sampling stopped %ld\n", (long)lRetVal);
+        }
+        return;
+    }
+
+    g_pet_ui.ucMotionReadErrors = 0U;
+    if (PET_MotionDetectorUpdate(
+            &g_pet_ui.tMotionDetector,
+            &tSample,
+            PET_MOTION_SAMPLE_MS))
+    {
+        PET_PlayWoodenFishAnimation(NULL);
+        rt_kprintf("agent pet: motion wooden fish hit\n");
+    }
+
+    return;
+}
+
+/***************************
+ * PET_MotionSwitchChanged: 处理宠物页面体感模式开关变化
+ * 参数：
+ *   - pEvent: LVGL开关状态变化事件
+ * 返回值：无
+ ***************************/
+static void PET_MotionSwitchChanged(lv_event_t *pEvent)
+{
+    int32_t lRetVal;
+
+    if ((NULL == pEvent) || (NULL == g_pet_ui.motion_switch))
+    {
+        return;
+    }
+
+    if (lv_obj_has_state(g_pet_ui.motion_switch, LV_STATE_CHECKED))
+    {
+        lRetVal = PETIMU_Init();
+        if (RT_EOK == lRetVal)
+        {
+            lRetVal = PETIMU_SetEnabled(true);
+        }
+        if ((RT_EOK != lRetVal) || (NULL == g_pet_ui.motion_timer))
+        {
+            PET_StopMotionDetection();
+            lv_obj_clear_state(g_pet_ui.motion_switch, LV_STATE_CHECKED);
+            lv_label_set_text(g_pet_ui.motion_label, "Motion unavailable");
+            rt_kprintf("agent pet: enable motion failed %ld\n", (long)lRetVal);
+            return;
+        }
+
+        PET_MotionDetectorReset(&g_pet_ui.tMotionDetector);
+        g_pet_ui.ucMotionReadErrors = 0U;
+        g_pet_ui.bMotionEnabled = true;
+        lv_label_set_text(g_pet_ui.motion_label, "Motion On");
+        lv_timer_reset(g_pet_ui.motion_timer);
+        lv_timer_resume(g_pet_ui.motion_timer);
+    }
+    else
+    {
+        PET_StopMotionDetection();
+        lv_label_set_text(g_pet_ui.motion_label, "Motion Off");
+    }
+
+    return;
+}
+#endif
+
+/***************************
+ * PET_CreateMotionSwitch: 创建宠物页面独立体感模式开关
+ * 参数：无
+ * 返回值：无
+ ***************************/
+static void PET_CreateMotionSwitch(void)
+{
+    g_pet_ui.motion_label = lv_label_create(g_pet_ui.root);
+    lv_obj_set_pos(
+        g_pet_ui.motion_label,
+        PET_MOTION_LABEL_X,
+        PET_MOTION_LABEL_Y);
+    lv_obj_set_width(g_pet_ui.motion_label, PET_MOTION_LABEL_WIDTH);
+    lv_obj_set_style_text_align(g_pet_ui.motion_label, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_obj_set_style_text_color(
+        g_pet_ui.motion_label,
+        lv_color_hex(0xA7B0B5U),
+        0);
+
+    g_pet_ui.motion_switch = lv_switch_create(g_pet_ui.root);
+    lv_obj_set_size(
+        g_pet_ui.motion_switch,
+        PET_MOTION_SWITCH_WIDTH,
+        PET_MOTION_SWITCH_HEIGHT);
+    lv_obj_set_pos(
+        g_pet_ui.motion_switch,
+        PET_MOTION_SWITCH_X,
+        PET_MOTION_SWITCH_Y);
+
+#if defined(AGENT_PET_USING_IMU) && !defined(BSP_USING_PC_SIMULATOR)
+    lv_label_set_text(g_pet_ui.motion_label, "Motion Off");
+    lv_obj_add_event_cb(
+        g_pet_ui.motion_switch,
+        PET_MotionSwitchChanged,
+        LV_EVENT_VALUE_CHANGED,
+        NULL);
+    g_pet_ui.motion_timer = lv_timer_create(
+        PET_MotionSample,
+        PET_MOTION_SAMPLE_MS,
+        NULL);
+    if (NULL != g_pet_ui.motion_timer)
+    {
+        lv_timer_pause(g_pet_ui.motion_timer);
+    }
+    PET_StopMotionDetection();
+#else
+    lv_label_set_text(g_pet_ui.motion_label, "Motion N/A");
+    lv_obj_add_state(g_pet_ui.motion_switch, LV_STATE_DISABLED);
+#endif
+
+    return;
+}
 
 /*
  * PET_CreateAttentionCue
@@ -843,15 +1257,18 @@ static void PET_PlayWoodenFishAnimation(const lv_point_t *pPoint)
     {
         lv_timer_pause(g_pet_ui.daily_timer);
     }
-    if (NULL != g_pet_ui.daily_summary)
-    {
-        lv_obj_add_flag(g_pet_ui.daily_summary, LV_OBJ_FLAG_HIDDEN);
-    }
-
     ulInterval = (0U == g_pet_ui.ulLastHitTick) ?
         0xFFFFFFFFUL : lv_tick_elaps(g_pet_ui.ulLastHitTick);
     g_pet_ui.ulLastHitTick = lv_tick_get();
     g_pet_ui.ulMeritCount++;
+    if (NULL != g_pet_ui.daily_summary)
+    {
+        lv_label_set_text_fmt(
+            g_pet_ui.daily_summary,
+            "Today's merit  %lu",
+            (unsigned long)g_pet_ui.ulMeritCount);
+        lv_obj_clear_flag(g_pet_ui.daily_summary, LV_OBJ_FLAG_HIDDEN);
+    }
 
     if (PET_TURBO_INTERVAL_MS >= ulInterval)
     {
@@ -874,6 +1291,7 @@ static void PET_PlayWoodenFishAnimation(const lv_point_t *pPoint)
     lv_obj_clear_flag(g_pet_ui.wooden_fish, LV_OBJ_FLAG_HIDDEN);
 
     lv_anim_del(g_pet_ui.mallet, NULL);
+    lv_img_set_angle(g_pet_ui.mallet, 140);
     lv_anim_init(&tAnimation);
     lv_anim_set_var(&tAnimation, g_pet_ui.mallet);
     lv_anim_set_values(&tAnimation, 140, 50);
@@ -883,6 +1301,7 @@ static void PET_PlayWoodenFishAnimation(const lv_point_t *pPoint)
     lv_anim_start(&tAnimation);
 
     lv_anim_del(g_pet_ui.fish_body, NULL);
+    lv_obj_set_y(g_pet_ui.fish_body, 50);
     lv_anim_init(&tAnimation);
     lv_anim_set_var(&tAnimation, g_pet_ui.fish_body);
     lv_anim_set_values(&tAnimation, 50, 43);
@@ -964,7 +1383,10 @@ static void PET_CreateWoodenFish(void)
 
     g_pet_ui.mallet = lv_img_create(g_pet_ui.wooden_fish);
     lv_img_set_src(g_pet_ui.mallet, &agent_pet_wooden_fish_mallet);
-    lv_obj_set_pos(g_pet_ui.mallet, 28, 18);
+    lv_obj_set_pos(
+        g_pet_ui.mallet,
+        PET_WOODEN_FISH_MALLET_X,
+        PET_WOODEN_FISH_MALLET_Y);
     lv_img_set_pivot(g_pet_ui.mallet, 132, 50);
     lv_img_set_angle(g_pet_ui.mallet, 140);
 
@@ -992,8 +1414,8 @@ static void pet_on_start(void)
 
     name = lv_label_create(g_pet_ui.root);
     lv_label_set_text(name, "Agent Pet");
-    lv_obj_set_width(name, LV_HOR_RES_MAX);
-    lv_obj_set_pos(name, 0, 8);
+    lv_obj_set_width(name, 120);
+    lv_obj_set_pos(name, 55, 8);
     lv_obj_set_style_text_align(name, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_color(name, lv_color_hex(0xd8f7ee), 0);
 
@@ -1109,6 +1531,8 @@ static void pet_on_start(void)
     lv_obj_set_style_radius(
         g_pet_ui.image_progress_bar, LV_RADIUS_CIRCLE, LV_PART_INDICATOR);
 
+    PET_CreateMotionSwitch();
+
     PET_LoadMerit();
     g_pet_ui.wooden_timer = lv_timer_create(
         PET_EndWoodenFish,
@@ -1141,6 +1565,14 @@ static void pet_on_start(void)
 
 static void pet_on_stop(void)
 {
+#if defined(AGENT_PET_USING_IMU) && !defined(BSP_USING_PC_SIMULATOR)
+    PET_StopMotionDetection();
+#endif
+    if (g_pet_ui.motion_timer)
+    {
+        lv_timer_del(g_pet_ui.motion_timer);
+        g_pet_ui.motion_timer = NULL;
+    }
     if (g_pet_ui.status_timer)
     {
         lv_timer_del(g_pet_ui.status_timer);

@@ -15,10 +15,12 @@ typedef enum _PCSIM_AMS_COMMAND
     BLE_AMS_CMD_VOL_UP = 5,
     BLE_AMS_CMD_VOL_DOWN = 6
 } PCSIM_AMS_COMMAND;
+
+uint8_t audio_server_get_max_volume(void);
 #else
     #include "bf0_ble_ams.h"
+    #include "audio_server.h"
 #endif /* BSP_USING_PC_SIMULATOR */
-#include "audio_server.h"
 #include "ble_ios_services.h"
 #include "local_music_player.h"
 #include "watch_settings.h"

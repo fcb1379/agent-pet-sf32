@@ -319,6 +319,33 @@ rt_err_t ble_ios_services_send_ams_cmd(uint8_t ucCmd)
     return RT_EOK;
 }
 
+/***************************
+ * local_music_get_snapshot: 获取PC模拟器本地音乐播放状态
+ * 参数：
+ *   - pSnapshot: 播放状态输出指针
+ * 返回值：成功返回RT_EOK，空指针返回-RT_EINVAL
+ ***************************/
+int local_music_get_snapshot(LOCAL_MUSIC_SNAPSHOT *pSnapshot)
+{
+    if (RT_NULL == pSnapshot)
+    {
+        return -RT_EINVAL;
+    }
+
+    memset(pSnapshot, 0, sizeof(*pSnapshot));
+    if (BT_AUDIO_SINK_STATE_STREAMING == l_tBtHealth.state)
+    {
+        pSnapshot->eState = LOCAL_MUSIC_STATE_PLAYING;
+    }
+    else
+    {
+        pSnapshot->eState = LOCAL_MUSIC_STATE_PAUSED;
+    }
+    pSnapshot->ulLastCallback = (uint32_t)rt_tick_get();
+
+    return RT_EOK;
+}
+
 int local_music_play_file(const char *pPath, uint32_t ulLoop)
 {
     (void)pPath;
@@ -428,4 +455,14 @@ bool AGENTPETBLE_GetStatus(AGENTPET_BLE_STATUS *pStatus)
 
     *pStatus = l_tAgentStatus;
     return true;
+}
+
+/***************************
+ * audio_server_get_max_volume: 获取PC模拟器音量上限
+ * 参数：无
+ * 返回值：模拟器支持的最大音量等级
+ ***************************/
+uint8_t audio_server_get_max_volume(void)
+{
+    return PCSIM_VOLUME_MAX;
 }

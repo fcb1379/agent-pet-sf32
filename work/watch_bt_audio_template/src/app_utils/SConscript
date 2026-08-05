@@ -11,6 +11,9 @@ if GetDepend('BSP_USING_PC_SIMULATOR'):
     # audio codec, or interrupt controller. Keep all PC behavior in one mock.
     src += ['pc_simulator_services.c']
 else:
+    if GetDepend('AGENT_PET_USING_IMU'):
+        src += ['pet_imu.c']
+
     if GetDepend('BSP_BLE_SIBLES') and os.path.exists(os.path.join(cwd, 'ble_app.c')):
         src += ['ble_app.c']
 

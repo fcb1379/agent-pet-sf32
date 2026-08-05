@@ -20,6 +20,14 @@ config AGENT_PET_DISABLE_CLASSIC_BT_AUDIO
         A2DP/AVRCP sink. This avoids accessing classic Bluetooth persistence
         partitions on boards whose flash layout only provisions the BLE app.
 
+config AGENT_PET_USING_IMU
+    bool "Enable the Huangshan board LSM6-series six-axis IMU"
+    depends on !BSP_USING_PC_SIMULATOR
+    default y
+    help
+        Enable the I2C driver for the board-mounted LSM6DSL/LSM6DS3TR-C
+        accelerometer and gyroscope. The PC simulator never builds this driver.
+
 config FRAME_BUFFER_IN_PSRAM
     bool
     depends on BSP_USING_PSRAM
