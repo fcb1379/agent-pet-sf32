@@ -3,7 +3,7 @@ import os
 
 cwd = GetCurrentDir()
 src = []
-if not GetDepend('BSP_USING_PC_SIMULATOR'):
+if GetDepend('AGENT_PET_USING_TF_CARD') and not GetDepend('BSP_USING_PC_SIMULATOR'):
     src = Glob('*.c')
 inc = [cwd, os.path.join(cwd, '../../app_utils')]
 

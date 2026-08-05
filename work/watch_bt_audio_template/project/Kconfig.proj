@@ -28,6 +28,16 @@ config AGENT_PET_USING_IMU
         Enable the I2C driver for the board-mounted LSM6DSL/LSM6DS3TR-C
         accelerometer and gyroscope. The PC simulator never builds this driver.
 
+config AGENT_PET_USING_TF_CARD
+    bool "Enable the Huangshan board SPI TF card and file manager"
+    depends on !BSP_USING_PC_SIMULATOR
+    select BSP_USING_SPI1
+    select RT_USING_SPI_MSD
+    default y
+    help
+        Enable the Huangshan board SPI1 TF card and PA27 card-detect input.
+        The PC simulator never builds the TF driver or file-manager app.
+
 config FRAME_BUFFER_IN_PSRAM
     bool
     depends on BSP_USING_PSRAM

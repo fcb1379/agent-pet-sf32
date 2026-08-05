@@ -1,4 +1,5 @@
 #include <rtthread.h>
+#include <rtdevice.h>
 #include <stdint.h>
 #include <sys/stat.h>
 #include <string.h>
@@ -8,6 +9,8 @@
 #include "littlevgl2rtt.h"
 #include "lv_ext_resource_manager.h"
 #include "gui_app_fwk.h"
+#include "bf0_hal.h"
+#include "drv_gpio.h"
 
 #define APP_ID                         "file_manager"
 #define FILE_MANAGER_DEVICE_NAME       "sd0"
@@ -20,6 +23,8 @@
 #define FILE_MANAGER_ROW_HEIGHT        (54)
 #define FILE_MANAGER_HEADER_HEIGHT     (72)
 #define FILE_MANAGER_STATUS_HEIGHT     (30)
+#define FILE_MANAGER_TF_DETECT_PIN     GET_PIN(1, 27)
+#define FILE_MANAGER_TF_DEBOUNCE_MS    (20U)
 
 typedef enum
 {
@@ -60,6 +65,27 @@ extern int rt_spi_msd_init(void);
 #endif /* RT_USING_SPI_MSD */
 
 static void FileManager_Refresh(void);
+
+/***************************
+ * FileManager_IsTfInserted: read the Huangshan board PA27 card-detect switch.
+ * The socket pulls SD_DET low when a card is fully inserted.
+ * Parameters: none.
+ * Return: true only after two stable low samples.
+ ***************************/
+static bool FileManager_IsTfInserted(void)
+{
+    HAL_PIN_Set(PAD_PA27, GPIO_A27, PIN_PULLUP, 1);
+    rt_pin_mode(FILE_MANAGER_TF_DETECT_PIN, PIN_MODE_INPUT_PULLUP);
+
+    if (PIN_LOW != rt_pin_read(FILE_MANAGER_TF_DETECT_PIN))
+    {
+        return false;
+    }
+
+    rt_thread_mdelay(FILE_MANAGER_TF_DEBOUNCE_MS);
+
+    return (PIN_LOW == rt_pin_read(FILE_MANAGER_TF_DETECT_PIN));
+}
 
 /***************************
  * FileManager_SetStatus: update the status line.
@@ -184,6 +210,17 @@ static bool FileManager_MountTf(void)
 #else
     rt_device_t pDevice;
     int lResult;
+
+    if (!FileManager_IsTfInserted())
+    {
+        if (l_bTfMounted)
+        {
+            (void)dfs_unmount(FILE_MANAGER_ROOT_PATH);
+            l_bTfMounted = false;
+        }
+        rt_kprintf("[TF] no card detected on PA27\n");
+        return false;
+    }
 
     if (l_bTfMounted)
     {
@@ -315,8 +352,7 @@ static void FileManager_OpenImage(const char *pFilePath)
     lv_obj_set_pos(pNameLabel, 68, 12);
     lv_label_set_long_mode(pNameLabel, LV_LABEL_LONG_DOT);
     lv_label_set_text(pNameLabel, pFilePath);
-    lv_obj_set_style_text_color(pNameLabel, lv_color_white(), 0);
-    lv_obj_set_style_text_font(pNameLabel, &lv_font_montserrat_20, 0);
+    lv_ext_set_local_font(pNameLabel, FONT_NORMAL, lv_color_white());
 
     pImage = lv_img_create(l_tFileManagerUi.pViewer);
     lv_img_set_src(pImage, l_tFileManagerUi.aImagePath);
@@ -435,8 +471,7 @@ static void FileManager_AddRow(FILE_MANAGER_ENTRY *pEntry)
     lv_obj_set_width(pLabel, LV_PCT(100));
     lv_label_set_long_mode(pLabel, LV_LABEL_LONG_DOT);
     lv_label_set_text_fmt(pLabel, "%s  %s", pSymbol, pEntry->aName);
-    lv_obj_set_style_text_font(pLabel, &lv_font_montserrat_20, 0);
-    lv_obj_set_style_text_color(pLabel, lv_color_white(), 0);
+    lv_ext_set_local_font(pLabel, FONT_NORMAL, lv_color_white());
     lv_obj_align(pLabel, LV_ALIGN_LEFT_MID, 0, 0);
 
     return;
@@ -667,16 +702,16 @@ static void FileManager_OnStart(void)
                                          FileManager_RefreshEvent);
     pTitle = lv_label_create(l_tFileManagerUi.pRoot);
     lv_label_set_text(pTitle, "TF Files");
-    lv_obj_set_style_text_font(pTitle, &lv_font_montserrat_24, 0);
-    lv_obj_set_style_text_color(pTitle, lv_color_white(), 0);
+    lv_ext_set_local_font(pTitle, FONT_SUBTITLE, lv_color_white());
     lv_obj_align(pTitle, LV_ALIGN_TOP_MID, 0, 18);
 
     l_tFileManagerUi.pPathLabel = lv_label_create(l_tFileManagerUi.pRoot);
     lv_obj_set_size(l_tFileManagerUi.pPathLabel, LV_HOR_RES_MAX - 24, 26);
     lv_obj_set_pos(l_tFileManagerUi.pPathLabel, 12, FILE_MANAGER_HEADER_HEIGHT);
     lv_label_set_long_mode(l_tFileManagerUi.pPathLabel, LV_LABEL_LONG_DOT);
-    lv_obj_set_style_text_color(l_tFileManagerUi.pPathLabel, lv_color_hex(0x85bfff), 0);
-    lv_obj_set_style_text_font(l_tFileManagerUi.pPathLabel, &lv_font_montserrat_20, 0);
+    lv_ext_set_local_font(l_tFileManagerUi.pPathLabel,
+                          FONT_NORMAL,
+                          lv_color_hex(0x85bfff));
 
     l_tFileManagerUi.pStatusLabel = lv_label_create(l_tFileManagerUi.pRoot);
     lv_obj_set_size(l_tFileManagerUi.pStatusLabel,
@@ -684,8 +719,9 @@ static void FileManager_OnStart(void)
                     FILE_MANAGER_STATUS_HEIGHT);
     lv_obj_set_pos(l_tFileManagerUi.pStatusLabel, 12, FILE_MANAGER_HEADER_HEIGHT + 28);
     lv_label_set_long_mode(l_tFileManagerUi.pStatusLabel, LV_LABEL_LONG_DOT);
-    lv_obj_set_style_text_color(l_tFileManagerUi.pStatusLabel, lv_color_hex(0x99a7b8), 0);
-    lv_obj_set_style_text_font(l_tFileManagerUi.pStatusLabel, &lv_font_montserrat_20, 0);
+    lv_ext_set_local_font(l_tFileManagerUi.pStatusLabel,
+                          FONT_NORMAL,
+                          lv_color_hex(0x99a7b8));
 
     l_tFileManagerUi.pList = lv_obj_create(l_tFileManagerUi.pRoot);
     lv_obj_set_size(l_tFileManagerUi.pList,
