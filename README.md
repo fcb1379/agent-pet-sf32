@@ -37,6 +37,23 @@ git submodule update --init --recursive
 
 目标板固定为 `sf32lb52-lchspi-ulp`：
 
+Windows CMD 在仓库根目录直接执行：
+
+```bat
+build
+```
+
+PowerShell 执行：
+
+```powershell
+.\build
+```
+
+脚本会自动初始化仓库内的 SiFli SDK 环境，并使用 GCC、项目本地 board overlay
+和 8 路并行任务进行构建。额外的 SCons 参数可以直接附加，例如 `build -c` 清理构建产物。
+
+等价的手动构建命令为：
+
 ```bash
 source sdk/export.sh
 cd work/watch_bt_audio_template/project
