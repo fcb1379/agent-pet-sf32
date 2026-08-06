@@ -1,0 +1,50 @@
+work/watch_bt_audio_template/src/gui_apps/noise/app_noise.c
+  s_285146986cdcdb::t_3b19d66a02350d 458-461,517-520
+  s_285146986cdcdb::t_40726593cf0eb8 43
+  s_285146986cdcdb::t_a7c73f06f41acd 148,159
+  s_285146986cdcdb::t_37b14ac39db818 1-42,44-147,149-158,160-457,462-491,493-516,521-530,552-607,614-687
+  s_285146986cdcdb::t_e71debc57d8ccb 531-551,608-613
+  s_285146986cdcdb::t_d8198eab483a83 492
+work/watch_bt_audio_template/src/app_utils/noise_monitor.c
+  s_285146986cdcdb::t_dd2f711430c9e2 23-24,26
+  s_285146986cdcdb::t_e06dacc7813cff 1-19,27-282,288-306,311,313,316,318,320,322,324,326-589
+  s_285146986cdcdb::t_37b14ac39db818 20-22,283-287,307-310,312,314-315,317,319,321,323,325
+  s_285146986cdcdb::t_d147074126e5e8 25
+work/watch_bt_audio_template/src/gui_apps/main/app_mainmenu.c
+  s_285146986cdcdb::t_edd7571d22631c 279-281
+  s_abbb2bd46b4afc::t_516160aad2fdbe 282
+work/watch_bt_audio_template/src/app_utils/SConscript
+  s_285146986cdcdb::t_e06dacc7813cff 7
+work/watch_bt_audio_template/src/resource/strings/en_us.json
+  s_285146986cdcdb::t_edd7571d22631c 56
+work/watch_bt_audio_template/src/app_utils/noise_monitor.h
+  s_285146986cdcdb::t_e06dacc7813cff 1-51
+work/watch_bt_audio_template/src/resource/strings/zh_cn.json
+  s_285146986cdcdb::t_edd7571d22631c 56
+work/watch_bt_audio_template/src/gui_apps/noise/SConscript
+  s_285146986cdcdb::t_37b14ac39db818 1-19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "a734f9ef61981f980c6f08c185c2c121a141bb78",
+  "prompts": {},
+  "sessions": {
+    "s_285146986cdcdb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd167-97e3-7830-af9f-4e8a198f25b3",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    },
+    "s_abbb2bd46b4afc": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc6ed-063f-7a23-889d-19eb899eb590",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}

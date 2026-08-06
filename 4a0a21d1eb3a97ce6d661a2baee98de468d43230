@@ -1,0 +1,25 @@
+work/watch_bt_audio_template/src/app_utils/agent_pet_image_transfer.c
+  s_abbb2bd46b4afc::t_061bf9b931903f 26-27,283-324,326-340,342-354,356,362-366,368,370,372-373,375-377,379,381,383-384,387-478,618,752-759
+work/watch_bt_audio_template/src/gui_apps/badge/app_badge.c
+  s_abbb2bd46b4afc::t_805f69969fe891 173-178
+work/watch_bt_audio_template/src/gui_apps/file_manager/app_file_manager.c
+  s_abbb2bd46b4afc::t_a264a80c51976e 765,767
+work/watch_bt_audio_template/src/gui_apps/pet/app_pet.c
+  s_abbb2bd46b4afc::t_3dd2042bdb32c9 33-36,56-58,90-140,543,551,559,561-565,584-597,605-618,638-659,1057-1058
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "4a0a21d1eb3a97ce6d661a2baee98de468d43230",
+  "prompts": {},
+  "sessions": {
+    "s_abbb2bd46b4afc": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc6ed-063f-7a23-889d-19eb899eb590",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}
