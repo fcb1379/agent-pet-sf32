@@ -6,7 +6,9 @@
     #define NORESOURCE  //RT_VESRION in winuser.h
     #define _CRT_ERRNO_DEFINED  //errno macro redefinition
     #define _INC_WTIME_INL//dfs_elm.c time.h conflicts with wtime.inl
-    #define _INC_TIME_INL //dfs_elm.c time.h conflicts with wtime.inl
+
+    /* dfs_elm.c scopes _INC_TIME_INL locally. Keep UCRT time APIs visible
+     * to the rest of the PC simulator. */
 
     /* disable some warning in MSC */
     #pragma warning(disable:4273)   /* to ignore: warning C4273: inconsistent dll linkage */
