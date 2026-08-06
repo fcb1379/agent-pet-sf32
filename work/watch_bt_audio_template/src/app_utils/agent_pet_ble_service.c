@@ -145,18 +145,20 @@ static uint8_t *Local_GattReadCallback(
         l_aImageDigestResponse,
         0,
         sizeof(l_aImageDigestResponse));
+    (void)rt_memset(&tImageStatus, 0, sizeof(tImageStatus));
+    bImageAvailable = false;
     l_aImageDigestResponse[0] = 0x41U;
     l_aImageDigestResponse[1] = 0x49U;
     l_aImageDigestResponse[2] = 2U;
     if (!AGENTPETIMAGE_GetStatus(&tImageStatus))
     {
-        return NULL;
+        LOG_W("Custom mascot status snapshot unavailable");
     }
     if (!AGENTPETIMAGE_GetDigest(
             &bImageAvailable,
             &l_aImageDigestResponse[4]))
     {
-        return NULL;
+        LOG_W("Custom mascot digest snapshot unavailable");
     }
     l_aImageDigestResponse[3] = bImageAvailable ? 1U : 0U;
     l_aImageDigestResponse[20] = (uint8_t)tImageStatus.ulReceived;

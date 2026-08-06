@@ -1,6 +1,7 @@
 #include "agent_pet_image_transfer.h"
 
 #include <fcntl.h>
+#include <rthw.h>
 #include <rtthread.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -95,8 +96,46 @@ static AGENTPET_IMAGE_ENV l_tImageEnv =
     .eState = AGENTPET_IMAGE_IDLE,
     .eLastResult = AGENTPET_IMAGE_RESULT_ACCEPTED
 };
+/* Last fully processed transfer status. Readers copy this snapshot inside a
+ * short interrupt-safe critical section, so a BLE read never waits for Flash. */
+static AGENTPET_IMAGE_STATUS l_tImageStatusSnapshot;
+/* Availability and digest of the last committed image. These values are
+ * published together with the status snapshot and never expose partial writes. */
+static bool l_bImageDigestAvailableSnapshot;
+static uint8_t l_aImageDigestSnapshot[AGENTPET_IMAGE_MD5_SIZE];
 
 static uint8_t Local_DetectImageFormat(const char *pPath);
+
+/*
+ * Local_PublishSnapshot
+ * Function: publish coherent transfer progress for non-blocking BLE/UI readers.
+ * Parameters: none.
+ * Return: none.
+ */
+static void Local_PublishSnapshot(void)
+{
+    AGENTPET_IMAGE_STATUS tStatus;
+    rt_base_t tLevel;
+
+    tStatus.eState = l_tImageEnv.eState;
+    tStatus.bImageAvailable = l_tImageEnv.bImageAvailable;
+    tStatus.ulReceived = l_tImageEnv.ulReceived;
+    tStatus.ulTotal = l_tImageEnv.ulTotal;
+    tStatus.ulGeneration = l_tImageEnv.ulGeneration;
+    tStatus.eLastResult = l_tImageEnv.eLastResult;
+    tStatus.ucFormat = l_tImageEnv.ucFormat;
+
+    tLevel = rt_hw_interrupt_disable();
+    l_tImageStatusSnapshot = tStatus;
+    l_bImageDigestAvailableSnapshot = l_tImageEnv.bImageAvailable;
+    (void)memcpy(
+        l_aImageDigestSnapshot,
+        l_tImageEnv.aImageMd5,
+        AGENTPET_IMAGE_MD5_SIZE);
+    rt_hw_interrupt_enable(tLevel);
+
+    return;
+}
 
 static uint32_t Local_ReadLe24(const uint8_t *pData)
 {
@@ -987,6 +1026,7 @@ static void Local_ImageWorker(void *pParameter)
 
         (void)rt_mutex_take(&l_tImageMutex, RT_WAITING_FOREVER);
         eResult = AGENTPETIMAGE_ProcessFrame(tPacket.aData, tPacket.usLength);
+        Local_PublishSnapshot();
         (void)rt_mutex_release(&l_tImageMutex);
         if (AGENTPET_IMAGE_ERROR_INVALID_PARAMETER <= eResult)
         {
@@ -1054,6 +1094,7 @@ void AGENTPETIMAGE_Init(void)
     l_tImageEnv.eState = l_tImageEnv.bImageAvailable ?
         AGENTPET_IMAGE_READY : AGENTPET_IMAGE_IDLE;
     l_tImageEnv.eLastResult = AGENTPET_IMAGE_RESULT_ACCEPTED;
+    Local_PublishSnapshot();
 
     tResult = rt_mutex_init(&l_tImageMutex, "pet_img", RT_IPC_FLAG_PRIO);
     if (RT_EOK != tResult)
@@ -1160,6 +1201,7 @@ void AGENTPETIMAGE_ResetTransfer(void)
             AGENTPET_IMAGE_READY : AGENTPET_IMAGE_IDLE;
         l_tImageEnv.eLastResult = AGENTPET_IMAGE_RESULT_ACCEPTED;
     }
+    Local_PublishSnapshot();
     if (l_bImageWorkerReady)
     {
         (void)rt_mutex_release(&l_tImageMutex);
@@ -1300,33 +1342,16 @@ AGENTPET_IMAGE_RESULT AGENTPETIMAGE_ProcessFrame(
  */
 bool AGENTPETIMAGE_GetStatus(AGENTPET_IMAGE_STATUS *pStatus)
 {
-    bool bLocked;
+    rt_base_t tLevel;
 
     if (NULL == pStatus)
     {
         return false;
     }
 
-    bLocked = false;
-    if (l_bImageWorkerReady)
-    {
-        if (RT_EOK != rt_mutex_take(&l_tImageMutex, 0))
-        {
-            return false;
-        }
-        bLocked = true;
-    }
-    pStatus->eState = l_tImageEnv.eState;
-    pStatus->bImageAvailable = l_tImageEnv.bImageAvailable;
-    pStatus->ulReceived = l_tImageEnv.ulReceived;
-    pStatus->ulTotal = l_tImageEnv.ulTotal;
-    pStatus->ulGeneration = l_tImageEnv.ulGeneration;
-    pStatus->eLastResult = l_tImageEnv.eLastResult;
-    pStatus->ucFormat = l_tImageEnv.ucFormat;
-    if (bLocked)
-    {
-        (void)rt_mutex_release(&l_tImageMutex);
-    }
+    tLevel = rt_hw_interrupt_disable();
+    *pStatus = l_tImageStatusSnapshot;
+    rt_hw_interrupt_enable(tLevel);
 
     return true;
 }
@@ -1340,28 +1365,17 @@ bool AGENTPETIMAGE_GetStatus(AGENTPET_IMAGE_STATUS *pStatus)
  */
 bool AGENTPETIMAGE_GetDigest(bool *pAvailable, uint8_t *pDigest)
 {
-    bool bLocked;
+    rt_base_t tLevel;
 
     if ((NULL == pAvailable) || (NULL == pDigest))
     {
         return false;
     }
 
-    bLocked = false;
-    if (l_bImageWorkerReady)
-    {
-        if (RT_EOK != rt_mutex_take(&l_tImageMutex, 0))
-        {
-            return false;
-        }
-        bLocked = true;
-    }
-    *pAvailable = l_tImageEnv.bImageAvailable;
-    (void)memcpy(pDigest, l_tImageEnv.aImageMd5, AGENTPET_IMAGE_MD5_SIZE);
-    if (bLocked)
-    {
-        (void)rt_mutex_release(&l_tImageMutex);
-    }
+    tLevel = rt_hw_interrupt_disable();
+    *pAvailable = l_bImageDigestAvailableSnapshot;
+    (void)memcpy(pDigest, l_aImageDigestSnapshot, AGENTPET_IMAGE_MD5_SIZE);
+    rt_hw_interrupt_enable(tLevel);
 
     return true;
 }
