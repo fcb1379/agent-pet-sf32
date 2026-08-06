@@ -34,6 +34,10 @@ work/diagnostics/
 work/sifli-check/
 *.log
 
+# Local UI design source assets
+work/watch_bt_audio_template/ui_assets/410x502/
+work/watch_bt_audio_template/ui_assets/水果风图标/
+
 # Android local build state and generated packages
 phone_app/android/.gradle/
 phone_app/android/app/build/
