@@ -68,7 +68,7 @@ static sibles_hdl l_tAgentPetServiceHandle;
 /* Agent Pet BLE 链路状态。只在短临界区内读写，保存连接和诊断计数。 */
 static AGENTPET_BLE_STATUS l_tAgentPetBleStatus;
 /* Read response: magic/version/availability followed by the persistent JPEG MD5. */
-static uint8_t l_aImageDigestResponse[AGENTPET_IMAGE_CONTROL_FRAME_SIZE];
+static uint8_t l_aImageDigestResponse[AGENTPET_IMAGE_DIGEST_FRAME_SIZE];
 /* Static mailbox used only as a non-blocking wake signal; time data stays in the protocol state. */
 static struct rt_mailbox l_tTimeSyncMailbox;
 /* One-entry mailbox pool; additional updates coalesce into the latest protocol generation. */
@@ -119,7 +119,7 @@ BLE_GATT_SERVICE_DEFINE_128(l_tAgentPetAttributeDatabase)
         BLE_GATT_PERM_READ_ENABLE,
         BLE_GATT_VALUE_PERM_UUID_128 |
         BLE_GATT_VALUE_PERM_RI_ENABLE,
-        AGENTPET_IMAGE_CONTROL_FRAME_SIZE),
+        AGENTPET_IMAGE_DIGEST_FRAME_SIZE),
 };
 
 static uint8_t *Local_GattReadCallback(
@@ -127,6 +127,7 @@ static uint8_t *Local_GattReadCallback(
     uint8_t ucAttributeIndex,
     uint16_t *pLength)
 {
+    AGENTPET_IMAGE_STATUS tImageStatus;
     bool bImageAvailable;
 
     (void)ucConnectionIndex;
@@ -146,7 +147,11 @@ static uint8_t *Local_GattReadCallback(
         sizeof(l_aImageDigestResponse));
     l_aImageDigestResponse[0] = 0x41U;
     l_aImageDigestResponse[1] = 0x49U;
-    l_aImageDigestResponse[2] = 1U;
+    l_aImageDigestResponse[2] = 2U;
+    if (!AGENTPETIMAGE_GetStatus(&tImageStatus))
+    {
+        return NULL;
+    }
     if (!AGENTPETIMAGE_GetDigest(
             &bImageAvailable,
             &l_aImageDigestResponse[4]))
@@ -154,6 +159,16 @@ static uint8_t *Local_GattReadCallback(
         return NULL;
     }
     l_aImageDigestResponse[3] = bImageAvailable ? 1U : 0U;
+    l_aImageDigestResponse[20] = (uint8_t)tImageStatus.ulReceived;
+    l_aImageDigestResponse[21] = (uint8_t)(tImageStatus.ulReceived >> 8U);
+    l_aImageDigestResponse[22] = (uint8_t)(tImageStatus.ulReceived >> 16U);
+    l_aImageDigestResponse[23] = (uint8_t)(tImageStatus.ulReceived >> 24U);
+    l_aImageDigestResponse[24] = (uint8_t)tImageStatus.ulTotal;
+    l_aImageDigestResponse[25] = (uint8_t)(tImageStatus.ulTotal >> 8U);
+    l_aImageDigestResponse[26] = (uint8_t)(tImageStatus.ulTotal >> 16U);
+    l_aImageDigestResponse[27] = (uint8_t)(tImageStatus.ulTotal >> 24U);
+    l_aImageDigestResponse[28] = (uint8_t)tImageStatus.eState;
+    l_aImageDigestResponse[29] = (uint8_t)tImageStatus.eLastResult;
     *pLength = sizeof(l_aImageDigestResponse);
 
     return l_aImageDigestResponse;
@@ -474,6 +489,7 @@ void AGENTPETBLE_SetConnected(bool bConnected)
  */
 bool AGENTPETBLE_GetStatus(AGENTPET_BLE_STATUS *pStatus)
 {
+    AGENTPET_IMAGE_STATUS tImageStatus;
     AGENTPET_SNAPSHOT tSnapshot;
     uint32_t ulGeneration;
     bool bHasSnapshot;
@@ -505,7 +521,13 @@ bool AGENTPETBLE_GetStatus(AGENTPET_BLE_STATUS *pStatus)
         pStatus->ulWoodenFishGeneration = ulWoodenFishGeneration;
     }
     rt_exit_critical();
-    (void)AGENTPETIMAGE_GetStatus(&pStatus->tImageStatus);
+    if (AGENTPETIMAGE_GetStatus(&tImageStatus))
+    {
+        rt_enter_critical();
+        l_tAgentPetBleStatus.tImageStatus = tImageStatus;
+        pStatus->tImageStatus = tImageStatus;
+        rt_exit_critical();
+    }
 
     return true;
 }

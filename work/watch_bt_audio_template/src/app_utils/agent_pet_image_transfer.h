@@ -6,11 +6,16 @@
 #include <stdint.h>
 
 #define AGENTPET_IMAGE_CONTROL_FRAME_SIZE (20U)
+#define AGENTPET_IMAGE_DIGEST_FRAME_SIZE  (32U)
 #define AGENTPET_IMAGE_MD5_SIZE           (16U)
 #define AGENTPET_IMAGE_MAX_PACKET_SIZE    (244U)
-#define AGENTPET_IMAGE_MAX_FILE_SIZE    (128U * 1024U)
-#define AGENTPET_IMAGE_PATH             "/pet.jpg"
-#define AGENTPET_IMAGE_LVGL_PATH        "/:/pet.jpg"
+#define AGENTPET_IMAGE_MAX_FILE_SIZE      (512U * 1024U)
+#define AGENTPET_IMAGE_PATH               "/pet.img"
+#define AGENTPET_IMAGE_LEGACY_PATH        "/pet.jpg"
+#define AGENTPET_IMAGE_LVGL_PATH          "/:/pet.img"
+#define AGENTPET_IMAGE_FORMAT_NONE        (0U)
+#define AGENTPET_IMAGE_FORMAT_JPEG        (1U)
+#define AGENTPET_IMAGE_FORMAT_GIF         (2U)
 
 typedef enum _AGENTPET_IMAGE_STATE
 {
@@ -43,6 +48,7 @@ typedef struct _AGENTPET_IMAGE_STATUS
     uint32_t ulTotal;
     uint32_t ulGeneration;
     AGENTPET_IMAGE_RESULT eLastResult;
+    uint8_t ucFormat;
 } AGENTPET_IMAGE_STATUS;
 
 void AGENTPETIMAGE_Init(void);

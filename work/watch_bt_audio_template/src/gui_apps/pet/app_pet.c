@@ -23,9 +23,10 @@ LV_IMG_DECLARE(agent_pet_merit_plus_one);
 #define APP_ID "pet"
 #define PET_STATUS_REFRESH_MS (100U)
 #define PET_MAX_REMOTE_HITS_PER_REFRESH (4U)
-#define PET_MASCOT_SIZE (336)
+#define PET_MASCOT_SIZE (192)
 #define PET_MASCOT_X ((LV_HOR_RES_MAX - PET_MASCOT_SIZE) / 2)
 #define PET_MASCOT_Y (((LV_VER_RES_MAX - PET_MASCOT_SIZE) / 2) - 12)
+#define PET_GIF_MIN_FRAME_MS (125U)
 #define PET_WOODEN_FISH_IDLE_MS (1700U)
 #define PET_DAILY_SUMMARY_MS (1900U)
 #define PET_TURBO_INTERVAL_MS (180U)
@@ -35,8 +36,8 @@ LV_IMG_DECLARE(agent_pet_merit_plus_one);
 #define PET_WOODEN_FISH_HEIGHT (180)
 #define PET_WOODEN_FISH_MALLET_X (50)
 #define PET_WOODEN_FISH_MALLET_Y (18)
-#define PET_ATTENTION_PANEL_WIDTH (286)
-#define PET_ATTENTION_PANEL_HEIGHT (72)
+#define PET_ATTENTION_PANEL_WIDTH (320)
+#define PET_ATTENTION_PANEL_HEIGHT (90)
 #define PET_ATTENTION_PANEL_X ((LV_HOR_RES_MAX - PET_ATTENTION_PANEL_WIDTH) / 2)
 #define PET_ATTENTION_PANEL_Y (38)
 #define PET_MOTION_SAMPLE_MS (20U)
@@ -48,9 +49,9 @@ LV_IMG_DECLARE(agent_pet_merit_plus_one);
 #define PET_MOTION_COOLDOWN_MS (180U)
 #define PET_MOTION_FILTER_DIVISOR (2U)
 #define PET_MOTION_MAX_READ_ERRORS (5U)
-#define PET_MOTION_LABEL_X (LV_HOR_RES_MAX - 202)
-#define PET_MOTION_LABEL_Y (13)
-#define PET_MOTION_LABEL_WIDTH (82)
+#define PET_MOTION_LABEL_X (LV_HOR_RES_MAX - 220)
+#define PET_MOTION_LABEL_Y (11)
+#define PET_MOTION_LABEL_WIDTH (100)
 #define PET_MOTION_SWITCH_X (LV_HOR_RES_MAX - 112)
 #define PET_MOTION_SWITCH_Y (8)
 #define PET_MOTION_SWITCH_WIDTH (52)
@@ -93,6 +94,11 @@ typedef struct
     lv_obj_t *root;
     lv_obj_t *stage;
     lv_obj_t *mascot;
+#if LV_USE_GIF
+    lv_obj_t *mascot_gif;
+    lv_timer_t *gif_timer;
+    gd_GIF *pCustomGifDecoder;
+#endif
     lv_obj_t *wooden_fish;
     lv_obj_t *fish_body;
     lv_obj_t *mallet;
@@ -129,6 +135,10 @@ typedef struct
     AGENTPET_IMAGE_STATE eRenderedImageState;
     lv_img_dsc_t tCustomMascot;
     uint8_t *pCustomMascotPixels;
+#if LV_USE_GIF
+    lv_img_dsc_t tCustomGif;
+    uint8_t *pCustomGifData;
+#endif
     bool bRenderedConnected;
     bool bRenderedCustomImage;
 #if defined(AGENT_PET_USING_IMU) && !defined(BSP_USING_PC_SIMULATOR)
@@ -142,6 +152,7 @@ static pet_ui_t g_pet_ui;
 
 static void PET_ApplyStateAnimation(uint8_t ucState);
 static void PET_PlayWoodenFishAnimation(const lv_point_t *pPoint);
+static void PET_PlayWoodenFish(lv_event_t *pEvent);
 
 #if defined(AGENT_PET_USING_IMU) && !defined(BSP_USING_PC_SIMULATOR)
 /***************************
@@ -466,6 +477,7 @@ static void PET_CreateMotionSwitch(void)
         g_pet_ui.motion_label,
         lv_color_hex(0xA7B0B5U),
         0);
+    lv_obj_set_style_text_opa(g_pet_ui.motion_label, LV_OPA_COVER, 0);
 
     g_pet_ui.motion_switch = lv_switch_create(g_pet_ui.root);
     lv_obj_set_size(
@@ -534,6 +546,8 @@ static void PET_CreateAttentionCue(void)
         g_pet_ui.attention_title,
         LV_TEXT_ALIGN_CENTER,
         0);
+    lv_obj_set_style_text_letter_space(g_pet_ui.attention_title, 2, 0);
+    lv_obj_set_style_text_opa(g_pet_ui.attention_title, LV_OPA_COVER, 0);
     lv_obj_align(g_pet_ui.attention_title, LV_ALIGN_TOP_MID, 0, 0);
 
     g_pet_ui.attention_hint = lv_label_create(g_pet_ui.attention_panel);
@@ -547,6 +561,8 @@ static void PET_CreateAttentionCue(void)
         g_pet_ui.attention_hint,
         lv_color_hex(0xD8F7EEU),
         0);
+    lv_obj_set_style_text_letter_space(g_pet_ui.attention_hint, 1, 0);
+    lv_obj_set_style_text_opa(g_pet_ui.attention_hint, LV_OPA_COVER, 0);
     lv_obj_align(g_pet_ui.attention_hint, LV_ALIGN_BOTTOM_MID, 0, 0);
 
     return;
@@ -564,6 +580,256 @@ static void PET_ReleaseCustomMascot(void)
     g_pet_ui.pCustomMascotPixels = NULL;
     rt_memset(&g_pet_ui.tCustomMascot, 0, sizeof(g_pet_ui.tCustomMascot));
 }
+
+#if LV_USE_GIF
+/*
+ * PET_CustomGifDelay
+ * Function: convert the current GIF centisecond delay to a bounded LVGL period.
+ * Parameters: none.
+ * Return: frame period in milliseconds, never below 20 ms.
+ */
+static uint32_t PET_CustomGifDelay(void)
+{
+    uint32_t ulDelay;
+
+    if (NULL == g_pet_ui.pCustomGifDecoder)
+    {
+        return PET_GIF_MIN_FRAME_MS;
+    }
+    ulDelay = (uint32_t)g_pet_ui.pCustomGifDecoder->gce.delay * 10U;
+
+    return LV_MAX(PET_GIF_MIN_FRAME_MS, ulDelay);
+}
+
+/*
+ * PET_AdvanceCustomGif
+ * Function: decode one GIF frame and schedule the next callback from its delay.
+ * Parameters:
+ *   - pTimer: dedicated GIF playback timer.
+ * Return: none.
+ */
+static void PET_AdvanceCustomGif(lv_timer_t *pTimer)
+{
+    int lResult;
+
+    if ((NULL == pTimer) ||
+        (NULL == g_pet_ui.pCustomGifDecoder) ||
+        (NULL == g_pet_ui.mascot_gif))
+    {
+        return;
+    }
+
+    lResult = gd_get_frame(g_pet_ui.pCustomGifDecoder);
+    if (0 == lResult)
+    {
+        if (1U == g_pet_ui.pCustomGifDecoder->loop_count)
+        {
+            lv_timer_pause(pTimer);
+            return;
+        }
+        if (1U < g_pet_ui.pCustomGifDecoder->loop_count)
+        {
+            g_pet_ui.pCustomGifDecoder->loop_count--;
+        }
+        gd_rewind(g_pet_ui.pCustomGifDecoder);
+        lResult = gd_get_frame(g_pet_ui.pCustomGifDecoder);
+    }
+    if (1 != lResult)
+    {
+        lv_timer_pause(pTimer);
+        rt_kprintf("agent pet: custom GIF decode stopped %d\n", lResult);
+        return;
+    }
+
+    gd_render_frame(
+        g_pet_ui.pCustomGifDecoder,
+        (uint8_t *)g_pet_ui.tCustomGif.data);
+    lv_img_cache_invalidate_src(&g_pet_ui.tCustomGif);
+    lv_obj_invalidate(g_pet_ui.mascot_gif);
+    lv_timer_set_period(pTimer, PET_CustomGifDelay());
+
+    return;
+}
+
+/*
+ * PET_ReleaseCustomGif
+ * Function: stop GIF decoding before releasing its persistent PSRAM source.
+ * Parameters: none.
+ * Return: none.
+ */
+static void PET_ReleaseCustomGif(void)
+{
+    if (NULL != g_pet_ui.gif_timer)
+    {
+        lv_timer_del(g_pet_ui.gif_timer);
+        g_pet_ui.gif_timer = NULL;
+    }
+    if (NULL != g_pet_ui.mascot_gif)
+    {
+        lv_obj_del(g_pet_ui.mascot_gif);
+        g_pet_ui.mascot_gif = NULL;
+    }
+    if (NULL != g_pet_ui.pCustomGifDecoder)
+    {
+        gd_close_gif(g_pet_ui.pCustomGifDecoder);
+        g_pet_ui.pCustomGifDecoder = NULL;
+    }
+    if (NULL != g_pet_ui.pCustomGifData)
+    {
+        app_cache_free(g_pet_ui.pCustomGifData);
+        g_pet_ui.pCustomGifData = NULL;
+    }
+    rt_memset(&g_pet_ui.tCustomGif, 0, sizeof(g_pet_ui.tCustomGif));
+
+    return;
+}
+
+/*
+ * PET_LoadCustomGif
+ * Function: copy the bounded committed GIF into PSRAM and start LVGL playback.
+ * Parameters:
+ *   - pHeader: output logical GIF dimensions.
+ * Return: true when the GIF object is playing, otherwise false.
+ */
+static bool PET_LoadCustomGif(lv_img_header_t *pHeader)
+{
+    lv_fs_file_t tFile;
+    lv_fs_res_t eResult;
+    uint32_t ulFileSize;
+    uint32_t ulOffset;
+    uint32_t ulReadLength;
+    uint32_t ulChunkSize;
+
+    if (NULL == pHeader)
+    {
+        return false;
+    }
+
+    (void)rt_memset(&tFile, 0, sizeof(tFile));
+    eResult = lv_fs_open(&tFile, AGENTPET_IMAGE_LVGL_PATH, LV_FS_MODE_RD);
+    if (LV_FS_RES_OK != eResult)
+    {
+        rt_kprintf("agent pet: custom GIF open failed %d\n", eResult);
+        return false;
+    }
+    eResult = lv_fs_seek(&tFile, 0U, LV_FS_SEEK_END);
+    if (LV_FS_RES_OK == eResult)
+    {
+        eResult = lv_fs_tell(&tFile, &ulFileSize);
+    }
+    if (LV_FS_RES_OK == eResult)
+    {
+        eResult = lv_fs_seek(&tFile, 0U, LV_FS_SEEK_SET);
+    }
+    if ((LV_FS_RES_OK != eResult) ||
+        (14U > ulFileSize) ||
+        (AGENTPET_IMAGE_MAX_FILE_SIZE < ulFileSize))
+    {
+        (void)lv_fs_close(&tFile);
+        rt_kprintf("agent pet: custom GIF size invalid %lu\n",
+                   (unsigned long)ulFileSize);
+        return false;
+    }
+
+    g_pet_ui.pCustomGifData = app_cache_alloc(
+        ulFileSize,
+        IMAGE_CACHE_PSRAM);
+    if (NULL == g_pet_ui.pCustomGifData)
+    {
+        (void)lv_fs_close(&tFile);
+        rt_kprintf("agent pet: custom GIF source allocation failed %lu\n",
+                   (unsigned long)ulFileSize);
+        return false;
+    }
+
+    ulOffset = 0U;
+    while (ulOffset < ulFileSize)
+    {
+        ulChunkSize = LV_MIN(4096U, ulFileSize - ulOffset);
+        ulReadLength = 0U;
+        eResult = lv_fs_read(
+            &tFile,
+            &g_pet_ui.pCustomGifData[ulOffset],
+            ulChunkSize,
+            &ulReadLength);
+        if ((LV_FS_RES_OK != eResult) || (ulChunkSize != ulReadLength))
+        {
+            (void)lv_fs_close(&tFile);
+            PET_ReleaseCustomGif();
+            rt_kprintf("agent pet: custom GIF read failed at %lu\n",
+                       (unsigned long)ulOffset);
+            return false;
+        }
+        ulOffset += ulReadLength;
+    }
+    (void)lv_fs_close(&tFile);
+
+    g_pet_ui.pCustomGifDecoder = gd_open_gif_data(g_pet_ui.pCustomGifData);
+    if (NULL == g_pet_ui.pCustomGifDecoder)
+    {
+        PET_ReleaseCustomGif();
+        rt_kprintf("agent pet: custom GIF decoder open failed\n");
+        return false;
+    }
+    if ((0U == g_pet_ui.pCustomGifDecoder->width) ||
+        (0U == g_pet_ui.pCustomGifDecoder->height) ||
+        (PET_MASCOT_SIZE < g_pet_ui.pCustomGifDecoder->width) ||
+        (PET_MASCOT_SIZE < g_pet_ui.pCustomGifDecoder->height))
+    {
+        rt_kprintf("agent pet: custom GIF dimensions invalid %u x %u\n",
+                   g_pet_ui.pCustomGifDecoder->width,
+                   g_pet_ui.pCustomGifDecoder->height);
+        PET_ReleaseCustomGif();
+        return false;
+    }
+    if (1 != gd_get_frame(g_pet_ui.pCustomGifDecoder))
+    {
+        PET_ReleaseCustomGif();
+        rt_kprintf("agent pet: custom GIF first frame failed\n");
+        return false;
+    }
+
+    pHeader->always_zero = 0U;
+    pHeader->w = g_pet_ui.pCustomGifDecoder->width;
+    pHeader->h = g_pet_ui.pCustomGifDecoder->height;
+    pHeader->cf = LV_IMG_CF_TRUE_COLOR_ALPHA;
+    g_pet_ui.tCustomGif.header = *pHeader;
+    g_pet_ui.tCustomGif.data_size = (uint32_t)pHeader->w * pHeader->h *
+        LV_IMG_PX_SIZE_ALPHA_BYTE;
+    g_pet_ui.tCustomGif.data = g_pet_ui.pCustomGifDecoder->canvas;
+    gd_render_frame(
+        g_pet_ui.pCustomGifDecoder,
+        (uint8_t *)g_pet_ui.tCustomGif.data);
+    g_pet_ui.mascot_gif = lv_img_create(g_pet_ui.stage);
+    if (NULL == g_pet_ui.mascot_gif)
+    {
+        PET_ReleaseCustomGif();
+        return false;
+    }
+    lv_img_set_src(g_pet_ui.mascot_gif, &g_pet_ui.tCustomGif);
+    lv_obj_add_flag(g_pet_ui.mascot_gif, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(
+        g_pet_ui.mascot_gif,
+        PET_PlayWoodenFish,
+        LV_EVENT_SHORT_CLICKED,
+        NULL);
+    g_pet_ui.gif_timer = lv_timer_create(
+        PET_AdvanceCustomGif,
+        PET_CustomGifDelay(),
+        NULL);
+    if (NULL == g_pet_ui.gif_timer)
+    {
+        PET_ReleaseCustomGif();
+        return false;
+    }
+    rt_kprintf("agent pet: custom GIF playing %u x %u, %lu bytes\n",
+               pHeader->w,
+               pHeader->h,
+               (unsigned long)ulFileSize);
+
+    return true;
+}
+#endif /* LV_USE_GIF */
 
 static bool PET_DecodeCustomMascot(lv_img_header_t *pHeader)
 {
@@ -644,6 +910,31 @@ static bool PET_DecodeCustomMascot(lv_img_header_t *pHeader)
     return true;
 }
 
+/*
+ * PET_MascotZoom
+ * Function: fit an image into the common 192px stage without enlarging it.
+ * Parameters:
+ *   - pHeader: decoded source dimensions; must be non-NULL and non-zero.
+ * Return: bounded LVGL zoom value, or 1x for invalid dimensions.
+ */
+static uint16_t PET_MascotZoom(const lv_img_header_t *pHeader)
+{
+    uint32_t ulZoomWidth;
+    uint32_t ulZoomHeight;
+
+    if ((NULL == pHeader) || (0U == pHeader->w) || (0U == pHeader->h))
+    {
+        return LV_IMG_ZOOM_NONE;
+    }
+
+    ulZoomWidth = (uint32_t)PET_MASCOT_SIZE * LV_IMG_ZOOM_NONE / pHeader->w;
+    ulZoomHeight = (uint32_t)PET_MASCOT_SIZE * LV_IMG_ZOOM_NONE / pHeader->h;
+
+    return (uint16_t)LV_MIN(
+        LV_IMG_ZOOM_NONE,
+        LV_MIN(ulZoomWidth, ulZoomHeight));
+}
+
 static const char *PET_StateName(uint8_t ucState)
 {
     static const char *l_aStateNames[] =
@@ -717,7 +1008,7 @@ static const char *PET_ProviderName(uint8_t ucProvider)
 
 /*
  * PET_RefreshMascotImage
- * Function: switch atomically committed custom JPEGs on the LVGL thread.
+ * Function: switch atomically committed custom JPEG or GIF images on the LVGL thread.
  * Parameters:
  *   - pStatus: read-only persistent image status.
  * Return: none.
@@ -741,25 +1032,41 @@ static void PET_RefreshMascotImage(const AGENTPET_IMAGE_STATUS *pStatus)
 
     g_pet_ui.ulRenderedImageGeneration = pStatus->ulGeneration;
     g_pet_ui.bRenderedCustomImage = pStatus->bImageAvailable;
+#if LV_USE_GIF
+    PET_ReleaseCustomGif();
+#endif
     lv_img_set_src(g_pet_ui.mascot, &agent_pet_mascot);
-    lv_img_set_zoom(g_pet_ui.mascot, LV_IMG_ZOOM_NONE);
+    lv_img_set_zoom(g_pet_ui.mascot, PET_MascotZoom(&agent_pet_mascot.header));
+    lv_obj_clear_flag(g_pet_ui.mascot, LV_OBJ_FLAG_HIDDEN);
     PET_ReleaseCustomMascot();
     if (pStatus->bImageAvailable)
     {
-        if (PET_DecodeCustomMascot(&tHeader))
+#if LV_USE_GIF
+        if ((AGENTPET_IMAGE_FORMAT_GIF == pStatus->ucFormat) &&
+            PET_LoadCustomGif(&tHeader))
         {
-            uint32_t ulZoomWidth;
-            uint32_t ulZoomHeight;
-
-            ulZoomWidth = (uint32_t)PET_MASCOT_SIZE *
-                LV_IMG_ZOOM_NONE / tHeader.w;
-            ulZoomHeight = (uint32_t)PET_MASCOT_SIZE *
-                LV_IMG_ZOOM_NONE / tHeader.h;
-            usZoom = (uint16_t)LV_MIN(
-                LV_IMG_ZOOM_NONE,
-                LV_MIN(ulZoomWidth, ulZoomHeight));
+            lv_anim_del(g_pet_ui.stage, NULL);
+            lv_anim_del(g_pet_ui.attention_panel, NULL);
+            lv_obj_set_pos(g_pet_ui.stage, PET_MASCOT_X, PET_MASCOT_Y);
+            lv_obj_set_pos(
+                g_pet_ui.attention_panel,
+                PET_ATTENTION_PANEL_X,
+                PET_ATTENTION_PANEL_Y);
+            usZoom = PET_MascotZoom(&tHeader);
+            lv_img_set_zoom(g_pet_ui.mascot_gif, usZoom);
+            lv_img_set_antialias(g_pet_ui.mascot_gif, false);
+            lv_obj_center(g_pet_ui.mascot_gif);
+            lv_obj_add_flag(g_pet_ui.mascot, LV_OBJ_FLAG_HIDDEN);
+        }
+        else
+#endif /* LV_USE_GIF */
+        if ((AGENTPET_IMAGE_FORMAT_JPEG == pStatus->ucFormat) &&
+            PET_DecodeCustomMascot(&tHeader))
+        {
+            usZoom = PET_MascotZoom(&tHeader);
             lv_img_set_src(g_pet_ui.mascot, &g_pet_ui.tCustomMascot);
             lv_img_set_zoom(g_pet_ui.mascot, usZoom);
+            lv_img_set_antialias(g_pet_ui.mascot, false);
         }
     }
     lv_obj_center(g_pet_ui.mascot);
@@ -956,6 +1263,7 @@ static void PET_ApplyStateAnimation(uint8_t ucState)
     lv_anim_t tAnimation;
     lv_anim_t tAttentionAnimation;
     lv_anim_exec_xcb_t pExecCallback;
+    bool bAnimateOverlay;
     int32_t lFrom;
     int32_t lTo;
     uint32_t ulTime;
@@ -977,6 +1285,14 @@ static void PET_ApplyStateAnimation(uint8_t ucState)
         PET_ATTENTION_PANEL_X,
         PET_ATTENTION_PANEL_Y);
     lv_obj_add_flag(g_pet_ui.attention_panel, LV_OBJ_FLAG_HIDDEN);
+    bAnimateOverlay = true;
+#if LV_USE_GIF
+    if (NULL != g_pet_ui.mascot_gif)
+    {
+        /* Keep GIF playback as the only continuous redraw source. */
+        bAnimateOverlay = false;
+    }
+#endif /* LV_USE_GIF */
     pExecCallback = (lv_anim_exec_xcb_t)lv_obj_set_y;
     lFrom = PET_MASCOT_Y + 2;
     lTo = PET_MASCOT_Y - 2;
@@ -1039,36 +1355,42 @@ static void PET_ApplyStateAnimation(uint8_t ucState)
         ulTime = 110U;
     }
 
-    lv_anim_init(&tAnimation);
-    lv_anim_set_var(&tAnimation, g_pet_ui.stage);
-    lv_anim_set_values(&tAnimation, lFrom, lTo);
-    lv_anim_set_exec_cb(&tAnimation, pExecCallback);
-    lv_anim_set_time(&tAnimation, ulTime);
-    lv_anim_set_playback_time(&tAnimation, ulTime);
-    lv_anim_set_repeat_delay(&tAnimation, 100U);
-    lv_anim_set_repeat_count(&tAnimation, usRepeatCount);
-    lv_anim_start(&tAnimation);
+    if (bAnimateOverlay)
+    {
+        lv_anim_init(&tAnimation);
+        lv_anim_set_var(&tAnimation, g_pet_ui.stage);
+        lv_anim_set_values(&tAnimation, lFrom, lTo);
+        lv_anim_set_exec_cb(&tAnimation, pExecCallback);
+        lv_anim_set_time(&tAnimation, ulTime);
+        lv_anim_set_playback_time(&tAnimation, ulTime);
+        lv_anim_set_repeat_delay(&tAnimation, 100U);
+        lv_anim_set_repeat_count(&tAnimation, usRepeatCount);
+        lv_anim_start(&tAnimation);
+    }
 
     if ((AGENTPET_STATE_NEEDS_INPUT == ucState) ||
         (AGENTPET_STATE_COMPLETED == ucState))
     {
         lv_obj_move_foreground(g_pet_ui.attention_panel);
-        lv_anim_init(&tAttentionAnimation);
-        lv_anim_set_var(&tAttentionAnimation, g_pet_ui.attention_panel);
-        lv_anim_set_values(
-            &tAttentionAnimation,
-            PET_ATTENTION_PANEL_Y + 3,
-            PET_ATTENTION_PANEL_Y - 5);
-        lv_anim_set_exec_cb(
-            &tAttentionAnimation,
-            (lv_anim_exec_xcb_t)lv_obj_set_y);
-        lv_anim_set_time(&tAttentionAnimation, 520U);
-        lv_anim_set_playback_time(&tAttentionAnimation, 520U);
-        lv_anim_set_repeat_delay(&tAttentionAnimation, 120U);
-        lv_anim_set_repeat_count(
-            &tAttentionAnimation,
-            LV_ANIM_REPEAT_INFINITE);
-        lv_anim_start(&tAttentionAnimation);
+        if (bAnimateOverlay)
+        {
+            lv_anim_init(&tAttentionAnimation);
+            lv_anim_set_var(&tAttentionAnimation, g_pet_ui.attention_panel);
+            lv_anim_set_values(
+                &tAttentionAnimation,
+                PET_ATTENTION_PANEL_Y + 3,
+                PET_ATTENTION_PANEL_Y - 5);
+            lv_anim_set_exec_cb(
+                &tAttentionAnimation,
+                (lv_anim_exec_xcb_t)lv_obj_set_y);
+            lv_anim_set_time(&tAttentionAnimation, 520U);
+            lv_anim_set_playback_time(&tAttentionAnimation, 520U);
+            lv_anim_set_repeat_delay(&tAttentionAnimation, 120U);
+            lv_anim_set_repeat_count(
+                &tAttentionAnimation,
+                LV_ANIM_REPEAT_INFINITE);
+            lv_anim_start(&tAttentionAnimation);
+        }
     }
 
     return;
@@ -1418,6 +1740,8 @@ static void pet_on_start(void)
     lv_obj_set_pos(name, 55, 8);
     lv_obj_set_style_text_align(name, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_color(name, lv_color_hex(0xd8f7ee), 0);
+    lv_obj_set_style_text_letter_space(name, 1, 0);
+    lv_obj_set_style_text_opa(name, LV_OPA_COVER, 0);
 
     floor = pet_shape(g_pet_ui.root, 40,
                       PET_MASCOT_Y + PET_MASCOT_SIZE - 18,
@@ -1434,6 +1758,8 @@ static void pet_on_start(void)
 
     g_pet_ui.mascot = lv_img_create(g_pet_ui.stage);
     lv_img_set_src(g_pet_ui.mascot, &agent_pet_mascot);
+    lv_img_set_zoom(g_pet_ui.mascot, PET_MascotZoom(&agent_pet_mascot.header));
+    lv_img_set_antialias(g_pet_ui.mascot, false);
     lv_obj_center(g_pet_ui.mascot);
     lv_obj_add_flag(g_pet_ui.mascot, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(
@@ -1458,9 +1784,9 @@ static void pet_on_start(void)
 
     PET_CreateWoodenFish();
     g_pet_ui.daily_summary = lv_label_create(g_pet_ui.root);
-    lv_obj_set_width(g_pet_ui.daily_summary, 220);
+    lv_obj_set_width(g_pet_ui.daily_summary, 280);
     lv_obj_set_pos(g_pet_ui.daily_summary,
-                   (LV_HOR_RES_MAX - 220) / 2, 48);
+                   (LV_HOR_RES_MAX - 280) / 2, 48);
     lv_obj_set_style_pad_all(g_pet_ui.daily_summary, 9, 0);
     lv_obj_set_style_radius(g_pet_ui.daily_summary, 16, 0);
     lv_obj_set_style_border_width(g_pet_ui.daily_summary, 2, 0);
@@ -1473,6 +1799,8 @@ static void pet_on_start(void)
         g_pet_ui.daily_summary, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_color(
         g_pet_ui.daily_summary, lv_color_hex(0xFFF4AAU), 0);
+    lv_obj_set_style_text_letter_space(g_pet_ui.daily_summary, 1, 0);
+    lv_obj_set_style_text_opa(g_pet_ui.daily_summary, LV_OPA_COVER, 0);
     lv_label_set_text(g_pet_ui.daily_summary, "Today's merit  0");
     lv_obj_add_flag(g_pet_ui.daily_summary, LV_OBJ_FLAG_HIDDEN);
 
@@ -1482,16 +1810,26 @@ static void pet_on_start(void)
     lv_obj_set_width(g_pet_ui.status_label, LV_HOR_RES_MAX - 24);
     lv_obj_set_pos(g_pet_ui.status_label, 12, LV_VER_RES_MAX - 72);
     lv_obj_set_style_text_align(g_pet_ui.status_label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_style_text_color(g_pet_ui.status_label, lv_color_hex(0xA7B0B5), 0);
+    lv_ext_set_local_font(
+        g_pet_ui.status_label,
+        FONT_NORMAL,
+        lv_color_hex(0xA7B0B5U));
+    lv_obj_set_style_text_letter_space(g_pet_ui.status_label, 1, 0);
+    lv_obj_set_style_text_opa(g_pet_ui.status_label, LV_OPA_COVER, 0);
 
     g_pet_ui.task_label = lv_label_create(g_pet_ui.root);
     lv_obj_set_width(g_pet_ui.task_label, LV_HOR_RES_MAX - 24);
     lv_obj_set_pos(g_pet_ui.task_label, 12, LV_VER_RES_MAX - 40);
     lv_obj_set_style_text_align(g_pet_ui.task_label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_style_text_color(g_pet_ui.task_label, lv_color_hex(0xD8F7EE), 0);
+    lv_ext_set_local_font(
+        g_pet_ui.task_label,
+        FONT_NORMAL,
+        lv_color_hex(0xD8F7EEU));
+    lv_obj_set_style_text_letter_space(g_pet_ui.task_label, 1, 0);
+    lv_obj_set_style_text_opa(g_pet_ui.task_label, LV_OPA_COVER, 0);
 
     g_pet_ui.image_progress_panel = lv_obj_create(g_pet_ui.root);
-    lv_obj_set_size(g_pet_ui.image_progress_panel, 280, 88);
+    lv_obj_set_size(g_pet_ui.image_progress_panel, 320, 100);
     lv_obj_align(g_pet_ui.image_progress_panel, LV_ALIGN_CENTER, 0, 0);
     lv_obj_set_style_bg_color(
         g_pet_ui.image_progress_panel, lv_color_hex(0x10232BU), 0);
@@ -1512,11 +1850,13 @@ static void pet_on_start(void)
         g_pet_ui.image_progress_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_color(
         g_pet_ui.image_progress_label, lv_color_hex(0xD8F7EEU), 0);
+    lv_obj_set_style_text_letter_space(g_pet_ui.image_progress_label, 1, 0);
+    lv_obj_set_style_text_opa(g_pet_ui.image_progress_label, LV_OPA_COVER, 0);
     lv_obj_align(g_pet_ui.image_progress_label, LV_ALIGN_TOP_MID, 0, 0);
 
     g_pet_ui.image_progress_bar = lv_bar_create(
         g_pet_ui.image_progress_panel);
-    lv_obj_set_size(g_pet_ui.image_progress_bar, LV_PCT(100), 14);
+    lv_obj_set_size(g_pet_ui.image_progress_bar, LV_PCT(100), 16);
     lv_obj_align(g_pet_ui.image_progress_bar, LV_ALIGN_BOTTOM_MID, 0, 0);
     lv_bar_set_range(g_pet_ui.image_progress_bar, 0, 100);
     lv_bar_set_value(g_pet_ui.image_progress_bar, 0, LV_ANIM_OFF);
@@ -1605,6 +1945,9 @@ static void pet_on_stop(void)
 #endif
     if (g_pet_ui.root)
     {
+#if LV_USE_GIF
+        PET_ReleaseCustomGif();
+#endif
         if (NULL != g_pet_ui.mascot)
         {
             lv_img_set_src(g_pet_ui.mascot, &agent_pet_mascot);

@@ -22,16 +22,18 @@
 #define AGENTPET_IMAGE_COMMAND_DATA     (2U)
 #define AGENTPET_IMAGE_COMMAND_COMMIT   (3U)
 #define AGENTPET_IMAGE_COMMAND_RESET    (4U)
-#define AGENTPET_IMAGE_FORMAT_JPEG      (1U)
-#define AGENTPET_IMAGE_WIDTH            (336U)
-#define AGENTPET_IMAGE_HEIGHT           (336U)
+#define AGENTPET_IMAGE_WIDTH            (192U)
+#define AGENTPET_IMAGE_HEIGHT           (192U)
+#define AGENTPET_IMAGE_GIF_MAX_DIMENSION (192U)
+#define AGENTPET_IMAGE_GIF_HEADER_SIZE  (13U)
+#define AGENTPET_IMAGE_GIF_MAX_FRAMES   (60U)
 #define AGENTPET_IMAGE_DATA_OFFSET       (8U)
 #define AGENTPET_IMAGE_DATA_MAX_SIZE      (235U)
 #define AGENTPET_IMAGE_PACKET_OVERHEAD    (9U)
-#define AGENTPET_IMAGE_WRITE_BUFFER_SIZE  (512U)
+#define AGENTPET_IMAGE_WRITE_BUFFER_SIZE  (4096U)
 #define AGENTPET_IMAGE_MD5_READ_SIZE       (512U)
 #define AGENTPET_IMAGE_CRC32_INIT         (0xFFFFFFFFUL)
-#define AGENTPET_IMAGE_QUEUE_DEPTH        (8U)
+#define AGENTPET_IMAGE_QUEUE_DEPTH        (24U)
 #define AGENTPET_IMAGE_THREAD_STACK_SIZE (2048U)
 #define AGENTPET_IMAGE_THREAD_TIME_SLICE (10U)
 
@@ -43,6 +45,7 @@
  *   - ulGeneration: increments only after an atomic replacement or reset, for LVGL refresh
  *   - usPendingLength/aWriteBuffer: bounded write coalescing buffer to reduce filesystem writes
  *   - eState/eLastResult: current transfer state and last protocol/storage result
+ *   - ucFormat: committed or in-progress wire image format, JPEG or GIF
  *   - bImageAvailable: true only when the committed persistent image exists
  */
 typedef struct _AGENTPET_IMAGE_ENV
@@ -56,6 +59,7 @@ typedef struct _AGENTPET_IMAGE_ENV
     uint16_t usPendingLength;
     AGENTPET_IMAGE_STATE eState;
     AGENTPET_IMAGE_RESULT eLastResult;
+    uint8_t ucFormat;
     bool bImageAvailable;
     uint8_t aImageMd5[AGENTPET_IMAGE_MD5_SIZE];
     uint8_t aWriteBuffer[AGENTPET_IMAGE_WRITE_BUFFER_SIZE];
@@ -75,7 +79,8 @@ typedef struct _AGENTPET_IMAGE_PACKET
 /* Module-local transfer state. The worker serializes filesystem writes while LVGL
  * reads copied status snapshots under the module mutex. */
 /* Static RTOS resources keep GATT writes bounded and avoid heap fragmentation.
- * Queue capacity: 8 packets (up to 1952 payload bytes); worker stack: 2048 bytes. */
+ * Queue capacity: 24 packets (up to 5856 packet bytes); worker stack: 2048 bytes.
+ * The 4 KiB coalescing buffer aligns filesystem writes and reduces Flash calls. */
 static struct rt_messagequeue l_tImageQueue;
 static struct rt_mutex l_tImageMutex;
 static struct rt_thread l_tImageThread;
@@ -90,6 +95,8 @@ static AGENTPET_IMAGE_ENV l_tImageEnv =
     .eState = AGENTPET_IMAGE_IDLE,
     .eLastResult = AGENTPET_IMAGE_RESULT_ACCEPTED
 };
+
+static uint8_t Local_DetectImageFormat(const char *pPath);
 
 static uint32_t Local_ReadLe24(const uint8_t *pData)
 {
@@ -274,6 +281,9 @@ static void Local_FailTransfer(AGENTPET_IMAGE_RESULT eResult)
     Local_CloseTemporaryFile();
     (void)unlink(AGENTPET_IMAGE_TEMP_PATH);
     l_tImageEnv.usPendingLength = 0U;
+    l_tImageEnv.ucFormat = l_tImageEnv.bImageAvailable ?
+        Local_DetectImageFormat(AGENTPET_IMAGE_PATH) :
+        AGENTPET_IMAGE_FORMAT_NONE;
     l_tImageEnv.eState = AGENTPET_IMAGE_ERROR;
     l_tImageEnv.eLastResult = eResult;
 
@@ -319,6 +329,16 @@ static uint16_t Local_ReadBigEndian16(const uint8_t *pData)
     }
 
     return (uint16_t)(((uint16_t)pData[0] << 8U) | pData[1]);
+}
+
+static uint16_t Local_ReadLittleEndian16(const uint8_t *pData)
+{
+    if (NULL == pData)
+    {
+        return 0U;
+    }
+
+    return (uint16_t)((uint16_t)pData[0] | ((uint16_t)pData[1] << 8U));
 }
 
 static bool Local_IsStartOfFrameMarker(uint8_t ucMarker)
@@ -478,6 +498,253 @@ cleanup:
     return eResult;
 }
 
+/*
+ * Local_SkipGifSubBlocks
+ * Function: validate and skip one bounded GIF data-sub-block chain.
+ * Parameters:
+ *   - lFileDescriptor: open GIF file descriptor.
+ *   - ulFileSize: validated file size in bytes.
+ *   - pOffset: current file offset, updated through the zero terminator.
+ * Return: true for a complete bounded chain, otherwise false.
+ */
+static bool Local_SkipGifSubBlocks(
+    int lFileDescriptor,
+    uint32_t ulFileSize,
+    uint32_t *pOffset)
+{
+    uint8_t ucBlockSize;
+
+    if ((0 > lFileDescriptor) || (NULL == pOffset))
+    {
+        return false;
+    }
+
+    while (*pOffset < ulFileSize)
+    {
+        if (!Local_ReadExact(lFileDescriptor, &ucBlockSize, 1U))
+        {
+            return false;
+        }
+        (*pOffset)++;
+        if (0U == ucBlockSize)
+        {
+            return true;
+        }
+        if ((uint32_t)ucBlockSize > ulFileSize - *pOffset)
+        {
+            return false;
+        }
+        if (0 > lseek(lFileDescriptor, ucBlockSize, SEEK_CUR))
+        {
+            return false;
+        }
+        *pOffset += ucBlockSize;
+    }
+
+    return false;
+}
+
+/*
+ * Local_ValidateGif
+ * Function: validate a bounded GIF89a stream before it reaches LVGL gifdec.
+ * Parameters:
+ *   - pPath: persistent GIF path; must not be NULL.
+ * Return: accepted only for a complete 192x192-or-smaller animated GIF.
+ */
+static AGENTPET_IMAGE_RESULT Local_ValidateGif(const char *pPath)
+{
+    struct stat tStatus;
+    uint8_t aHeader[AGENTPET_IMAGE_GIF_HEADER_SIZE];
+    uint8_t aDescriptor[9];
+    uint8_t ucSeparator;
+    uint32_t ulFileSize;
+    uint32_t ulOffset;
+    uint32_t ulColorTableSize;
+    uint16_t usCanvasWidth;
+    uint16_t usCanvasHeight;
+    uint16_t usFrameCount;
+    int lFileDescriptor;
+    bool bValid;
+
+    if (NULL == pPath)
+    {
+        return AGENTPET_IMAGE_ERROR_INVALID_PARAMETER;
+    }
+    if ((0 != stat(pPath, &tStatus)) ||
+        ((off_t)(AGENTPET_IMAGE_GIF_HEADER_SIZE + 1U) > tStatus.st_size) ||
+        (AGENTPET_IMAGE_MAX_FILE_SIZE < (uint32_t)tStatus.st_size))
+    {
+        return AGENTPET_IMAGE_ERROR_SIZE;
+    }
+
+    lFileDescriptor = open(pPath, O_RDONLY | O_BINARY, 0);
+    if (0 > lFileDescriptor)
+    {
+        return AGENTPET_IMAGE_ERROR_STORAGE;
+    }
+
+    bValid = false;
+    ulFileSize = (uint32_t)tStatus.st_size;
+    ulOffset = sizeof(aHeader);
+    usFrameCount = 0U;
+    if (!Local_ReadExact(lFileDescriptor, aHeader, sizeof(aHeader)) ||
+        (0 != memcmp(aHeader, "GIF89a", 6U)) ||
+        (0U == (aHeader[10] & 0x80U)))
+    {
+        goto cleanup;
+    }
+    usCanvasWidth = Local_ReadLittleEndian16(&aHeader[6]);
+    usCanvasHeight = Local_ReadLittleEndian16(&aHeader[8]);
+    if ((0U == usCanvasWidth) || (0U == usCanvasHeight) ||
+        (AGENTPET_IMAGE_GIF_MAX_DIMENSION < usCanvasWidth) ||
+        (AGENTPET_IMAGE_GIF_MAX_DIMENSION < usCanvasHeight))
+    {
+        goto cleanup;
+    }
+
+    ulColorTableSize = 3UL << ((aHeader[10] & 0x07U) + 1U);
+    if (ulColorTableSize > ulFileSize - ulOffset)
+    {
+        goto cleanup;
+    }
+    if (0 > lseek(lFileDescriptor, (off_t)ulColorTableSize, SEEK_CUR))
+    {
+        goto cleanup;
+    }
+    ulOffset += ulColorTableSize;
+
+    while (ulOffset < ulFileSize)
+    {
+        if (!Local_ReadExact(lFileDescriptor, &ucSeparator, 1U))
+        {
+            break;
+        }
+        ulOffset++;
+        if (0x3BU == ucSeparator)
+        {
+            bValid = (1U < usFrameCount) && (ulOffset == ulFileSize);
+            break;
+        }
+        if (0x21U == ucSeparator)
+        {
+            if ((ulOffset >= ulFileSize) ||
+                !Local_ReadExact(lFileDescriptor, &ucSeparator, 1U))
+            {
+                break;
+            }
+            ulOffset++;
+            if (!Local_SkipGifSubBlocks(
+                    lFileDescriptor,
+                    ulFileSize,
+                    &ulOffset))
+            {
+                break;
+            }
+            continue;
+        }
+        if ((0x2CU != ucSeparator) ||
+            (sizeof(aDescriptor) > ulFileSize - ulOffset) ||
+            !Local_ReadExact(lFileDescriptor, aDescriptor, sizeof(aDescriptor)))
+        {
+            break;
+        }
+        ulOffset += sizeof(aDescriptor);
+        if ((0U == Local_ReadLittleEndian16(&aDescriptor[4])) ||
+            (0U == Local_ReadLittleEndian16(&aDescriptor[6])) ||
+            ((uint32_t)Local_ReadLittleEndian16(&aDescriptor[0]) +
+             Local_ReadLittleEndian16(&aDescriptor[4]) > usCanvasWidth) ||
+            ((uint32_t)Local_ReadLittleEndian16(&aDescriptor[2]) +
+             Local_ReadLittleEndian16(&aDescriptor[6]) > usCanvasHeight))
+        {
+            break;
+        }
+        if (0U != (aDescriptor[8] & 0x80U))
+        {
+            ulColorTableSize = 3UL << ((aDescriptor[8] & 0x07U) + 1U);
+            if (ulColorTableSize > ulFileSize - ulOffset)
+            {
+                break;
+            }
+            if (0 > lseek(lFileDescriptor, (off_t)ulColorTableSize, SEEK_CUR))
+            {
+                break;
+            }
+            ulOffset += ulColorTableSize;
+        }
+        if ((ulOffset >= ulFileSize) ||
+            !Local_ReadExact(lFileDescriptor, &ucSeparator, 1U))
+        {
+            break;
+        }
+        ulOffset++;
+        if ((2U > ucSeparator) || (8U < ucSeparator))
+        {
+            break;
+        }
+        if (!Local_SkipGifSubBlocks(lFileDescriptor, ulFileSize, &ulOffset))
+        {
+            break;
+        }
+        usFrameCount++;
+        if (AGENTPET_IMAGE_GIF_MAX_FRAMES < usFrameCount)
+        {
+            break;
+        }
+    }
+
+cleanup:
+    (void)close(lFileDescriptor);
+    return bValid ? AGENTPET_IMAGE_RESULT_ACCEPTED :
+        AGENTPET_IMAGE_ERROR_FORMAT;
+}
+
+static uint8_t Local_DetectImageFormat(const char *pPath)
+{
+    uint8_t aSignature[6];
+    int lFileDescriptor;
+    int lReadLength;
+
+    if (NULL == pPath)
+    {
+        return AGENTPET_IMAGE_FORMAT_NONE;
+    }
+    lFileDescriptor = open(pPath, O_RDONLY | O_BINARY, 0);
+    if (0 > lFileDescriptor)
+    {
+        return AGENTPET_IMAGE_FORMAT_NONE;
+    }
+    lReadLength = read(lFileDescriptor, aSignature, sizeof(aSignature));
+    (void)close(lFileDescriptor);
+    if ((2 <= lReadLength) && (0xFFU == aSignature[0]) &&
+        (0xD8U == aSignature[1]))
+    {
+        return AGENTPET_IMAGE_FORMAT_JPEG;
+    }
+    if ((int)sizeof(aSignature) == lReadLength &&
+        (0 == memcmp(aSignature, "GIF89a", sizeof(aSignature))))
+    {
+        return AGENTPET_IMAGE_FORMAT_GIF;
+    }
+
+    return AGENTPET_IMAGE_FORMAT_NONE;
+}
+
+static AGENTPET_IMAGE_RESULT Local_ValidateImage(
+    const char *pPath,
+    uint8_t ucFormat)
+{
+    if (AGENTPET_IMAGE_FORMAT_JPEG == ucFormat)
+    {
+        return Local_ValidateJpeg(pPath);
+    }
+    if (AGENTPET_IMAGE_FORMAT_GIF == ucFormat)
+    {
+        return Local_ValidateGif(pPath);
+    }
+
+    return AGENTPET_IMAGE_ERROR_FORMAT;
+}
+
 static AGENTPET_IMAGE_RESULT Local_BeginTransfer(
     uint32_t ulTotal,
     uint32_t ulExpectedCrc,
@@ -487,7 +754,8 @@ static AGENTPET_IMAGE_RESULT Local_BeginTransfer(
     uint64_t udAvailableBytes;
 
     if (
-        (AGENTPET_IMAGE_FORMAT_JPEG != ucFormat) ||
+        ((AGENTPET_IMAGE_FORMAT_JPEG != ucFormat) &&
+         (AGENTPET_IMAGE_FORMAT_GIF != ucFormat)) ||
         (4U > ulTotal) ||
         (AGENTPET_IMAGE_MAX_FILE_SIZE < ulTotal)
     )
@@ -520,6 +788,7 @@ static AGENTPET_IMAGE_RESULT Local_BeginTransfer(
     l_tImageEnv.ulExpectedCrc = ulExpectedCrc;
     l_tImageEnv.ulCalculatedCrc = AGENTPET_IMAGE_CRC32_INIT;
     l_tImageEnv.usPendingLength = 0U;
+    l_tImageEnv.ucFormat = ucFormat;
     l_tImageEnv.eState = AGENTPET_IMAGE_RECEIVING;
     l_tImageEnv.eLastResult = AGENTPET_IMAGE_RESULT_ACCEPTED;
 
@@ -595,7 +864,7 @@ static AGENTPET_IMAGE_RESULT Local_CommitTransfer(
 
     if (
         (AGENTPET_IMAGE_RECEIVING != l_tImageEnv.eState) ||
-        (AGENTPET_IMAGE_FORMAT_JPEG != ucFormat) ||
+        (l_tImageEnv.ucFormat != ucFormat) ||
         (l_tImageEnv.ulTotal != ulTotal) ||
         (l_tImageEnv.ulReceived != ulTotal) ||
         (l_tImageEnv.ulExpectedCrc != ulExpectedCrc) ||
@@ -615,7 +884,7 @@ static AGENTPET_IMAGE_RESULT Local_CommitTransfer(
         return AGENTPET_IMAGE_ERROR_STORAGE;
     }
     Local_CloseTemporaryFile();
-    eResult = Local_ValidateJpeg(AGENTPET_IMAGE_TEMP_PATH);
+    eResult = Local_ValidateImage(AGENTPET_IMAGE_TEMP_PATH, ucFormat);
     if (AGENTPET_IMAGE_RESULT_ACCEPTED != eResult)
     {
         return eResult;
@@ -643,7 +912,8 @@ static AGENTPET_IMAGE_RESULT Local_CommitTransfer(
     l_tImageEnv.ulGeneration++;
     l_tImageEnv.eState = AGENTPET_IMAGE_READY;
     l_tImageEnv.eLastResult = AGENTPET_IMAGE_RESULT_COMMITTED;
-    LOG_I("Custom mascot committed size=%lu crc=0x%08lx",
+    LOG_I("Custom mascot committed format=%u size=%lu crc=0x%08lx",
+          ucFormat,
           (unsigned long)ulTotal,
           (unsigned long)ulExpectedCrc);
 
@@ -671,6 +941,11 @@ static AGENTPET_IMAGE_RESULT Local_ResetImage(void)
     {
         lResult = -1;
     }
+    if ((0 == access(AGENTPET_IMAGE_LEGACY_PATH, 0)) &&
+        (0 != unlink(AGENTPET_IMAGE_LEGACY_PATH)))
+    {
+        lResult = -1;
+    }
     if (0 != lResult)
     {
         return AGENTPET_IMAGE_ERROR_STORAGE;
@@ -679,6 +954,7 @@ static AGENTPET_IMAGE_RESULT Local_ResetImage(void)
     l_tImageEnv.ulTotal = 0U;
     l_tImageEnv.ulReceived = 0U;
     l_tImageEnv.usPendingLength = 0U;
+    l_tImageEnv.ucFormat = AGENTPET_IMAGE_FORMAT_NONE;
     l_tImageEnv.bImageAvailable = false;
     (void)memset(l_tImageEnv.aImageMd5, 0, AGENTPET_IMAGE_MD5_SIZE);
     l_tImageEnv.ulGeneration++;
@@ -742,6 +1018,11 @@ void AGENTPETIMAGE_Init(void)
     {
         (void)rename(AGENTPET_IMAGE_BACKUP_PATH, AGENTPET_IMAGE_PATH);
     }
+    if ((0 != stat(AGENTPET_IMAGE_PATH, &tStatus)) &&
+        (0 == stat(AGENTPET_IMAGE_LEGACY_PATH, &tStatus)))
+    {
+        (void)rename(AGENTPET_IMAGE_LEGACY_PATH, AGENTPET_IMAGE_PATH);
+    }
     (void)unlink(AGENTPET_IMAGE_TEMP_PATH);
     l_tImageEnv.ulTotal = 0U;
     l_tImageEnv.ulReceived = 0U;
@@ -749,13 +1030,19 @@ void AGENTPETIMAGE_Init(void)
     l_tImageEnv.ulCalculatedCrc = AGENTPET_IMAGE_CRC32_INIT;
     l_tImageEnv.usPendingLength = 0U;
     l_tImageEnv.bImageAvailable = (0 == stat(AGENTPET_IMAGE_PATH, &tStatus));
+    l_tImageEnv.ucFormat = l_tImageEnv.bImageAvailable ?
+        Local_DetectImageFormat(AGENTPET_IMAGE_PATH) :
+        AGENTPET_IMAGE_FORMAT_NONE;
     if (l_tImageEnv.bImageAvailable &&
         (AGENTPET_IMAGE_RESULT_ACCEPTED !=
-         Local_ValidateJpeg(AGENTPET_IMAGE_PATH)))
+         Local_ValidateImage(
+             AGENTPET_IMAGE_PATH,
+             l_tImageEnv.ucFormat)))
     {
-        LOG_E("Persistent mascot JPEG is unsafe; removing it");
+        LOG_E("Persistent mascot image is unsafe; removing it");
         (void)unlink(AGENTPET_IMAGE_PATH);
         l_tImageEnv.bImageAvailable = false;
+        l_tImageEnv.ucFormat = AGENTPET_IMAGE_FORMAT_NONE;
     }
     (void)memset(l_tImageEnv.aImageMd5, 0, AGENTPET_IMAGE_MD5_SIZE);
     if (l_tImageEnv.bImageAvailable &&
@@ -866,6 +1153,9 @@ void AGENTPETIMAGE_ResetTransfer(void)
         l_tImageEnv.ulTotal = 0U;
         l_tImageEnv.ulReceived = 0U;
         l_tImageEnv.usPendingLength = 0U;
+        l_tImageEnv.ucFormat = l_tImageEnv.bImageAvailable ?
+            Local_DetectImageFormat(AGENTPET_IMAGE_PATH) :
+            AGENTPET_IMAGE_FORMAT_NONE;
         l_tImageEnv.eState = l_tImageEnv.bImageAvailable ?
             AGENTPET_IMAGE_READY : AGENTPET_IMAGE_IDLE;
         l_tImageEnv.eLastResult = AGENTPET_IMAGE_RESULT_ACCEPTED;
@@ -1010,14 +1300,21 @@ AGENTPET_IMAGE_RESULT AGENTPETIMAGE_ProcessFrame(
  */
 bool AGENTPETIMAGE_GetStatus(AGENTPET_IMAGE_STATUS *pStatus)
 {
+    bool bLocked;
+
     if (NULL == pStatus)
     {
         return false;
     }
 
+    bLocked = false;
     if (l_bImageWorkerReady)
     {
-        (void)rt_mutex_take(&l_tImageMutex, RT_WAITING_FOREVER);
+        if (RT_EOK != rt_mutex_take(&l_tImageMutex, 0))
+        {
+            return false;
+        }
+        bLocked = true;
     }
     pStatus->eState = l_tImageEnv.eState;
     pStatus->bImageAvailable = l_tImageEnv.bImageAvailable;
@@ -1025,7 +1322,8 @@ bool AGENTPETIMAGE_GetStatus(AGENTPET_IMAGE_STATUS *pStatus)
     pStatus->ulTotal = l_tImageEnv.ulTotal;
     pStatus->ulGeneration = l_tImageEnv.ulGeneration;
     pStatus->eLastResult = l_tImageEnv.eLastResult;
-    if (l_bImageWorkerReady)
+    pStatus->ucFormat = l_tImageEnv.ucFormat;
+    if (bLocked)
     {
         (void)rt_mutex_release(&l_tImageMutex);
     }
@@ -1042,18 +1340,25 @@ bool AGENTPETIMAGE_GetStatus(AGENTPET_IMAGE_STATUS *pStatus)
  */
 bool AGENTPETIMAGE_GetDigest(bool *pAvailable, uint8_t *pDigest)
 {
+    bool bLocked;
+
     if ((NULL == pAvailable) || (NULL == pDigest))
     {
         return false;
     }
 
+    bLocked = false;
     if (l_bImageWorkerReady)
     {
-        (void)rt_mutex_take(&l_tImageMutex, RT_WAITING_FOREVER);
+        if (RT_EOK != rt_mutex_take(&l_tImageMutex, 0))
+        {
+            return false;
+        }
+        bLocked = true;
     }
     *pAvailable = l_tImageEnv.bImageAvailable;
     (void)memcpy(pDigest, l_tImageEnv.aImageMd5, AGENTPET_IMAGE_MD5_SIZE);
-    if (l_bImageWorkerReady)
+    if (bLocked)
     {
         (void)rt_mutex_release(&l_tImageMutex);
     }
