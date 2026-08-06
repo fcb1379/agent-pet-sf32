@@ -8,34 +8,16 @@
 #include "watch_settings.h"
 
 static badge_transfer_snapshot_t g_badge;
-static watch_settings_snapshot_t g_settings;
 static watch_alarm_snapshot_t g_alarm;
+static watch_settings_snapshot_t g_settings;
 static rt_err_t g_date_result;
 static rt_err_t g_time_result;
 static rt_err_t g_settings_result;
 static int g_settings_calls;
 static int g_clear_calls;
 static int g_cancel_calls;
-
-rt_err_t watch_alarm_set(uint8_t enabled, uint8_t hour, uint8_t minute)
-{
-    g_alarm.alarm_enabled = enabled;
-    g_alarm.alarm_hour = hour;
-    g_alarm.alarm_minute = minute;
-    return RT_EOK;
-}
-
-rt_err_t watch_alarm_dismiss(void)
-{
-    g_alarm.alarm_ringing = 0;
-    return RT_EOK;
-}
-
-rt_err_t watch_alarm_get_snapshot(watch_alarm_snapshot_t *snapshot)
-{
-    *snapshot = g_alarm;
-    return RT_EOK;
-}
+static int g_alarm_set_calls;
+static int g_alarm_dismiss_calls;
 
 rt_err_t set_date(rt_uint32_t year, rt_uint32_t month, rt_uint32_t day)
 {
@@ -66,6 +48,31 @@ int badge_transfer_cancel(void)
     return RT_EOK;
 }
 
+rt_err_t watch_alarm_get_snapshot(watch_alarm_snapshot_t *snapshot)
+{
+    assert(NULL != snapshot);
+    *snapshot = g_alarm;
+    return RT_EOK;
+}
+
+rt_err_t watch_alarm_set(uint8_t enabled, uint8_t hour, uint8_t minute)
+{
+    assert(23U >= hour);
+    assert(59U >= minute);
+    g_alarm_set_calls++;
+    g_alarm.alarm_enabled = enabled;
+    g_alarm.alarm_hour = hour;
+    g_alarm.alarm_minute = minute;
+    return RT_EOK;
+}
+
+rt_err_t watch_alarm_dismiss(void)
+{
+    g_alarm_dismiss_calls++;
+    g_alarm.alarm_ringing = 0U;
+    return RT_EOK;
+}
+
 rt_err_t watch_settings_get_snapshot(watch_settings_snapshot_t *snapshot)
 {
     *snapshot = g_settings;
@@ -87,6 +94,11 @@ static void expect_response(const char *request, const char *expected)
     char response[64] = {0};
 
     assert(watch_protocol_handle_request(request, response, sizeof(response)) == 1);
+    if (0 != strcmp(response, expected))
+    {
+        (void)fprintf(stderr, "request=%s expected=%s actual=%s\n",
+                      request, expected, response);
+    }
     assert(strcmp(response, expected) == 0);
     assert(strlen(response) < sizeof(response));
 }
@@ -96,7 +108,8 @@ int main(void)
     char response[64] = {0};
 
     assert(watch_protocol_handle_request("badge", response, sizeof(response)) == 0);
-    expect_response("HWS1|1|HELLO", "HWS1|1|OK|model=HS52;cap=TIME,BADGE,STATE,ALARM,TIME_REQ");
+    expect_response("HWS1|1|HELLO",
+                    "HWS1|1|OK|model=HS52;cap=TIME,BADGE,STATE,ALARM,TIME_REQ");
     expect_response("HWS1|2|TIME|1700000000,480", "HWS1|2|OK|time=20231115T061320;tz=480;p=1");
     assert(g_settings_calls == 1);
 
@@ -125,10 +138,19 @@ int main(void)
     assert(g_clear_calls == 1 && g_cancel_calls == 1);
 
     expect_response("HWS1|11|BADGE|STATUS|extra", "HWS1|11|ERR|1");
-    expect_response("HWS1|12|ALARM|ON,7,30", "HWS1|12|OK|enabled=1;time=0730;ring=0");
-    expect_response("HWS1|13|ALARM|OFF", "HWS1|13|OK|enabled=0;time=0730;ring=0");
-    g_alarm.alarm_ringing = 1;
-    expect_response("HWS1|14|ALARM|DISMISS", "HWS1|14|OK|enabled=0;time=0730;ring=0");
+    expect_response("HWS1|12|ALARM|STATUS",
+                    "HWS1|12|OK|enabled=0;time=0000;ring=0");
+    expect_response("HWS1|13|ALARM|ON,7,30",
+                    "HWS1|13|OK|enabled=1;time=0730;ring=0");
+    assert(1 == g_alarm_set_calls);
+    g_alarm.alarm_ringing = 1U;
+    expect_response("HWS1|14|ALARM|DISMISS",
+                    "HWS1|14|OK|enabled=1;time=0730;ring=0");
+    assert(1 == g_alarm_dismiss_calls);
+    expect_response("HWS1|15|ALARM|OFF",
+                    "HWS1|15|OK|enabled=0;time=0730;ring=0");
+    assert(2 == g_alarm_set_calls);
+    expect_response("HWS1|16|ALARM|ON,24,00", "HWS1|16|ERR|3");
     expect_response("HWS1|999999|HELLO", "HWS1|0|ERR|1");
     puts("watch protocol host tests passed");
     return 0;

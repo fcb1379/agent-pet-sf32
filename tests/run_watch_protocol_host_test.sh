@@ -1,4 +1,5 @@
 #!/bin/sh
+# Keep this host-test entry point POSIX-shell compatible.
 set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)

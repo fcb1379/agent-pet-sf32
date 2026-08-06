@@ -4,8 +4,13 @@
 #include <stddef.h>
 #include <string.h>
 
+#if defined(_MSC_VER)
+typedef char QUEST_GARDEN_STATIC_STATE_WITHIN_BUDGET[
+    (sizeof(QUEST_GARDEN) <= 192U) ? 1 : -1];
+#else
 _Static_assert(sizeof(QUEST_GARDEN) <= 192U,
                "Quest Garden static state exceeds the RAM budget");
+#endif
 
 /*
  * QUESTGARDEN_SaturatingIncrement

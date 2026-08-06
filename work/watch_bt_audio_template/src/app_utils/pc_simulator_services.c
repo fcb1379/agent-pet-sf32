@@ -86,6 +86,17 @@ static badge_transfer_snapshot_t l_tBadge =
 static AGENTPET_BLE_STATUS l_tAgentStatus;
 static bool l_bAgentInitialized;
 
+/***************************
+ * rt_spi_msd_init: report that removable SPI storage is unavailable in the
+ * PC simulator. Hardware builds link the real SPI mass-storage driver.
+ * Parameters: none.
+ * Return: -RT_ENOSYS because the simulator has no SPI TF-card controller.
+ ***************************/
+int rt_spi_msd_init(void)
+{
+    return -RT_ENOSYS;
+}
+
 /* Update the visible timer from elapsed simulator ticks.
  * Parameters: none.
  * Return value: none. */
