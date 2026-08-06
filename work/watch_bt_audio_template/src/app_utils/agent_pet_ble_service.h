@@ -34,5 +34,6 @@ void AGENTPETBLE_Init(void);
 bool AGENTPETBLE_RegisterService(void);
 void AGENTPETBLE_SetConnected(bool bConnected);
 bool AGENTPETBLE_GetStatus(AGENTPET_BLE_STATUS *pStatus);
+void AGENTPETBLE_NotifyMerit(void);
 
 #endif /* AGENT_PET_BLE_SERVICE_H */

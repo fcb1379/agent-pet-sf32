@@ -473,6 +473,11 @@ bool AGENTPETBLE_GetStatus(AGENTPET_BLE_STATUS *pStatus)
     return true;
 }
 
+void AGENTPETBLE_NotifyMerit(void)
+{
+    return;
+}
+
 /***************************
  * audio_server_get_max_volume: 获取PC模拟器音量上限
  * 参数：无

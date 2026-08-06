@@ -4,7 +4,7 @@ from building import *
 import os
 
 cwd = GetCurrentDir()
-src = ['main.c', 'noise_monitor.c']
+src = ['main.c', 'noise_monitor.c', 'agent_pet_merit.c']
 
 if GetDepend('BSP_USING_PC_SIMULATOR'):
     # The full UI target needs stable service state but has no BLE, flash,

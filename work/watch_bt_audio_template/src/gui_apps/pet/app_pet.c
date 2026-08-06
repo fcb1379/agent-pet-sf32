@@ -3,13 +3,10 @@
 #include "littlevgl2rtt.h"
 #include "app_mem.h"
 #include "agent_pet_ble_service.h"
+#include "agent_pet_merit.h"
 #if !defined(BSP_USING_PC_SIMULATOR) || !defined(AGENT_PET_STANDALONE_PREVIEW)
     #include "lv_ext_resource_manager.h"
     #include "gui_app_fwk.h"
-#endif
-#ifndef BSP_USING_PC_SIMULATOR
-    #include <time.h>
-    #include "share_prefs.h"
 #endif
 #if defined(AGENT_PET_USING_IMU) && !defined(BSP_USING_PC_SIMULATOR)
     #include "pet_imu.h"
@@ -56,11 +53,6 @@ LV_IMG_DECLARE(agent_pet_merit_plus_one);
 #define PET_MOTION_SWITCH_Y (8)
 #define PET_MOTION_SWITCH_WIDTH (52)
 #define PET_MOTION_SWITCH_HEIGHT (26)
-#ifndef BSP_USING_PC_SIMULATOR
-    #define PET_PREF_NAME "agent_pet_daily_merit_pref_v1__"
-    #define PET_PREF_DAY_KEY "merit_day"
-    #define PET_PREF_COUNT_KEY "merit_count"
-#endif
 
 #if defined(AGENT_PET_USING_IMU) && !defined(BSP_USING_PC_SIMULATOR)
 /* PET_MOTION_STATE: 体感敲木鱼动作识别状态。 */
@@ -121,15 +113,12 @@ typedef struct
     lv_timer_t *motion_timer;
     lv_obj_t *motion_label;
     lv_obj_t *motion_switch;
-#ifndef BSP_USING_PC_SIMULATOR
-    share_prefs_t *pPrefs;
-#endif
     uint32_t ulRenderedGeneration;
     uint32_t ulRenderedWoodenFishGeneration;
     uint32_t ulRenderedImageGeneration;
+    uint32_t ulRenderedMeritGeneration;
     uint32_t ulLastHitTick;
     uint32_t ulMeritCount;
-    uint32_t ulMeritDay;
     uint8_t ucRenderedState;
     uint8_t ucRenderedImageProgress;
     AGENTPET_IMAGE_STATE eRenderedImageState;
@@ -1167,11 +1156,25 @@ static void PET_RefreshImageProgress(const AGENTPET_IMAGE_STATUS *pStatus)
 static void PET_RefreshStatus(lv_timer_t *pTimer)
 {
     AGENTPET_BLE_STATUS tStatus;
+    AGENTPET_MERIT_SNAPSHOT tMeritSnapshot;
     const AGENTPET_SESSION *pSession;
     uint32_t ulPendingHitCount;
     uint8_t ucHitIndex;
 
     (void)pTimer;
+    if (AGENTPETMERIT_GetSnapshot(&tMeritSnapshot) &&
+        (g_pet_ui.ulRenderedMeritGeneration != tMeritSnapshot.ulGeneration))
+    {
+        g_pet_ui.ulMeritCount = tMeritSnapshot.ulCount;
+        g_pet_ui.ulRenderedMeritGeneration = tMeritSnapshot.ulGeneration;
+        if (NULL != g_pet_ui.daily_summary)
+        {
+            lv_label_set_text_fmt(
+                g_pet_ui.daily_summary,
+                "Today's merit  %lu",
+                (unsigned long)g_pet_ui.ulMeritCount);
+        }
+    }
     if (!AGENTPETBLE_GetStatus(&tStatus))
     {
         return;
@@ -1423,83 +1426,20 @@ static void PET_ApplyStateAnimation(uint8_t ucState)
 }
 
 /*
- * PET_CurrentDay
- * Function: Build a stable UTC day identifier for daily merit rollover.
- */
-static uint32_t PET_CurrentDay(void)
-{
-#ifndef BSP_USING_PC_SIMULATOR
-    time_t tNow;
-    struct tm tDate;
-
-    tNow = time(NULL);
-    if ((time_t)86400 > tNow)
-    {
-        return 0U;
-    }
-
-    gmtime_r(&tNow, &tDate);
-    return ((uint32_t)(tDate.tm_year + 1900) * 1000U) +
-           (uint32_t)tDate.tm_yday;
-#else
-    return 0U;
-#endif
-}
-
-/*
  * PET_LoadMerit
  * Function: Restore today's merit count from product storage on hardware.
  */
 static void PET_LoadMerit(void)
 {
-    g_pet_ui.ulMeritDay = PET_CurrentDay();
+    AGENTPET_MERIT_SNAPSHOT tMeritSnapshot;
+
     g_pet_ui.ulMeritCount = 0U;
-
-#ifndef BSP_USING_PC_SIMULATOR
-    g_pet_ui.pPrefs = share_prefs_open(PET_PREF_NAME, SHAREPREFS_MODE_PRIVATE);
-    if (NULL != g_pet_ui.pPrefs)
+    AGENTPETMERIT_Init();
+    if (AGENTPETMERIT_GetSnapshot(&tMeritSnapshot))
     {
-        uint32_t ulSavedDay;
-
-        ulSavedDay = (uint32_t)share_prefs_get_int(
-            g_pet_ui.pPrefs, PET_PREF_DAY_KEY, 0);
-        if ((0U != g_pet_ui.ulMeritDay) &&
-            (g_pet_ui.ulMeritDay == ulSavedDay))
-        {
-            g_pet_ui.ulMeritCount = (uint32_t)share_prefs_get_int(
-                g_pet_ui.pPrefs, PET_PREF_COUNT_KEY, 0);
-        }
+        g_pet_ui.ulMeritCount = tMeritSnapshot.ulCount;
+        g_pet_ui.ulRenderedMeritGeneration = tMeritSnapshot.ulGeneration;
     }
-#endif
-
-    return;
-}
-
-/*
- * PET_SaveMerit
- * Function: Save once after a click burst to reduce Flash wear.
- */
-static void PET_SaveMerit(void)
-{
-#ifndef BSP_USING_PC_SIMULATOR
-    rt_err_t tDayResult;
-    rt_err_t tCountResult;
-
-    if (NULL == g_pet_ui.pPrefs)
-    {
-        return;
-    }
-
-    tDayResult = share_prefs_set_int(
-        g_pet_ui.pPrefs, PET_PREF_DAY_KEY, (int32_t)g_pet_ui.ulMeritDay);
-    tCountResult = share_prefs_set_int(
-        g_pet_ui.pPrefs, PET_PREF_COUNT_KEY, (int32_t)g_pet_ui.ulMeritCount);
-    if ((RT_EOK != tDayResult) || (RT_EOK != tCountResult))
-    {
-        rt_kprintf("agent pet: save merit failed %d/%d\n",
-                   tDayResult, tCountResult);
-    }
-#endif
 
     return;
 }
@@ -1608,7 +1548,8 @@ static void PET_PlayWoodenFishAnimation(const lv_point_t *pPoint)
     ulInterval = (0U == g_pet_ui.ulLastHitTick) ?
         0xFFFFFFFFUL : lv_tick_elaps(g_pet_ui.ulLastHitTick);
     g_pet_ui.ulLastHitTick = lv_tick_get();
-    g_pet_ui.ulMeritCount++;
+    g_pet_ui.ulMeritCount = AGENTPETMERIT_Increment();
+    AGENTPETBLE_NotifyMerit();
     if (NULL != g_pet_ui.daily_summary)
     {
         lv_label_set_text_fmt(
@@ -1954,21 +1895,7 @@ static void pet_on_stop(void)
         lv_timer_del(g_pet_ui.daily_timer);
         g_pet_ui.daily_timer = NULL;
     }
-#ifndef BSP_USING_PC_SIMULATOR
-    if (NULL != g_pet_ui.pPrefs)
-    {
-        rt_err_t tCloseResult;
-
-        PET_SaveMerit();
-
-        tCloseResult = share_prefs_close(g_pet_ui.pPrefs);
-        if (RT_EOK != tCloseResult)
-        {
-            rt_kprintf("agent pet: close merit storage failed %d\n", tCloseResult);
-        }
-        g_pet_ui.pPrefs = NULL;
-    }
-#endif
+    AGENTPETMERIT_Save();
     if (g_pet_ui.root)
     {
 #if LV_USE_GIF
