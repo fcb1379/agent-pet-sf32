@@ -6,6 +6,7 @@ tests/watch_protocol_host/watch_protocol_host_test.c
   s_c60c24ac31a1b9::t_eca0fb5311b371 97-101
   s_c60c24ac31a1b9::t_7e73f83cfff8bb 111-112
   s_c60c24ac31a1b9::t_7da39af4f7221e 6,11,19-20,51-75,141-153
+  s_c60c24ac31a1b9::t_12f3cdee1b0b6f 12
 .gitattributes
   s_c60c24ac31a1b9::t_02149c8388a5f0 1
 work/watch_bt_audio_template/src/gui_apps/pet/agent_quest_garden.c
