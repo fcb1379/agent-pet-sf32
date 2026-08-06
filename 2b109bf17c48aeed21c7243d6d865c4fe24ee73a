@@ -1,0 +1,41 @@
+tests/watch_protocol_host/include/rtthread.h
+  s_c60c24ac31a1b9::t_02149c8388a5f0 11
+tests/run_watch_protocol_host_test.sh
+  s_c60c24ac31a1b9::t_02149c8388a5f0 2
+tests/watch_protocol_host/watch_protocol_host_test.c
+  s_c60c24ac31a1b9::t_eca0fb5311b371 97-101
+  s_c60c24ac31a1b9::t_7e73f83cfff8bb 111-112
+  s_c60c24ac31a1b9::t_7da39af4f7221e 6,11,19-20,51-75,141-153
+  s_c60c24ac31a1b9::t_12f3cdee1b0b6f 12
+.gitattributes
+  s_c60c24ac31a1b9::t_02149c8388a5f0 1
+work/watch_bt_audio_template/src/gui_apps/pet/agent_quest_garden.c
+  s_c60c24ac31a1b9::t_722b5f7d7d59ed 7-10,13
+work/watch_bt_audio_template/src/app_utils/pc_simulator_services.c
+  s_c60c24ac31a1b9::t_22423c0741af9c 89-97
+  s_cf3d962977cbc6::t_5a174433cdad4c 98-99
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "2b109bf17c48aeed21c7243d6d865c4fe24ee73a",
+  "prompts": {},
+  "sessions": {
+    "s_c60c24ac31a1b9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd614-87fb-78e1-9670-ac384154591f",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    },
+    "s_cf3d962977cbc6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc6f1-466d-7dd3-a11f-a9c9a40e0923",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}
