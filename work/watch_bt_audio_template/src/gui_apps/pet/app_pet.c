@@ -26,7 +26,7 @@ LV_IMG_DECLARE(agent_pet_merit_plus_one);
 #define PET_MASCOT_SIZE (192)
 #define PET_MASCOT_X ((LV_HOR_RES_MAX - PET_MASCOT_SIZE) / 2)
 #define PET_MASCOT_Y (((LV_VER_RES_MAX - PET_MASCOT_SIZE) / 2) - 12)
-#define PET_GIF_MIN_FRAME_MS (125U)
+#define PET_GIF_MIN_FRAME_MS (20U)
 #define PET_WOODEN_FISH_IDLE_MS (1700U)
 #define PET_DAILY_SUMMARY_MS (1900U)
 #define PET_TURBO_INTERVAL_MS (180U)
@@ -138,6 +138,7 @@ typedef struct
 #if LV_USE_GIF
     lv_img_dsc_t tCustomGif;
     uint8_t *pCustomGifData;
+    uint8_t *pCustomGifPixels;
 #endif
     bool bRenderedConnected;
     bool bRenderedCustomImage;
@@ -614,6 +615,7 @@ static void PET_AdvanceCustomGif(lv_timer_t *pTimer)
 
     if ((NULL == pTimer) ||
         (NULL == g_pet_ui.pCustomGifDecoder) ||
+        (NULL == g_pet_ui.pCustomGifPixels) ||
         (NULL == g_pet_ui.mascot_gif))
     {
         return;
@@ -641,9 +643,13 @@ static void PET_AdvanceCustomGif(lv_timer_t *pTimer)
         return;
     }
 
+    rt_memcpy(
+        g_pet_ui.pCustomGifPixels,
+        g_pet_ui.pCustomGifDecoder->canvas,
+        g_pet_ui.tCustomGif.data_size);
     gd_render_frame(
         g_pet_ui.pCustomGifDecoder,
-        (uint8_t *)g_pet_ui.tCustomGif.data);
+        g_pet_ui.pCustomGifPixels);
     lv_img_cache_invalidate_src(&g_pet_ui.tCustomGif);
     lv_obj_invalidate(g_pet_ui.mascot_gif);
     lv_timer_set_period(pTimer, PET_CustomGifDelay());
@@ -673,6 +679,12 @@ static void PET_ReleaseCustomGif(void)
     {
         gd_close_gif(g_pet_ui.pCustomGifDecoder);
         g_pet_ui.pCustomGifDecoder = NULL;
+    }
+    if (NULL != g_pet_ui.pCustomGifPixels)
+    {
+        lv_img_cache_invalidate_src(&g_pet_ui.tCustomGif);
+        app_cache_free(g_pet_ui.pCustomGifPixels);
+        g_pet_ui.pCustomGifPixels = NULL;
     }
     if (NULL != g_pet_ui.pCustomGifData)
     {
@@ -796,10 +808,24 @@ static bool PET_LoadCustomGif(lv_img_header_t *pHeader)
     g_pet_ui.tCustomGif.header = *pHeader;
     g_pet_ui.tCustomGif.data_size = (uint32_t)pHeader->w * pHeader->h *
         LV_IMG_PX_SIZE_ALPHA_BYTE;
-    g_pet_ui.tCustomGif.data = g_pet_ui.pCustomGifDecoder->canvas;
+    g_pet_ui.pCustomGifPixels = app_cache_alloc(
+        g_pet_ui.tCustomGif.data_size,
+        IMAGE_CACHE_PSRAM);
+    if (NULL == g_pet_ui.pCustomGifPixels)
+    {
+        rt_kprintf("agent pet: custom GIF display allocation failed %lu\n",
+                   (unsigned long)g_pet_ui.tCustomGif.data_size);
+        PET_ReleaseCustomGif();
+        return false;
+    }
+    g_pet_ui.tCustomGif.data = g_pet_ui.pCustomGifPixels;
+    rt_memcpy(
+        g_pet_ui.pCustomGifPixels,
+        g_pet_ui.pCustomGifDecoder->canvas,
+        g_pet_ui.tCustomGif.data_size);
     gd_render_frame(
         g_pet_ui.pCustomGifDecoder,
-        (uint8_t *)g_pet_ui.tCustomGif.data);
+        g_pet_ui.pCustomGifPixels);
     g_pet_ui.mascot_gif = lv_img_create(g_pet_ui.stage);
     if (NULL == g_pet_ui.mascot_gif)
     {
