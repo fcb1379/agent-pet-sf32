@@ -1,0 +1,19 @@
+docs/2026-08-06-agent-quest-garden-implementation-plan.md
+  s_c60c24ac31a1b9::t_49fccfcc983f43 1-173
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "f468eeb9c392c72c06cb5729d7be976f40696208",
+  "prompts": {},
+  "sessions": {
+    "s_c60c24ac31a1b9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd614-87fb-78e1-9670-ac384154591f",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}
