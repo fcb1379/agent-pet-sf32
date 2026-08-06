@@ -1,0 +1,51 @@
+work/watch_bt_audio_template/src/app_utils/agent_pet_merit.h
+  s_285146986cdcdb::t_b626730b92e75a 28
+  s_285146986cdcdb::t_d97c4b538d7124 1-27,29-30
+work/watch_bt_audio_template/src/gui_apps/pet/app_pet.c
+  s_285146986cdcdb::t_d97c4b538d7124 6,119,1434,1436-1438,1440-1441,1551
+  s_285146986cdcdb::t_bd451d1e41eda0 1159,1165-1177
+  s_285146986cdcdb::t_75c47af3f3f9d3 1898
+  s_285146986cdcdb::t_9cf3939fa34a0c 1552
+work/watch_bt_audio_template/src/app_utils/agent_pet_ble_service.c
+  s_285146986cdcdb::t_4c4b834f95b1b2 10,51-57,68-69,83-84,141-147,152,163-200,228-229,244,247-253,347,517-540,542,570,640-641
+  s_285146986cdcdb::t_9cf3939fa34a0c 70,85-88,148-149,151,153-159,162,201-227,245-246,543-553,571-572,636-639,642-677
+  s_285146986cdcdb::t_00a42307c77b51 140
+  s_285146986cdcdb::t_cef25bfa7782ed 150
+  s_285146986cdcdb::t_72bc744db01576 541
+work/watch_bt_audio_template/src/app_utils/agent_pet_ble_service.h
+  s_285146986cdcdb::t_9cf3939fa34a0c 37
+work/watch_bt_audio_template/src/app_utils/pc_simulator_services.c
+  s_285146986cdcdb::t_d710c85c92a893 476
+  s_abbb2bd46b4afc::t_0df1b06ba154fd 477-480
+work/watch_bt_audio_template/src/app_utils/agent_pet_merit.c
+  s_285146986cdcdb::t_d97c4b538d7124 1-111,114-116,118-333
+  s_285146986cdcdb::t_b626730b92e75a 112-113,117
+work/watch_bt_audio_template/src/app_utils/SConscript
+  s_285146986cdcdb::t_d97c4b538d7124 7
+work/watch_bt_audio_template/src/gui_apps/watch_demo.c
+  s_285146986cdcdb::t_a92ad1234ae4b1 29,544
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "f9655817043fc61c359840af8363578273c9b4b3",
+  "prompts": {},
+  "sessions": {
+    "s_285146986cdcdb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd167-97e3-7830-af9f-4e8a198f25b3",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    },
+    "s_abbb2bd46b4afc": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc6ed-063f-7a23-889d-19eb899eb590",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}
