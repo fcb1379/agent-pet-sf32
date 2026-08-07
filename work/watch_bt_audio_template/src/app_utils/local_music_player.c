@@ -17,6 +17,7 @@
 
 #include "audio_server.h"
 #include "audio_mp3ctrl.h"
+#include "audio_diagnostics.h"
 #include "bt_audio_sink.h"
 #include "local_music_player.h"
 #include "watch_settings.h"
@@ -28,12 +29,18 @@
 #define LOCAL_MUSIC_DEFAULT_PATH "/16k.wav"
 #define LOCAL_MUSIC_QUEUE_DEPTH 8
 #define LOCAL_MUSIC_THREAD_STACK 3072
+#define LOCAL_MUSIC_EFFECT_BUFFER_SIZE (2048U)
+#define LOCAL_MUSIC_EFFECT_CACHE_SIZE (8192U)
+#define LOCAL_MUSIC_EFFECT_WRITE_TIMEOUT_MS (1000U)
+#define LOCAL_MUSIC_EFFECT_WRITE_RETRY_MS (5U)
+#define LOCAL_MUSIC_EFFECT_MIN_DRAIN_MS (50U)
+#define LOCAL_MUSIC_EFFECT_MAX_DRAIN_MS (300U)
+#define LOCAL_MUSIC_WAV_HEADER_SIZE (44U)
 
 typedef enum
 {
     LOCAL_MUSIC_CMD_PLAY = 0,
     LOCAL_MUSIC_CMD_PLAY_EFFECT,
-    LOCAL_MUSIC_CMD_STOP_EFFECT,
     LOCAL_MUSIC_CMD_STOP,
     LOCAL_MUSIC_CMD_PAUSE,
     LOCAL_MUSIC_CMD_RESUME,
@@ -43,19 +50,17 @@ typedef struct
 {
     local_music_cmd_t cmd;
     uint32_t loop;
-    uint32_t ulGeneration;
     char path[LOCAL_MUSIC_PATH_LENGTH];
 } local_music_msg_t;
 
 static mp3ctrl_handle g_music_handle;
-static mp3ctrl_handle g_pEffectHandle; /* Short-effect decoder handle; NULL when idle; used only by the audio worker; never access it from an ISR. */
 static rt_mq_t g_music_mq;
 static rt_thread_t g_music_thread;
 static LOCAL_MUSIC_STATE g_music_state = LOCAL_MUSIC_STATE_IDLE;
 static char g_music_path[LOCAL_MUSIC_PATH_LENGTH] = LOCAL_MUSIC_DEFAULT_PATH;
 static uint32_t g_music_last_callback;
-static uint32_t g_ulEffectNextGeneration; /* Monotonic effect request ID, range 1~UINT32_MAX; prevents stale completion callbacks from closing a newer hit. */
-static uint32_t g_ulEffectActiveGeneration; /* ID of the effect handle currently open, range 0~UINT32_MAX; compared only in the audio worker. */
+static uint8_t g_aEffectBuffer[LOCAL_MUSIC_EFFECT_BUFFER_SIZE]; /* Fixed PCM transfer buffer, range 2048 bytes; avoids heap allocation and decoder-thread churn for short effects. */
+static rt_bool_t g_bEffectPending; /* Short-effect queue state, RT_TRUE while queued or playing; coalesces rapid wooden-fish hits. */
 
 static const char *local_music_state_name(LOCAL_MUSIC_STATE state)
 {
@@ -129,37 +134,6 @@ static int local_music_callback(audio_server_callback_cmt_t cmd,
     return 0;
 }
 
-/***************************
- * LOCALMUSIC_EffectCallback: Handle completion of a short sound effect.
- * Parameters:
- *   - eCmd: Audio server callback command.
- *   - pCallbackData: Playback generation encoded as callback data.
- *   - ulReserved: Reserved by the audio server.
- * Return value: Always returns 0.
- ***************************/
-static int LOCALMUSIC_EffectCallback(audio_server_callback_cmt_t eCmd,
-                                     void *pCallbackData,
-                                     uint32_t ulReserved)
-{
-    local_music_msg_t tMessage;
-    rt_err_t tResult;
-
-    (void)ulReserved;
-    if ((as_callback_cmd_play_to_end == eCmd) && (NULL != g_music_mq))
-    {
-        rt_memset(&tMessage, 0, sizeof(tMessage));
-        tMessage.cmd = LOCAL_MUSIC_CMD_STOP_EFFECT;
-        tMessage.ulGeneration = (uint32_t)(uintptr_t)pCallbackData;
-        tResult = rt_mq_send(g_music_mq, &tMessage, sizeof(tMessage));
-        if (RT_EOK != tResult)
-        {
-            LOG_W("effect completion queue failed: %d", tResult);
-        }
-    }
-
-    return 0;
-}
-
 static void local_music_close_current(void)
 {
     if (g_music_handle)
@@ -170,25 +144,228 @@ static void local_music_close_current(void)
 }
 
 /***************************
- * LOCALMUSIC_CloseEffect: Close the current short sound-effect decoder.
- * Parameters: None.
- * Return value: None.
+ * LOCALMUSIC_ReadLe16: Read an unsigned 16-bit little-endian value.
+ * Parameters:
+ *   - pData: Pointer to at least two bytes of input data.
+ * Return value: Decoded unsigned value.
  ***************************/
-static void LOCALMUSIC_CloseEffect(void)
+static uint16_t LOCALMUSIC_ReadLe16(const uint8_t *pData)
 {
-    int lRetVal;
+    uint16_t usValue;
 
-    if (NULL != g_pEffectHandle)
+    RT_ASSERT(NULL != pData);
+    usValue = (uint16_t)pData[0] | ((uint16_t)pData[1] << 8U);
+
+    return usValue;
+}
+
+/***************************
+ * LOCALMUSIC_ReadLe32: Read an unsigned 32-bit little-endian value.
+ * Parameters:
+ *   - pData: Pointer to at least four bytes of input data.
+ * Return value: Decoded unsigned value.
+ ***************************/
+static uint32_t LOCALMUSIC_ReadLe32(const uint8_t *pData)
+{
+    uint32_t ulValue;
+
+    RT_ASSERT(NULL != pData);
+    ulValue = (uint32_t)pData[0] |
+              ((uint32_t)pData[1] << 8U) |
+              ((uint32_t)pData[2] << 16U) |
+              ((uint32_t)pData[3] << 24U);
+
+    return ulValue;
+}
+
+/***************************
+ * LOCALMUSIC_PlayPcmEffect: Stream a canonical PCM WAV file to the speaker.
+ * Parameters:
+ *   - pPath: Absolute file-system path of the short PCM WAV effect.
+ * Return value: RT_EOK on success, otherwise an RT-Thread error code.
+ ***************************/
+static rt_err_t LOCALMUSIC_PlayPcmEffect(const char *pPath)
+{
+#ifdef RT_USING_DFS
+    audio_parameter_t tParameters;
+    audio_client_t pClient;
+    uint8_t aHeader[LOCAL_MUSIC_WAV_HEADER_SIZE];
+    uint32_t ulSampleRate;
+    uint32_t ulByteRate;
+    uint32_t ulDataRemaining;
+    uint32_t ulBytesPlayed;
+    uint32_t ulDrainMs;
+    uint32_t ulLastProgressMs;
+    uint32_t ulOffset;
+    uint16_t usChannels;
+    uint16_t usBitsPerSample;
+    int lFile;
+    int lReadSize;
+    int lWriteSize;
+    rt_err_t tResult;
+
+    if (NULL == pPath)
     {
-        lRetVal = mp3ctrl_close(g_pEffectHandle);
-        g_pEffectHandle = NULL;
-        if (0 != lRetVal)
-        {
-            LOG_W("effect close failed: %d", lRetVal);
-        }
+        return -RT_EINVAL;
     }
 
-    return;
+    lFile = open(pPath, O_RDONLY | O_BINARY);
+    if (0 > lFile)
+    {
+        LOG_E("effect file not found: %s", pPath);
+        AUDIODIAG_SetPhase(AUDIO_DIAG_PHASE_EFFECT_ERROR);
+        return -RT_ERROR;
+    }
+    AUDIODIAG_SetPhase(AUDIO_DIAG_PHASE_FILE_OPENED);
+
+    tResult = -RT_ERROR;
+    pClient = NULL;
+    lReadSize = read(lFile, aHeader, sizeof(aHeader));
+    if ((int)sizeof(aHeader) != lReadSize)
+    {
+        LOG_E("effect header read failed: %s", pPath);
+        goto cleanup;
+    }
+    if ((0 != memcmp(&aHeader[0], "RIFF", 4U)) ||
+        (0 != memcmp(&aHeader[8], "WAVE", 4U)) ||
+        (0 != memcmp(&aHeader[12], "fmt ", 4U)) ||
+        (1U != LOCALMUSIC_ReadLe16(&aHeader[20])) ||
+        (0 != memcmp(&aHeader[36], "data", 4U)))
+    {
+        LOG_E("effect WAV format unsupported: %s", pPath);
+        goto cleanup;
+    }
+
+    usChannels = LOCALMUSIC_ReadLe16(&aHeader[22]);
+    ulSampleRate = LOCALMUSIC_ReadLe32(&aHeader[24]);
+    ulByteRate = LOCALMUSIC_ReadLe32(&aHeader[28]);
+    usBitsPerSample = LOCALMUSIC_ReadLe16(&aHeader[34]);
+    ulDataRemaining = LOCALMUSIC_ReadLe32(&aHeader[40]);
+    if (((1U != usChannels) && (2U != usChannels)) ||
+        (16U != usBitsPerSample) ||
+        (8000U > ulSampleRate) ||
+        (48000U < ulSampleRate) ||
+        (0U == ulByteRate) ||
+        (0U == ulDataRemaining))
+    {
+        LOG_E("effect WAV parameters unsupported: rate=%lu channels=%u bits=%u",
+              ulSampleRate,
+              usChannels,
+              usBitsPerSample);
+        goto cleanup;
+    }
+    AUDIODIAG_SetPhase(AUDIO_DIAG_PHASE_HEADER_VALID);
+
+    rt_memset(&tParameters, 0, sizeof(tParameters));
+    tParameters.write_samplerate = ulSampleRate;
+    tParameters.write_cache_size = LOCAL_MUSIC_EFFECT_CACHE_SIZE;
+    tParameters.write_channnel_num = (uint8_t)usChannels;
+    tParameters.write_bits_per_sample = (uint8_t)usBitsPerSample;
+    (void)audio_server_set_private_volume(
+        AUDIO_TYPE_LOCAL_MUSIC,
+        (uint8_t)watch_settings_get_local_volume());
+    AUDIODIAG_SetPhase(AUDIO_DIAG_PHASE_AUDIO_OPEN_BEGIN);
+    pClient = audio_open(
+        AUDIO_TYPE_LOCAL_MUSIC,
+        AUDIO_TX,
+        &tParameters,
+        NULL,
+        NULL);
+    if (NULL == pClient)
+    {
+        LOG_E("effect audio open failed: %s", pPath);
+        goto cleanup;
+    }
+    AUDIODIAG_SetPhase(AUDIO_DIAG_PHASE_AUDIO_OPEN_DONE);
+
+    ulBytesPlayed = 0U;
+    while (0U < ulDataRemaining)
+    {
+        uint32_t ulReadRequest;
+
+        ulReadRequest = ulDataRemaining;
+        if ((uint32_t)sizeof(g_aEffectBuffer) < ulReadRequest)
+        {
+            ulReadRequest = (uint32_t)sizeof(g_aEffectBuffer);
+        }
+        lReadSize = read(lFile, g_aEffectBuffer, ulReadRequest);
+        if (0 >= lReadSize)
+        {
+            LOG_E("effect data read failed: %s", pPath);
+            goto cleanup;
+        }
+
+        ulOffset = 0U;
+        ulLastProgressMs = rt_tick_get_millisecond();
+        while (ulOffset < (uint32_t)lReadSize)
+        {
+            lWriteSize = audio_write(
+                pClient,
+                &g_aEffectBuffer[ulOffset],
+                (uint32_t)lReadSize - ulOffset);
+            if (0 < lWriteSize)
+            {
+                ulOffset += (uint32_t)lWriteSize;
+                ulLastProgressMs = rt_tick_get_millisecond();
+                AUDIODIAG_SetPhase(AUDIO_DIAG_PHASE_WRITE_PROGRESS);
+            }
+            else if ((0 == lWriteSize) || (-1 == lWriteSize))
+            {
+                if (LOCAL_MUSIC_EFFECT_WRITE_TIMEOUT_MS <
+                    (rt_tick_get_millisecond() - ulLastProgressMs))
+                {
+                    LOG_E("effect audio write timeout: %s", pPath);
+                    goto cleanup;
+                }
+                rt_thread_mdelay(LOCAL_MUSIC_EFFECT_WRITE_RETRY_MS);
+            }
+            else
+            {
+                LOG_E("effect audio write failed: %d", lWriteSize);
+                goto cleanup;
+            }
+        }
+
+        ulBytesPlayed += (uint32_t)lReadSize;
+        ulDataRemaining -= (uint32_t)lReadSize;
+    }
+
+    ulDrainMs = ((ulBytesPlayed * 1000U) / ulByteRate) + 20U;
+    if (LOCAL_MUSIC_EFFECT_MIN_DRAIN_MS > ulDrainMs)
+    {
+        ulDrainMs = LOCAL_MUSIC_EFFECT_MIN_DRAIN_MS;
+    }
+    if (LOCAL_MUSIC_EFFECT_MAX_DRAIN_MS < ulDrainMs)
+    {
+        ulDrainMs = LOCAL_MUSIC_EFFECT_MAX_DRAIN_MS;
+    }
+    AUDIODIAG_SetPhase(AUDIO_DIAG_PHASE_DRAIN_BEGIN);
+    rt_thread_mdelay(ulDrainMs);
+    tResult = RT_EOK;
+    LOG_I("effect played: %s bytes=%lu", pPath, ulBytesPlayed);
+
+cleanup:
+    if (NULL != pClient)
+    {
+        AUDIODIAG_SetPhase(AUDIO_DIAG_PHASE_AUDIO_CLOSE_BEGIN);
+        (void)audio_close(pClient);
+    }
+    close(lFile);
+
+    if (RT_EOK == tResult)
+    {
+        AUDIODIAG_SetPhase(AUDIO_DIAG_PHASE_EFFECT_DONE);
+    }
+    else
+    {
+        AUDIODIAG_SetPhase(AUDIO_DIAG_PHASE_EFFECT_ERROR);
+    }
+
+    return tResult;
+#else
+    (void)pPath;
+    return -RT_ENOSYS;
+#endif
 }
 
 static void local_music_thread_entry(void *parameter)
@@ -245,37 +422,15 @@ static void local_music_thread_entry(void *parameter)
             break;
 
         case LOCAL_MUSIC_CMD_PLAY_EFFECT:
-            LOCALMUSIC_CloseEffect();
-
-            if (RT_FALSE == local_music_file_exists(msg.path))
             {
-                LOG_E("effect file not found: %s", msg.path);
-                break;
-            }
+                rt_base_t tLevel;
 
-            g_ulEffectActiveGeneration = msg.ulGeneration;
-            g_pEffectHandle = mp3ctrl_open(
-                AUDIO_TYPE_LOCAL_RING,
-                msg.path,
-                LOCALMUSIC_EffectCallback,
-                (void *)(uintptr_t)msg.ulGeneration);
-            if (NULL == g_pEffectHandle)
-            {
-                LOG_E("effect open failed: %s", msg.path);
-                break;
-            }
+                AUDIODIAG_SetPhase(AUDIO_DIAG_PHASE_EFFECT_START);
+                (void)LOCALMUSIC_PlayPcmEffect(msg.path);
 
-            if (0 != mp3ctrl_play(g_pEffectHandle))
-            {
-                LOCALMUSIC_CloseEffect();
-                LOG_E("effect play failed: %s", msg.path);
-            }
-            break;
-
-        case LOCAL_MUSIC_CMD_STOP_EFFECT:
-            if (msg.ulGeneration == g_ulEffectActiveGeneration)
-            {
-                LOCALMUSIC_CloseEffect();
+                tLevel = rt_hw_interrupt_disable();
+                g_bEffectPending = RT_FALSE;
+                rt_hw_interrupt_enable(tLevel);
             }
             break;
 
@@ -358,7 +513,7 @@ int local_music_play_file(const char *path, uint32_t loop)
 }
 
 /***************************
- * LOCALMUSIC_PlayEffect: Queue a short sound effect on the local-ring route.
+ * LOCALMUSIC_PlayEffect: Queue a short PCM effect on the proven A2DP speaker route.
  * Parameters:
  *   - pPath: Absolute path of the WAV file in the device file system.
  * Return value: RT_EOK on success, otherwise an RT-Thread error code.
@@ -367,6 +522,7 @@ int LOCALMUSIC_PlayEffect(const char *pPath)
 {
     local_music_msg_t tMessage;
     rt_base_t tLevel;
+    rt_err_t tResult;
 
     if (NULL == pPath)
     {
@@ -376,20 +532,34 @@ int LOCALMUSIC_PlayEffect(const char *pPath)
     {
         return -RT_ERROR;
     }
+    if (RT_TRUE == bt_audio_sink_is_streaming())
+    {
+        return -RT_EBUSY;
+    }
+
+    tLevel = rt_hw_interrupt_disable();
+    if (RT_TRUE == g_bEffectPending)
+    {
+        rt_hw_interrupt_enable(tLevel);
+        return RT_EOK;
+    }
+    g_bEffectPending = RT_TRUE;
+    rt_hw_interrupt_enable(tLevel);
+    AUDIODIAG_SetPhase(AUDIO_DIAG_PHASE_EFFECT_QUEUED);
 
     rt_memset(&tMessage, 0, sizeof(tMessage));
     tMessage.cmd = LOCAL_MUSIC_CMD_PLAY_EFFECT;
-    tLevel = rt_hw_interrupt_disable();
-    g_ulEffectNextGeneration++;
-    if (0U == g_ulEffectNextGeneration)
-    {
-        g_ulEffectNextGeneration = 1U;
-    }
-    tMessage.ulGeneration = g_ulEffectNextGeneration;
-    rt_hw_interrupt_enable(tLevel);
     rt_strncpy(tMessage.path, pPath, sizeof(tMessage.path) - 1U);
+    tResult = rt_mq_send(g_music_mq, &tMessage, sizeof(tMessage));
+    if (RT_EOK != tResult)
+    {
+        tLevel = rt_hw_interrupt_disable();
+        g_bEffectPending = RT_FALSE;
+        rt_hw_interrupt_enable(tLevel);
+        AUDIODIAG_SetPhase(AUDIO_DIAG_PHASE_EFFECT_ERROR);
+    }
 
-    return rt_mq_send(g_music_mq, &tMessage, sizeof(tMessage));
+    return tResult;
 }
 
 int local_music_stop(void)
@@ -447,7 +617,7 @@ static void localmusic(int argc, char **argv)
         rt_kprintf("localmusic volume=%d/%d\n",
                    watch_settings_get_local_volume(),
                    audio_server_get_max_volume());
-        rt_kprintf("usage: localmusic play [path] [loop] | stop | pause | resume | vol <0-15>\n");
+        rt_kprintf("usage: localmusic play [path] [loop] | effect [path] | stop | pause | resume | vol <0-15>\n");
         return;
     }
 
@@ -459,6 +629,15 @@ static void localmusic(int argc, char **argv)
                    path,
                    loop,
                    local_music_play_file(path, loop));
+    }
+    else if (strcmp(argv[1], "effect") == 0)
+    {
+        const char *pPath;
+
+        pPath = (3 <= argc) ? argv[2] : "/940muyu3.wav";
+        rt_kprintf("localmusic effect %s ret=%d\n",
+                   pPath,
+                   LOCALMUSIC_PlayEffect(pPath));
     }
     else if (strcmp(argv[1], "stop") == 0)
     {

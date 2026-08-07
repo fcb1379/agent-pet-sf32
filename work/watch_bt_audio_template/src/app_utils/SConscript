@@ -11,6 +11,8 @@ if GetDepend('BSP_USING_PC_SIMULATOR'):
     # audio codec, or interrupt controller. Keep all PC behavior in one mock.
     src += ['pc_simulator_services.c']
 else:
+    src += ['audio_diagnostics.c']
+
     if GetDepend('AGENT_PET_USING_IMU'):
         src += ['pet_imu.c']
 
@@ -42,7 +44,15 @@ else:
 
 
 CPPPATH = [cwd, os.path.normpath(os.path.join(RTT_ROOT, '..', '..', 'external', 'mbedtls', 'include'))]
+LINKFLAGS = []
 
-group = DefineGroup('App_utils', src, depend = [''], CPPPATH = CPPPATH)
+if GetDepend('PKG_USING_CMBACKTRACE'):
+    # CmBacktrace uses conventional GNU stack symbols while the SF32LB52
+    # linker script exports CMSIS names. Provide aliases without patching SDK.
+    LINKFLAGS += ['-Wl,--defsym=_sstack=__StackLimit',
+                  '-Wl,--defsym=_estack=__StackTop']
+
+group = DefineGroup('App_utils', src, depend = [''], CPPPATH = CPPPATH,
+                    LINKFLAGS = LINKFLAGS)
 
 Return('group')
