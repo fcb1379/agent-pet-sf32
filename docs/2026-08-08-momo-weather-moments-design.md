@@ -65,23 +65,23 @@ AGENTPETBLE_GetStatus（临界区内复制）
 纯 C、固定内存、无 RT-Thread/LVGL/文件系统依赖，供固件与主机测试共用：
 
 - `AGENTPETWEATHER_Init()`：清空 RAM 快照、交互与诊断；重启后不恢复旧天气。
-- `AGENTPETWEATHER_ProcessPayload(sequence, payload, length, received_monotonic_s)`：严格校验、去重、旧序列拒绝并原子替换候选快照。
+- `AGENTPETWEATHER_ProcessPayload(sequence, payload, length, received_monotonic_tick)`：严格校验、去重、旧序列拒绝并原子替换候选快照。
 - `AGENTPETWEATHER_GetSnapshot()`：复制已发布快照、代数和诊断。
-- `AGENTPETWEATHER_EvaluateFreshness(snapshot, now_utc, now_monotonic_s, rtc_valid)`：纯逻辑判断有效/过期及时间来源。
+- `AGENTPETWEATHER_EvaluateFreshness(snapshot, now_utc, now_tick, ticks_per_second, rtc_valid)`：纯逻辑判断有效/过期及时间来源。
 - `AGENTPETWEATHER_IsSequenceNewer(candidate, reference)`：RFC 1982 风格半区间比较。
 - `AGENTPETWEATHER_SelectPresentation(input)`：纯逻辑优先级，返回 HIDDEN/AMBIENCE/INTERACTION。
-- `AGENTPETWEATHER_ClaimInteraction(sequence, now_monotonic_s)`：同一序列最多一次，并执行 3 小时单调时钟冷却；只更新本地天气交互，不触碰 Agent、任务花园或 merit。
+- `AGENTPETWEATHER_ClaimInteraction(sequence, now_tick, ticks_per_second)`：同一序列最多一次，并执行 3 小时单调时钟冷却；只更新本地天气交互，不触碰 Agent、任务花园或 merit。
 
 ### 4.2 `agent_pet_protocol`
 
 - 新增消息类型 5 和结果/错误码。
-- 新增带接收时刻的 `AGENTPET_ProcessFrameAt(..., received_monotonic_s)`；原 `AGENTPET_ProcessFrame()` 保持 ABI，并以 0 作为确定性时间调用新入口。
+- 新增带接收时刻的 `AGENTPET_ProcessFrameAt(..., received_monotonic_tick)`；原 `AGENTPET_ProcessFrame()` 保持 ABI，并以 0 作为确定性时间调用新入口。
 - `AGENTPET_ProtocolInit()` 同时初始化天气模块。
 - 所有天气处理沿用 GATT 写回调的 RT-Thread 临界区，不在 BLE 上下文操作 LVGL、网络或 Flash。
 
 ### 4.3 `agent_pet_ble_service`
 
-- GATT 写入时传入 `rt_tick_get()/RT_TICK_PER_SECOND` 的单调秒。
+- GATT 写入时传入原始 `rt_tick_get()`；所有间隔先按 `rt_tick_t` 模数做无符号减法，再结合 `RT_TICK_PER_SECOND` 比较，禁止先除法后相减。
 - `AGENTPET_BLE_STATUS` 增加天气只读副本；`AGENTPETBLE_GetStatus()` 在同一临界区复制，避免 GUI 看到撕裂结构。
 - 不新增 worker。现有时间同步 worker只负责 RTC；天气帧无需阻塞操作。
 
@@ -99,7 +99,7 @@ AGENTPETBLE_GetStatus（临界区内复制）
 3. LVGL 对象创建、样式、动画、隐藏、删除只在 GUI 线程中的页面 start/refresh/stop 执行。
 4. 页面退出时先停止现有 status timer，再删除 root；天气对象是 root 子对象，不单独残留 timer 或动画。
 5. 远端 GIF/打字/Agent 抢占只隐藏天气层并停止位置更新，RAM 快照仍保留；恢复时按最新时间重新求值，不补播错过的交互。
-6. RT tick 的无符号减法用于单调间隔，天然支持 tick 秒计数回绕；不比较绝对 tick 大小。
+6. 保存原始 RT tick，先用无符号减法计算间隔，再换算时间；TTL 与 3 小时冷却均短于 32 位 tick 模数窗口，支持 tick 回绕且不比较绝对 tick 大小。
 
 ## 6. 天气状态机与优先级
 
@@ -139,7 +139,7 @@ FRESH --合法更新序列--> FRESH（替换，不排队）
 
 - 只有 CLEAR/CLOUDY/RAIN/SNOW 以及 HOT/COLD flags 可领取一次照顾；STORM/UNKNOWN 只显示中性或隐藏，不制造惊吓。
 - 同一 sequence 领取一次后永久标记为已领取，重复点击走原有木鱼行为，不重复天气反馈。
-- 全局 3 小时冷却由单调秒控制；冷却期间新天气仍可显示氛围，但不给新的照顾提示。
+- 全局 3 小时冷却由原始单调 tick 差控制；冷却期间新天气仍可显示氛围，但不给新的照顾提示。
 - 天气反馈只改变天气对象颜色/透明度/短提示，约 1.5 秒后恢复氛围；不调用 `QUESTGARDEN_*`、`AGENTPETMERIT_*`、Agent 协议或远端通知。
 
 ## 9. 固定内存与性能预算
