@@ -404,8 +404,14 @@ AGENTPET_RESULT AGENTPET_ProcessFrame(const uint8_t *pFrame, size_t ulLength)
              ((0U == ucSlot) || (AGENTPET_ANIMATION_MAX_SLOT < ucSlot))) ||
             ((AGENTPET_ANIMATION_ACTION_RESTORE == ucAction) &&
              (0U != ucSlot)) ||
+            ((AGENTPET_ANIMATION_ACTION_TYPING_START == ucAction) &&
+             (0U != ucSlot)) ||
+            ((AGENTPET_ANIMATION_ACTION_TYPING_STOP == ucAction) &&
+             (0U != ucSlot)) ||
             ((AGENTPET_ANIMATION_ACTION_PLAY != ucAction) &&
-             (AGENTPET_ANIMATION_ACTION_RESTORE != ucAction)))
+             (AGENTPET_ANIMATION_ACTION_RESTORE != ucAction) &&
+             (AGENTPET_ANIMATION_ACTION_TYPING_START != ucAction) &&
+             (AGENTPET_ANIMATION_ACTION_TYPING_STOP != ucAction)))
         {
             return AGENTPET_ERROR_ANIMATION;
         }

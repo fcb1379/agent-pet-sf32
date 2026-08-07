@@ -43,6 +43,8 @@ typedef enum _AGENTPET_RESULT
 
 #define AGENTPET_ANIMATION_ACTION_PLAY    (1U)
 #define AGENTPET_ANIMATION_ACTION_RESTORE (2U)
+#define AGENTPET_ANIMATION_ACTION_TYPING_START (3U)
+#define AGENTPET_ANIMATION_ACTION_TYPING_STOP  (4U)
 
 /* AGENTPET_ANIMATION_EVENT: validated desktop request to play an expression slot.
  * Members:

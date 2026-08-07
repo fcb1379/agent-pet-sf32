@@ -203,6 +203,28 @@ static int TEST_AnimationEvent(void)
         AGENTPET_ERROR_ANIMATION ==
         AGENTPET_ProcessFrame(aFrame, sizeof(aFrame)));
 
+    aFrame[4]++;
+    aFrame[9] = AGENTPET_ANIMATION_ACTION_TYPING_START;
+    aFrame[10] = 0U;
+    TEST_FinalizeFrame(aFrame);
+    TEST_ASSERT(
+        AGENTPET_RESULT_ANIMATION_PUBLISHED ==
+        AGENTPET_ProcessFrame(aFrame, sizeof(aFrame)));
+    TEST_ASSERT(AGENTPET_GetAnimationEvent(&tEvent, &ulGeneration));
+    TEST_ASSERT(AGENTPET_ANIMATION_ACTION_TYPING_START == tEvent.ucAction);
+    TEST_ASSERT(0U == tEvent.ucSlot);
+    TEST_ASSERT(2U == ulGeneration);
+
+    aFrame[4]++;
+    aFrame[9] = AGENTPET_ANIMATION_ACTION_TYPING_STOP;
+    TEST_FinalizeFrame(aFrame);
+    TEST_ASSERT(
+        AGENTPET_RESULT_ANIMATION_PUBLISHED ==
+        AGENTPET_ProcessFrame(aFrame, sizeof(aFrame)));
+    TEST_ASSERT(AGENTPET_GetAnimationEvent(&tEvent, &ulGeneration));
+    TEST_ASSERT(AGENTPET_ANIMATION_ACTION_TYPING_STOP == tEvent.ucAction);
+    TEST_ASSERT(3U == ulGeneration);
+
     return 0;
 }
 
