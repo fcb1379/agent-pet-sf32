@@ -8,9 +8,12 @@
 #define AGENTPET_MESSAGE_TYPE_SNAPSHOT   (1U)
 #define AGENTPET_MESSAGE_TYPE_WOODEN_FISH (2U)
 #define AGENTPET_MESSAGE_TYPE_TIME_SYNC  (3U)
+#define AGENTPET_MESSAGE_TYPE_ANIMATION  (4U)
 #define AGENTPET_WOODEN_FISH_ACTION      (1U)
 #define AGENTPET_WOODEN_FISH_PAYLOAD_SIZE (1U)
 #define AGENTPET_TIME_SYNC_PAYLOAD_SIZE  (6U)
+#define AGENTPET_ANIMATION_PAYLOAD_SIZE  (2U)
+#define AGENTPET_ANIMATION_MAX_SLOT      (4U)
 #define AGENTPET_TIME_MIN                (1577836800UL)
 #define AGENTPET_TIME_MAX                (2145916800UL)
 #define AGENTPET_TIMEZONE_MIN            (-840)
@@ -66,6 +69,12 @@ static AGENTPET_TIME_SYNC l_tTimeSync;
 static uint32_t l_ulTimeSyncGeneration;
 /* True after at least one valid time synchronization frame has been received. */
 static bool l_bHasTimeSync;
+/* Latest validated expression animation request from the desktop. */
+static AGENTPET_ANIMATION_EVENT l_tAnimationEvent;
+/* Animation request publication generation, range 0..4294967295. */
+static uint32_t l_ulAnimationGeneration;
+/* True after at least one valid animation request has been received. */
+static bool l_bHasAnimationEvent;
 
 static uint16_t Local_ReadLe16(const uint8_t *pData)
 {
@@ -194,6 +203,9 @@ void AGENTPET_ProtocolInit(void)
     (void)memset(&l_tTimeSync, 0, sizeof(l_tTimeSync));
     l_ulTimeSyncGeneration = 0U;
     l_bHasTimeSync = false;
+    (void)memset(&l_tAnimationEvent, 0, sizeof(l_tAnimationEvent));
+    l_ulAnimationGeneration = 0U;
+    l_bHasAnimationEvent = false;
 
     return;
 }
@@ -284,7 +296,8 @@ AGENTPET_RESULT AGENTPET_ProcessFrame(const uint8_t *pFrame, size_t ulLength)
         (AGENTPET_PROTOCOL_VERSION != pFrame[2]) ||
         ((AGENTPET_MESSAGE_TYPE_SNAPSHOT != pFrame[3]) &&
          (AGENTPET_MESSAGE_TYPE_WOODEN_FISH != pFrame[3]) &&
-         (AGENTPET_MESSAGE_TYPE_TIME_SYNC != pFrame[3]))
+         (AGENTPET_MESSAGE_TYPE_TIME_SYNC != pFrame[3]) &&
+         (AGENTPET_MESSAGE_TYPE_ANIMATION != pFrame[3]))
     )
     {
         return AGENTPET_ERROR_HEADER;
@@ -373,6 +386,40 @@ AGENTPET_RESULT AGENTPET_ProcessFrame(const uint8_t *pFrame, size_t ulLength)
         l_ulWoodenFishGeneration++;
         l_bHasWoodenFishEvent = true;
         return AGENTPET_RESULT_EVENT_PUBLISHED;
+    }
+    if (AGENTPET_MESSAGE_TYPE_ANIMATION == ucMessageType)
+    {
+        uint8_t ucAction;
+        uint8_t ucSlot;
+
+        if ((0U != ucChunkIndex) ||
+            (1U != ucChunkCount) ||
+            (AGENTPET_ANIMATION_PAYLOAD_SIZE != ucPayloadLength))
+        {
+            return AGENTPET_ERROR_ANIMATION;
+        }
+        ucAction = pFrame[AGENTPET_FRAME_HEADER_SIZE];
+        ucSlot = pFrame[AGENTPET_FRAME_HEADER_SIZE + 1U];
+        if (((AGENTPET_ANIMATION_ACTION_PLAY == ucAction) &&
+             ((0U == ucSlot) || (AGENTPET_ANIMATION_MAX_SLOT < ucSlot))) ||
+            ((AGENTPET_ANIMATION_ACTION_RESTORE == ucAction) &&
+             (0U != ucSlot)) ||
+            ((AGENTPET_ANIMATION_ACTION_PLAY != ucAction) &&
+             (AGENTPET_ANIMATION_ACTION_RESTORE != ucAction)))
+        {
+            return AGENTPET_ERROR_ANIMATION;
+        }
+        if (l_bHasAnimationEvent &&
+            (l_tAnimationEvent.usSequence == usSequence))
+        {
+            return AGENTPET_RESULT_DUPLICATE;
+        }
+        l_tAnimationEvent.ucAction = ucAction;
+        l_tAnimationEvent.ucSlot = ucSlot;
+        l_tAnimationEvent.usSequence = usSequence;
+        l_ulAnimationGeneration++;
+        l_bHasAnimationEvent = true;
+        return AGENTPET_RESULT_ANIMATION_PUBLISHED;
     }
 
     if (l_bHasSnapshot && (l_usPublishedSequence == usSequence))
@@ -491,6 +538,32 @@ bool AGENTPET_GetTimeSync(AGENTPET_TIME_SYNC *pTimeSync, uint32_t *pGeneration)
     {
         *pGeneration = l_ulTimeSyncGeneration;
     }
+
+    return true;
+}
+
+/*
+ * AGENTPET_GetAnimationEvent
+ * Function: copy the latest validated expression animation request.
+ * Parameters:
+ *   - pEvent: output event; must not be NULL.
+ *   - pGeneration: output publication generation; must not be NULL.
+ * Return: true after at least one animation event has been received.
+ */
+bool AGENTPET_GetAnimationEvent(
+    AGENTPET_ANIMATION_EVENT *pEvent,
+    uint32_t *pGeneration)
+{
+    if ((NULL == pEvent) || (NULL == pGeneration))
+    {
+        return false;
+    }
+    if (!l_bHasAnimationEvent)
+    {
+        return false;
+    }
+    (void)memcpy(pEvent, &l_tAnimationEvent, sizeof(*pEvent));
+    *pGeneration = l_ulAnimationGeneration;
 
     return true;
 }

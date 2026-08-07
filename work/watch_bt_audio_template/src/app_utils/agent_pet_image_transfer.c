@@ -23,6 +23,8 @@
 #define AGENTPET_IMAGE_COMMAND_DATA     (2U)
 #define AGENTPET_IMAGE_COMMAND_COMMIT   (3U)
 #define AGENTPET_IMAGE_COMMAND_RESET    (4U)
+#define AGENTPET_IMAGE_COMMAND_SELECT   (5U)
+#define AGENTPET_IMAGE_SLOT_PROTOCOL_VERSION (2U)
 #define AGENTPET_IMAGE_WIDTH            (192U)
 #define AGENTPET_IMAGE_HEIGHT           (192U)
 #define AGENTPET_IMAGE_GIF_MAX_DIMENSION (192U)
@@ -61,10 +63,26 @@ typedef struct _AGENTPET_IMAGE_ENV
     AGENTPET_IMAGE_STATE eState;
     AGENTPET_IMAGE_RESULT eLastResult;
     uint8_t ucFormat;
+    uint8_t ucSlot;
     bool bImageAvailable;
     uint8_t aImageMd5[AGENTPET_IMAGE_MD5_SIZE];
     uint8_t aWriteBuffer[AGENTPET_IMAGE_WRITE_BUFFER_SIZE];
 } AGENTPET_IMAGE_ENV;
+
+/* AGENTPET_IMAGE_SLOT: persistent metadata for one fixed GIF/JPEG slot.
+ * Members:
+ *   - ulGeneration: increments when the slot is committed or reset
+ *   - ucFormat: persisted image format, JPEG/GIF/NONE
+ *   - bImageAvailable: true only after validation of the committed file
+ *   - aImageMd5: cached 16-byte MD5 used to skip duplicate BLE transfers
+ */
+typedef struct _AGENTPET_IMAGE_SLOT
+{
+    uint32_t ulGeneration;
+    uint8_t ucFormat;
+    bool bImageAvailable;
+    uint8_t aImageMd5[AGENTPET_IMAGE_MD5_SIZE];
+} AGENTPET_IMAGE_SLOT;
 
 /* AGENTPET_IMAGE_PACKET: one variable-length GATT write copied into the worker queue.
  * Members:
@@ -99,12 +117,105 @@ static AGENTPET_IMAGE_ENV l_tImageEnv =
 /* Last fully processed transfer status. Readers copy this snapshot inside a
  * short interrupt-safe critical section, so a BLE read never waits for Flash. */
 static AGENTPET_IMAGE_STATUS l_tImageStatusSnapshot;
-/* Availability and digest of the last committed image. These values are
- * published together with the status snapshot and never expose partial writes. */
-static bool l_bImageDigestAvailableSnapshot;
-static uint8_t l_aImageDigestSnapshot[AGENTPET_IMAGE_MD5_SIZE];
+/* Fixed metadata table for the base mascot and four expression GIF slots. */
+static AGENTPET_IMAGE_SLOT l_aImageSlots[AGENTPET_IMAGE_SLOT_COUNT];
+/* Slot selected by the host before reading the digest characteristic. */
+static uint8_t l_ucDigestSlot;
+
+static const char *l_aImagePaths[AGENTPET_IMAGE_SLOT_COUNT] =
+{
+    AGENTPET_IMAGE_PATH,
+    "/pet1.gif",
+    "/pet2.gif",
+    "/pet3.gif",
+    "/pet4.gif"
+};
+
+static const char *l_aImageLvglPaths[AGENTPET_IMAGE_SLOT_COUNT] =
+{
+    AGENTPET_IMAGE_LVGL_PATH,
+    "/:/pet1.gif",
+    "/:/pet2.gif",
+    "/:/pet3.gif",
+    "/:/pet4.gif"
+};
+
+static const char *l_aImageTempPaths[AGENTPET_IMAGE_SLOT_COUNT] =
+{
+    AGENTPET_IMAGE_TEMP_PATH,
+    "/pet1.tmp",
+    "/pet2.tmp",
+    "/pet3.tmp",
+    "/pet4.tmp"
+};
+
+static const char *l_aImageBackupPaths[AGENTPET_IMAGE_SLOT_COUNT] =
+{
+    AGENTPET_IMAGE_BACKUP_PATH,
+    "/pet1.bak",
+    "/pet2.bak",
+    "/pet3.bak",
+    "/pet4.bak"
+};
 
 static uint8_t Local_DetectImageFormat(const char *pPath);
+
+/*
+ * Local_LoadSlotIntoEnvironment
+ * Function: copy persistent metadata for a selected slot into the transfer environment.
+ * Parameters:
+ *   - ucSlot: fixed slot index, range 0..AGENTPET_IMAGE_SLOT_COUNT-1.
+ * Return: none.
+ */
+static void Local_LoadSlotIntoEnvironment(uint8_t ucSlot)
+{
+    const AGENTPET_IMAGE_SLOT *pSlot;
+
+    if (AGENTPET_IMAGE_SLOT_COUNT <= ucSlot)
+    {
+        return;
+    }
+    pSlot = &l_aImageSlots[ucSlot];
+    l_tImageEnv.ucSlot = ucSlot;
+    l_tImageEnv.ulGeneration = pSlot->ulGeneration;
+    l_tImageEnv.ucFormat = pSlot->ucFormat;
+    l_tImageEnv.bImageAvailable = pSlot->bImageAvailable;
+    (void)memcpy(
+        l_tImageEnv.aImageMd5,
+        pSlot->aImageMd5,
+        AGENTPET_IMAGE_MD5_SIZE);
+
+    return;
+}
+
+/*
+ * Local_SaveEnvironmentToSlot
+ * Function: publish committed/reset metadata from the transfer environment to its slot.
+ * Parameters: none.
+ * Return: none.
+ */
+static void Local_SaveEnvironmentToSlot(void)
+{
+    AGENTPET_IMAGE_SLOT *pSlot;
+    rt_base_t tLevel;
+
+    if (AGENTPET_IMAGE_SLOT_COUNT <= l_tImageEnv.ucSlot)
+    {
+        return;
+    }
+    tLevel = rt_hw_interrupt_disable();
+    pSlot = &l_aImageSlots[l_tImageEnv.ucSlot];
+    pSlot->ulGeneration = l_tImageEnv.ulGeneration;
+    pSlot->ucFormat = l_tImageEnv.ucFormat;
+    pSlot->bImageAvailable = l_tImageEnv.bImageAvailable;
+    (void)memcpy(
+        pSlot->aImageMd5,
+        l_tImageEnv.aImageMd5,
+        AGENTPET_IMAGE_MD5_SIZE);
+    rt_hw_interrupt_enable(tLevel);
+
+    return;
+}
 
 /*
  * Local_PublishSnapshot
@@ -124,14 +235,10 @@ static void Local_PublishSnapshot(void)
     tStatus.ulGeneration = l_tImageEnv.ulGeneration;
     tStatus.eLastResult = l_tImageEnv.eLastResult;
     tStatus.ucFormat = l_tImageEnv.ucFormat;
+    tStatus.ucSlot = l_tImageEnv.ucSlot;
 
     tLevel = rt_hw_interrupt_disable();
     l_tImageStatusSnapshot = tStatus;
-    l_bImageDigestAvailableSnapshot = l_tImageEnv.bImageAvailable;
-    (void)memcpy(
-        l_aImageDigestSnapshot,
-        l_tImageEnv.aImageMd5,
-        AGENTPET_IMAGE_MD5_SIZE);
     rt_hw_interrupt_enable(tLevel);
 
     return;
@@ -318,11 +425,9 @@ static AGENTPET_IMAGE_RESULT Local_FlushWriteBuffer(void)
 static void Local_FailTransfer(AGENTPET_IMAGE_RESULT eResult)
 {
     Local_CloseTemporaryFile();
-    (void)unlink(AGENTPET_IMAGE_TEMP_PATH);
+    (void)unlink(l_aImageTempPaths[l_tImageEnv.ucSlot]);
     l_tImageEnv.usPendingLength = 0U;
-    l_tImageEnv.ucFormat = l_tImageEnv.bImageAvailable ?
-        Local_DetectImageFormat(AGENTPET_IMAGE_PATH) :
-        AGENTPET_IMAGE_FORMAT_NONE;
+    Local_LoadSlotIntoEnvironment(l_tImageEnv.ucSlot);
     l_tImageEnv.eState = AGENTPET_IMAGE_ERROR;
     l_tImageEnv.eLastResult = eResult;
 
@@ -787,7 +892,8 @@ static AGENTPET_IMAGE_RESULT Local_ValidateImage(
 static AGENTPET_IMAGE_RESULT Local_BeginTransfer(
     uint32_t ulTotal,
     uint32_t ulExpectedCrc,
-    uint8_t ucFormat)
+    uint8_t ucFormat,
+    uint8_t ucSlot)
 {
     struct statfs tFileSystem;
     uint64_t udAvailableBytes;
@@ -796,7 +902,8 @@ static AGENTPET_IMAGE_RESULT Local_BeginTransfer(
         ((AGENTPET_IMAGE_FORMAT_JPEG != ucFormat) &&
          (AGENTPET_IMAGE_FORMAT_GIF != ucFormat)) ||
         (4U > ulTotal) ||
-        (AGENTPET_IMAGE_MAX_FILE_SIZE < ulTotal)
+        (AGENTPET_IMAGE_MAX_FILE_SIZE < ulTotal) ||
+        (AGENTPET_IMAGE_SLOT_COUNT <= ucSlot)
     )
     {
         return AGENTPET_IMAGE_ERROR_SIZE;
@@ -812,9 +919,10 @@ static AGENTPET_IMAGE_RESULT Local_BeginTransfer(
     }
 
     Local_CloseTemporaryFile();
-    (void)unlink(AGENTPET_IMAGE_TEMP_PATH);
+    Local_LoadSlotIntoEnvironment(ucSlot);
+    (void)unlink(l_aImageTempPaths[ucSlot]);
     l_tImageEnv.lFileDescriptor = open(
-        AGENTPET_IMAGE_TEMP_PATH,
+        l_aImageTempPaths[ucSlot],
         O_CREAT | O_RDWR | O_TRUNC | O_BINARY,
         0);
     if (0 > l_tImageEnv.lFileDescriptor)
@@ -896,7 +1004,8 @@ static AGENTPET_IMAGE_RESULT Local_AppendData(
 static AGENTPET_IMAGE_RESULT Local_CommitTransfer(
     uint32_t ulTotal,
     uint32_t ulExpectedCrc,
-    uint8_t ucFormat)
+    uint8_t ucFormat,
+    uint8_t ucSlot)
 {
     AGENTPET_IMAGE_RESULT eResult;
     uint8_t aImageMd5[AGENTPET_IMAGE_MD5_SIZE];
@@ -907,7 +1016,8 @@ static AGENTPET_IMAGE_RESULT Local_CommitTransfer(
         (l_tImageEnv.ulTotal != ulTotal) ||
         (l_tImageEnv.ulReceived != ulTotal) ||
         (l_tImageEnv.ulExpectedCrc != ulExpectedCrc) ||
-        (l_tImageEnv.ulCalculatedCrc != ulExpectedCrc)
+        (l_tImageEnv.ulCalculatedCrc != ulExpectedCrc) ||
+        (l_tImageEnv.ucSlot != ucSlot)
     )
     {
         return AGENTPET_IMAGE_ERROR_CRC;
@@ -923,35 +1033,37 @@ static AGENTPET_IMAGE_RESULT Local_CommitTransfer(
         return AGENTPET_IMAGE_ERROR_STORAGE;
     }
     Local_CloseTemporaryFile();
-    eResult = Local_ValidateImage(AGENTPET_IMAGE_TEMP_PATH, ucFormat);
+    eResult = Local_ValidateImage(l_aImageTempPaths[ucSlot], ucFormat);
     if (AGENTPET_IMAGE_RESULT_ACCEPTED != eResult)
     {
         return eResult;
     }
-    if (!Local_CalculateFileMd5(AGENTPET_IMAGE_TEMP_PATH, aImageMd5))
+    if (!Local_CalculateFileMd5(l_aImageTempPaths[ucSlot], aImageMd5))
     {
         return AGENTPET_IMAGE_ERROR_STORAGE;
     }
 
-    (void)unlink(AGENTPET_IMAGE_BACKUP_PATH);
-    if ((0 == access(AGENTPET_IMAGE_PATH, 0)) &&
-        (0 != rename(AGENTPET_IMAGE_PATH, AGENTPET_IMAGE_BACKUP_PATH)))
+    (void)unlink(l_aImageBackupPaths[ucSlot]);
+    if ((0 == access(l_aImagePaths[ucSlot], 0)) &&
+        (0 != rename(l_aImagePaths[ucSlot], l_aImageBackupPaths[ucSlot])))
     {
         return AGENTPET_IMAGE_ERROR_STORAGE;
     }
-    if (0 != rename(AGENTPET_IMAGE_TEMP_PATH, AGENTPET_IMAGE_PATH))
+    if (0 != rename(l_aImageTempPaths[ucSlot], l_aImagePaths[ucSlot]))
     {
-        (void)rename(AGENTPET_IMAGE_BACKUP_PATH, AGENTPET_IMAGE_PATH);
+        (void)rename(l_aImageBackupPaths[ucSlot], l_aImagePaths[ucSlot]);
         return AGENTPET_IMAGE_ERROR_STORAGE;
     }
-    (void)unlink(AGENTPET_IMAGE_BACKUP_PATH);
+    (void)unlink(l_aImageBackupPaths[ucSlot]);
 
     (void)memcpy(l_tImageEnv.aImageMd5, aImageMd5, AGENTPET_IMAGE_MD5_SIZE);
     l_tImageEnv.bImageAvailable = true;
     l_tImageEnv.ulGeneration++;
     l_tImageEnv.eState = AGENTPET_IMAGE_READY;
     l_tImageEnv.eLastResult = AGENTPET_IMAGE_RESULT_COMMITTED;
-    LOG_I("Custom mascot committed format=%u size=%lu crc=0x%08lx",
+    Local_SaveEnvironmentToSlot();
+    LOG_I("Custom mascot committed slot=%u format=%u size=%lu crc=0x%08lx",
+          ucSlot,
           ucFormat,
           (unsigned long)ulTotal,
           (unsigned long)ulExpectedCrc);
@@ -959,28 +1071,34 @@ static AGENTPET_IMAGE_RESULT Local_CommitTransfer(
     return AGENTPET_IMAGE_RESULT_COMMITTED;
 }
 
-static AGENTPET_IMAGE_RESULT Local_ResetImage(void)
+static AGENTPET_IMAGE_RESULT Local_ResetImage(uint8_t ucSlot)
 {
     int lResult;
 
+    if (AGENTPET_IMAGE_SLOT_COUNT <= ucSlot)
+    {
+        return AGENTPET_IMAGE_ERROR_SIZE;
+    }
     Local_CloseTemporaryFile();
+    Local_LoadSlotIntoEnvironment(ucSlot);
     lResult = 0;
-    if ((0 == access(AGENTPET_IMAGE_TEMP_PATH, 0)) &&
-        (0 != unlink(AGENTPET_IMAGE_TEMP_PATH)))
+    if ((0 == access(l_aImageTempPaths[ucSlot], 0)) &&
+        (0 != unlink(l_aImageTempPaths[ucSlot])))
     {
         lResult = -1;
     }
-    if ((0 == access(AGENTPET_IMAGE_BACKUP_PATH, 0)) &&
-        (0 != unlink(AGENTPET_IMAGE_BACKUP_PATH)))
+    if ((0 == access(l_aImageBackupPaths[ucSlot], 0)) &&
+        (0 != unlink(l_aImageBackupPaths[ucSlot])))
     {
         lResult = -1;
     }
-    if ((0 == access(AGENTPET_IMAGE_PATH, 0)) &&
-        (0 != unlink(AGENTPET_IMAGE_PATH)))
+    if ((0 == access(l_aImagePaths[ucSlot], 0)) &&
+        (0 != unlink(l_aImagePaths[ucSlot])))
     {
         lResult = -1;
     }
-    if ((0 == access(AGENTPET_IMAGE_LEGACY_PATH, 0)) &&
+    if ((AGENTPET_IMAGE_BASE_SLOT == ucSlot) &&
+        (0 == access(AGENTPET_IMAGE_LEGACY_PATH, 0)) &&
         (0 != unlink(AGENTPET_IMAGE_LEGACY_PATH)))
     {
         lResult = -1;
@@ -999,7 +1117,8 @@ static AGENTPET_IMAGE_RESULT Local_ResetImage(void)
     l_tImageEnv.ulGeneration++;
     l_tImageEnv.eState = AGENTPET_IMAGE_IDLE;
     l_tImageEnv.eLastResult = AGENTPET_IMAGE_RESULT_RESET;
-    LOG_I("Custom mascot reset to built-in image");
+    Local_SaveEnvironmentToSlot();
+    LOG_I("Custom mascot slot %u reset", ucSlot);
 
     return AGENTPET_IMAGE_RESULT_RESET;
 }
@@ -1046,6 +1165,7 @@ void AGENTPETIMAGE_Init(void)
 {
     struct stat tStatus;
     rt_err_t tResult;
+    uint8_t ucSlot;
 
     if (l_bImageWorkerReady)
     {
@@ -1054,43 +1174,53 @@ void AGENTPETIMAGE_Init(void)
 
     Local_CloseTemporaryFile();
     if ((0 != stat(AGENTPET_IMAGE_PATH, &tStatus)) &&
-        (0 == stat(AGENTPET_IMAGE_BACKUP_PATH, &tStatus)))
-    {
-        (void)rename(AGENTPET_IMAGE_BACKUP_PATH, AGENTPET_IMAGE_PATH);
-    }
-    if ((0 != stat(AGENTPET_IMAGE_PATH, &tStatus)) &&
         (0 == stat(AGENTPET_IMAGE_LEGACY_PATH, &tStatus)))
     {
         (void)rename(AGENTPET_IMAGE_LEGACY_PATH, AGENTPET_IMAGE_PATH);
     }
-    (void)unlink(AGENTPET_IMAGE_TEMP_PATH);
+    (void)memset(l_aImageSlots, 0, sizeof(l_aImageSlots));
+    for (ucSlot = 0U; ucSlot < AGENTPET_IMAGE_SLOT_COUNT; ucSlot++)
+    {
+        AGENTPET_IMAGE_SLOT *pSlot;
+
+        if ((0 != stat(l_aImagePaths[ucSlot], &tStatus)) &&
+            (0 == stat(l_aImageBackupPaths[ucSlot], &tStatus)))
+        {
+            (void)rename(l_aImageBackupPaths[ucSlot], l_aImagePaths[ucSlot]);
+        }
+        else if (0 == stat(l_aImagePaths[ucSlot], &tStatus))
+        {
+            (void)unlink(l_aImageBackupPaths[ucSlot]);
+        }
+        (void)unlink(l_aImageTempPaths[ucSlot]);
+        pSlot = &l_aImageSlots[ucSlot];
+        pSlot->bImageAvailable = (0 == stat(l_aImagePaths[ucSlot], &tStatus));
+        pSlot->ucFormat = pSlot->bImageAvailable ?
+            Local_DetectImageFormat(l_aImagePaths[ucSlot]) :
+            AGENTPET_IMAGE_FORMAT_NONE;
+        if (pSlot->bImageAvailable &&
+            (AGENTPET_IMAGE_RESULT_ACCEPTED !=
+             Local_ValidateImage(l_aImagePaths[ucSlot], pSlot->ucFormat)))
+        {
+            LOG_E("Persistent mascot slot %u is unsafe; removing it", ucSlot);
+            (void)unlink(l_aImagePaths[ucSlot]);
+            pSlot->bImageAvailable = false;
+            pSlot->ucFormat = AGENTPET_IMAGE_FORMAT_NONE;
+        }
+        if (pSlot->bImageAvailable &&
+            !Local_CalculateFileMd5(l_aImagePaths[ucSlot], pSlot->aImageMd5))
+        {
+            LOG_E("Persistent mascot slot %u MD5 calculation failed", ucSlot);
+        }
+        pSlot->ulGeneration = pSlot->bImageAvailable ? 1U : 0U;
+    }
+    l_ucDigestSlot = AGENTPET_IMAGE_BASE_SLOT;
+    Local_LoadSlotIntoEnvironment(AGENTPET_IMAGE_BASE_SLOT);
     l_tImageEnv.ulTotal = 0U;
     l_tImageEnv.ulReceived = 0U;
     l_tImageEnv.ulExpectedCrc = 0U;
     l_tImageEnv.ulCalculatedCrc = AGENTPET_IMAGE_CRC32_INIT;
     l_tImageEnv.usPendingLength = 0U;
-    l_tImageEnv.bImageAvailable = (0 == stat(AGENTPET_IMAGE_PATH, &tStatus));
-    l_tImageEnv.ucFormat = l_tImageEnv.bImageAvailable ?
-        Local_DetectImageFormat(AGENTPET_IMAGE_PATH) :
-        AGENTPET_IMAGE_FORMAT_NONE;
-    if (l_tImageEnv.bImageAvailable &&
-        (AGENTPET_IMAGE_RESULT_ACCEPTED !=
-         Local_ValidateImage(
-             AGENTPET_IMAGE_PATH,
-             l_tImageEnv.ucFormat)))
-    {
-        LOG_E("Persistent mascot image is unsafe; removing it");
-        (void)unlink(AGENTPET_IMAGE_PATH);
-        l_tImageEnv.bImageAvailable = false;
-        l_tImageEnv.ucFormat = AGENTPET_IMAGE_FORMAT_NONE;
-    }
-    (void)memset(l_tImageEnv.aImageMd5, 0, AGENTPET_IMAGE_MD5_SIZE);
-    if (l_tImageEnv.bImageAvailable &&
-        !Local_CalculateFileMd5(AGENTPET_IMAGE_PATH, l_tImageEnv.aImageMd5))
-    {
-        LOG_E("Persistent mascot MD5 calculation failed");
-    }
-    l_tImageEnv.ulGeneration = l_tImageEnv.bImageAvailable ? 1U : 0U;
     l_tImageEnv.eState = l_tImageEnv.bImageAvailable ?
         AGENTPET_IMAGE_READY : AGENTPET_IMAGE_IDLE;
     l_tImageEnv.eLastResult = AGENTPET_IMAGE_RESULT_ACCEPTED;
@@ -1190,13 +1320,11 @@ void AGENTPETIMAGE_ResetTransfer(void)
     if (AGENTPET_IMAGE_RECEIVING == l_tImageEnv.eState)
     {
         Local_CloseTemporaryFile();
-        (void)unlink(AGENTPET_IMAGE_TEMP_PATH);
+        (void)unlink(l_aImageTempPaths[l_tImageEnv.ucSlot]);
         l_tImageEnv.ulTotal = 0U;
         l_tImageEnv.ulReceived = 0U;
         l_tImageEnv.usPendingLength = 0U;
-        l_tImageEnv.ucFormat = l_tImageEnv.bImageAvailable ?
-            Local_DetectImageFormat(AGENTPET_IMAGE_PATH) :
-            AGENTPET_IMAGE_FORMAT_NONE;
+        Local_LoadSlotIntoEnvironment(l_tImageEnv.ucSlot);
         l_tImageEnv.eState = l_tImageEnv.bImageAvailable ?
             AGENTPET_IMAGE_READY : AGENTPET_IMAGE_IDLE;
         l_tImageEnv.eLastResult = AGENTPET_IMAGE_RESULT_ACCEPTED;
@@ -1229,6 +1357,8 @@ AGENTPET_IMAGE_RESULT AGENTPETIMAGE_ProcessFrame(
     uint8_t ucCommand;
     uint8_t ucIndex;
     uint8_t ucPayloadLength;
+    uint8_t ucProtocolVersion;
+    uint8_t ucSlot;
 
     if (NULL == pFrame)
     {
@@ -1239,7 +1369,8 @@ AGENTPET_IMAGE_RESULT AGENTPETIMAGE_ProcessFrame(
         (AGENTPET_IMAGE_MAX_PACKET_SIZE < ulLength) ||
         (AGENTPET_IMAGE_MAGIC_FIRST != pFrame[0]) ||
         (AGENTPET_IMAGE_MAGIC_SECOND != pFrame[1]) ||
-        (AGENTPET_IMAGE_PROTOCOL_VERSION != pFrame[2])
+        ((AGENTPET_IMAGE_PROTOCOL_VERSION != pFrame[2]) &&
+         (AGENTPET_IMAGE_SLOT_PROTOCOL_VERSION != pFrame[2]))
     )
     {
         return AGENTPET_IMAGE_ERROR_FRAME;
@@ -1252,6 +1383,8 @@ AGENTPET_IMAGE_RESULT AGENTPETIMAGE_ProcessFrame(
     }
 
     ucCommand = pFrame[3];
+    ucProtocolVersion = pFrame[2];
+    ucSlot = AGENTPET_IMAGE_BASE_SLOT;
     ulValue = Local_ReadLe24(&pFrame[4]);
     ulCrc = 0U;
     eResult = AGENTPET_IMAGE_ERROR_FRAME;
@@ -1262,7 +1395,14 @@ AGENTPET_IMAGE_RESULT AGENTPETIMAGE_ProcessFrame(
         {
             return AGENTPET_IMAGE_ERROR_FRAME;
         }
-        for (ucIndex = 12U; ucIndex < AGENTPET_IMAGE_CONTROL_FRAME_SIZE - 1U; ucIndex++)
+        if (AGENTPET_IMAGE_SLOT_PROTOCOL_VERSION == ucProtocolVersion)
+        {
+            ucSlot = pFrame[12];
+        }
+        for (ucIndex = (AGENTPET_IMAGE_SLOT_PROTOCOL_VERSION == ucProtocolVersion) ?
+             13U : 12U;
+             ucIndex < AGENTPET_IMAGE_CONTROL_FRAME_SIZE - 1U;
+             ucIndex++)
         {
             if (0U != pFrame[ucIndex])
             {
@@ -1271,8 +1411,8 @@ AGENTPET_IMAGE_RESULT AGENTPETIMAGE_ProcessFrame(
         }
         ulCrc = Local_ReadLe32(&pFrame[8]);
         eResult = (AGENTPET_IMAGE_COMMAND_BEGIN == ucCommand) ?
-            Local_BeginTransfer(ulValue, ulCrc, pFrame[7]) :
-            Local_CommitTransfer(ulValue, ulCrc, pFrame[7]);
+            Local_BeginTransfer(ulValue, ulCrc, pFrame[7], ucSlot) :
+            Local_CommitTransfer(ulValue, ulCrc, pFrame[7], ucSlot);
     }
     else if (AGENTPET_IMAGE_COMMAND_DATA == ucCommand)
     {
@@ -1310,14 +1450,47 @@ AGENTPET_IMAGE_RESULT AGENTPETIMAGE_ProcessFrame(
         {
             return AGENTPET_IMAGE_ERROR_FRAME;
         }
-        for (ucIndex = 4U; ucIndex < AGENTPET_IMAGE_CONTROL_FRAME_SIZE - 1U; ucIndex++)
+        if (AGENTPET_IMAGE_SLOT_PROTOCOL_VERSION == ucProtocolVersion)
+        {
+            ucSlot = pFrame[12];
+        }
+        for (ucIndex = 4U; ucIndex < 12U; ucIndex++)
         {
             if (0U != pFrame[ucIndex])
             {
                 return AGENTPET_IMAGE_ERROR_FRAME;
             }
         }
-        eResult = Local_ResetImage();
+        for (ucIndex = 13U; ucIndex < AGENTPET_IMAGE_CONTROL_FRAME_SIZE - 1U; ucIndex++)
+        {
+            if (0U != pFrame[ucIndex])
+            {
+                return AGENTPET_IMAGE_ERROR_FRAME;
+            }
+        }
+        if ((AGENTPET_IMAGE_PROTOCOL_VERSION == ucProtocolVersion) &&
+            (0U != pFrame[12]))
+        {
+            return AGENTPET_IMAGE_ERROR_FRAME;
+        }
+        eResult = Local_ResetImage(ucSlot);
+    }
+    else if (AGENTPET_IMAGE_COMMAND_SELECT == ucCommand)
+    {
+        if ((AGENTPET_IMAGE_SLOT_PROTOCOL_VERSION != ucProtocolVersion) ||
+            (AGENTPET_IMAGE_CONTROL_FRAME_SIZE != ulLength))
+        {
+            return AGENTPET_IMAGE_ERROR_FRAME;
+        }
+        for (ucIndex = 5U; ucIndex < AGENTPET_IMAGE_CONTROL_FRAME_SIZE - 1U; ucIndex++)
+        {
+            if (0U != pFrame[ucIndex])
+            {
+                return AGENTPET_IMAGE_ERROR_FRAME;
+            }
+        }
+        eResult = AGENTPETIMAGE_SelectDigestSlot(pFrame[4]) ?
+            AGENTPET_IMAGE_RESULT_ACCEPTED : AGENTPET_IMAGE_ERROR_SIZE;
     }
 
     if ((AGENTPET_IMAGE_ERROR_INVALID_PARAMETER <= eResult) &&
@@ -1355,6 +1528,49 @@ bool AGENTPETIMAGE_GetStatus(AGENTPET_IMAGE_STATUS *pStatus)
 
     return true;
 }
+
+/*
+ * AGENTPETIMAGE_GetSlotStatus
+ * Function: copy persistent metadata and active-transfer progress for one image slot.
+ * Parameters:
+ *   - ucSlot: fixed slot index.
+ *   - pStatus: output status; must not be NULL.
+ * Return: true for a valid slot and output pointer.
+ */
+bool AGENTPETIMAGE_GetSlotStatus(
+    uint8_t ucSlot,
+    AGENTPET_IMAGE_STATUS *pStatus)
+{
+    AGENTPET_IMAGE_SLOT tSlot;
+    AGENTPET_IMAGE_STATUS tActiveStatus;
+    rt_base_t tLevel;
+
+    if ((AGENTPET_IMAGE_SLOT_COUNT <= ucSlot) || (NULL == pStatus))
+    {
+        return false;
+    }
+
+    tLevel = rt_hw_interrupt_disable();
+    tSlot = l_aImageSlots[ucSlot];
+    tActiveStatus = l_tImageStatusSnapshot;
+    rt_hw_interrupt_enable(tLevel);
+    if (ucSlot == tActiveStatus.ucSlot)
+    {
+        *pStatus = tActiveStatus;
+        return true;
+    }
+
+    (void)memset(pStatus, 0, sizeof(*pStatus));
+    pStatus->eState = tSlot.bImageAvailable ?
+        AGENTPET_IMAGE_READY : AGENTPET_IMAGE_IDLE;
+    pStatus->bImageAvailable = tSlot.bImageAvailable;
+    pStatus->ulGeneration = tSlot.ulGeneration;
+    pStatus->eLastResult = AGENTPET_IMAGE_RESULT_ACCEPTED;
+    pStatus->ucFormat = tSlot.ucFormat;
+    pStatus->ucSlot = ucSlot;
+
+    return true;
+}
 /*
  * AGENTPETIMAGE_GetDigest
  * Function: copy the availability flag and cached MD5 of the committed persistent image.
@@ -1365,6 +1581,7 @@ bool AGENTPETIMAGE_GetStatus(AGENTPET_IMAGE_STATUS *pStatus)
  */
 bool AGENTPETIMAGE_GetDigest(bool *pAvailable, uint8_t *pDigest)
 {
+    AGENTPET_IMAGE_SLOT tSlot;
     rt_base_t tLevel;
 
     if ((NULL == pAvailable) || (NULL == pDigest))
@@ -1373,9 +1590,75 @@ bool AGENTPETIMAGE_GetDigest(bool *pAvailable, uint8_t *pDigest)
     }
 
     tLevel = rt_hw_interrupt_disable();
-    *pAvailable = l_bImageDigestAvailableSnapshot;
-    (void)memcpy(pDigest, l_aImageDigestSnapshot, AGENTPET_IMAGE_MD5_SIZE);
+    tSlot = l_aImageSlots[l_ucDigestSlot];
+    rt_hw_interrupt_enable(tLevel);
+    *pAvailable = tSlot.bImageAvailable;
+    (void)memcpy(pDigest, tSlot.aImageMd5, AGENTPET_IMAGE_MD5_SIZE);
+
+    return true;
+}
+
+/*
+ * AGENTPETIMAGE_SelectDigestSlot
+ * Function: select which fixed slot is returned by subsequent digest reads.
+ * Parameters:
+ *   - ucSlot: fixed slot index.
+ * Return: true when selected, false for an out-of-range slot.
+ */
+bool AGENTPETIMAGE_SelectDigestSlot(uint8_t ucSlot)
+{
+    rt_base_t tLevel;
+
+    if (AGENTPET_IMAGE_SLOT_COUNT <= ucSlot)
+    {
+        return false;
+    }
+    tLevel = rt_hw_interrupt_disable();
+    l_ucDigestSlot = ucSlot;
     rt_hw_interrupt_enable(tLevel);
 
     return true;
+}
+
+/*
+ * AGENTPETIMAGE_GetSelectedDigestSlot
+ * Function: read the slot currently selected for digest queries.
+ * Parameters: none.
+ * Return: fixed slot index.
+ */
+uint8_t AGENTPETIMAGE_GetSelectedDigestSlot(void)
+{
+    uint8_t ucSlot;
+    rt_base_t tLevel;
+
+    tLevel = rt_hw_interrupt_disable();
+    ucSlot = l_ucDigestSlot;
+    rt_hw_interrupt_enable(tLevel);
+
+    return ucSlot;
+}
+
+/*
+ * AGENTPETIMAGE_GetPath
+ * Function: obtain the RT-Thread filesystem path for a fixed image slot.
+ * Parameters:
+ *   - ucSlot: fixed slot index.
+ * Return: static path pointer, or NULL for an invalid slot.
+ */
+const char *AGENTPETIMAGE_GetPath(uint8_t ucSlot)
+{
+    return (AGENTPET_IMAGE_SLOT_COUNT > ucSlot) ? l_aImagePaths[ucSlot] : NULL;
+}
+
+/*
+ * AGENTPETIMAGE_GetLvglPath
+ * Function: obtain the LVGL filesystem path for a fixed image slot.
+ * Parameters:
+ *   - ucSlot: fixed slot index.
+ * Return: static path pointer, or NULL for an invalid slot.
+ */
+const char *AGENTPETIMAGE_GetLvglPath(uint8_t ucSlot)
+{
+    return (AGENTPET_IMAGE_SLOT_COUNT > ucSlot) ?
+        l_aImageLvglPaths[ucSlot] : NULL;
 }

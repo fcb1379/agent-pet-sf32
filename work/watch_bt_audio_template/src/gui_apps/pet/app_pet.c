@@ -146,11 +146,14 @@ typedef struct
     uint32_t ulRenderedGeneration;
     uint32_t ulRenderedWoodenFishGeneration;
     uint32_t ulRenderedImageGeneration;
+    uint32_t ulRenderedAnimationGeneration;
     uint32_t ulRenderedMeritGeneration;
     uint32_t ulLastHitTick;
     uint32_t ulMeritCount;
     uint8_t ucRenderedState;
     uint8_t ucRenderedImageProgress;
+    uint8_t ucRenderedImageSlot;
+    uint8_t ucRequestedImageSlot;
     AGENTPET_IMAGE_STATE eRenderedImageState;
     lv_img_dsc_t tCustomMascot;
     uint8_t *pCustomMascotPixels;
@@ -719,10 +722,13 @@ static void PET_ReleaseCustomGif(void)
  * PET_LoadCustomGif
  * Function: copy the bounded committed GIF into PSRAM and start LVGL playback.
  * Parameters:
+ *   - pLvglPath: read-only LVGL filesystem path for the selected slot.
  *   - pHeader: output logical GIF dimensions.
  * Return: true when the GIF object is playing, otherwise false.
  */
-static bool PET_LoadCustomGif(lv_img_header_t *pHeader)
+static bool PET_LoadCustomGif(
+    const char *pLvglPath,
+    lv_img_header_t *pHeader)
 {
     lv_fs_file_t tFile;
     lv_fs_res_t eResult;
@@ -731,13 +737,13 @@ static bool PET_LoadCustomGif(lv_img_header_t *pHeader)
     uint32_t ulReadLength;
     uint32_t ulChunkSize;
 
-    if (NULL == pHeader)
+    if ((NULL == pLvglPath) || (NULL == pHeader))
     {
         return false;
     }
 
     (void)rt_memset(&tFile, 0, sizeof(tFile));
-    eResult = lv_fs_open(&tFile, AGENTPET_IMAGE_LVGL_PATH, LV_FS_MODE_RD);
+    eResult = lv_fs_open(&tFile, pLvglPath, LV_FS_MODE_RD);
     if (LV_FS_RES_OK != eResult)
     {
         rt_kprintf("agent pet: custom GIF open failed %d\n", eResult);
@@ -876,14 +882,24 @@ static bool PET_LoadCustomGif(lv_img_header_t *pHeader)
 }
 #endif /* LV_USE_GIF */
 
-static bool PET_DecodeCustomMascot(lv_img_header_t *pHeader)
+/*
+ * PET_DecodeCustomMascot
+ * Function: decode one committed JPEG slot into the fixed image cache.
+ * Parameters:
+ *   - pLvglPath: read-only LVGL filesystem path for the selected slot.
+ *   - pHeader: output decoded image dimensions.
+ * Return: true when decoding succeeds.
+ */
+static bool PET_DecodeCustomMascot(
+    const char *pLvglPath,
+    lv_img_header_t *pHeader)
 {
     lv_img_decoder_dsc_t tDecoder;
     uint32_t ulDataSize;
     uint16_t usRow;
     lv_res_t eResult;
 
-    if (NULL == pHeader)
+    if ((NULL == pLvglPath) || (NULL == pHeader))
     {
         return false;
     }
@@ -892,7 +908,7 @@ static bool PET_DecodeCustomMascot(lv_img_header_t *pHeader)
     lv_img_cache_invalidate_src(NULL);
     eResult = lv_img_decoder_open(
         &tDecoder,
-        AGENTPET_IMAGE_LVGL_PATH,
+        pLvglPath,
         lv_color_black(),
         0);
     if ((LV_RES_OK != eResult) ||
@@ -1063,6 +1079,7 @@ static const char *PET_ProviderName(uint8_t ucProvider)
  */
 static void PET_RefreshMascotImage(const AGENTPET_IMAGE_STATUS *pStatus)
 {
+    const char *pLvglPath;
     lv_img_header_t tHeader;
     uint16_t usZoom;
 
@@ -1072,6 +1089,7 @@ static void PET_RefreshMascotImage(const AGENTPET_IMAGE_STATUS *pStatus)
     }
     if (
         (g_pet_ui.ulRenderedImageGeneration == pStatus->ulGeneration) &&
+        (g_pet_ui.ucRenderedImageSlot == pStatus->ucSlot) &&
         (g_pet_ui.bRenderedCustomImage == pStatus->bImageAvailable)
     )
     {
@@ -1079,6 +1097,7 @@ static void PET_RefreshMascotImage(const AGENTPET_IMAGE_STATUS *pStatus)
     }
 
     g_pet_ui.ulRenderedImageGeneration = pStatus->ulGeneration;
+    g_pet_ui.ucRenderedImageSlot = pStatus->ucSlot;
     g_pet_ui.bRenderedCustomImage = pStatus->bImageAvailable;
 #if LV_USE_GIF
     PET_ReleaseCustomGif();
@@ -1087,11 +1106,12 @@ static void PET_RefreshMascotImage(const AGENTPET_IMAGE_STATUS *pStatus)
     lv_img_set_zoom(g_pet_ui.mascot, PET_MascotZoom(&agent_pet_mascot.header));
     lv_obj_clear_flag(g_pet_ui.mascot, LV_OBJ_FLAG_HIDDEN);
     PET_ReleaseCustomMascot();
+    pLvglPath = AGENTPETIMAGE_GetLvglPath(pStatus->ucSlot);
     if (pStatus->bImageAvailable)
     {
 #if LV_USE_GIF
         if ((AGENTPET_IMAGE_FORMAT_GIF == pStatus->ucFormat) &&
-            PET_LoadCustomGif(&tHeader))
+            PET_LoadCustomGif(pLvglPath, &tHeader))
         {
             lv_anim_del(g_pet_ui.stage, NULL);
             lv_anim_del(g_pet_ui.attention_panel, NULL);
@@ -1109,7 +1129,7 @@ static void PET_RefreshMascotImage(const AGENTPET_IMAGE_STATUS *pStatus)
         else
 #endif /* LV_USE_GIF */
         if ((AGENTPET_IMAGE_FORMAT_JPEG == pStatus->ucFormat) &&
-            PET_DecodeCustomMascot(&tHeader))
+            PET_DecodeCustomMascot(pLvglPath, &tHeader))
         {
             usZoom = PET_MascotZoom(&tHeader);
             lv_img_set_src(g_pet_ui.mascot, &g_pet_ui.tCustomMascot);
@@ -1180,6 +1200,50 @@ static void PET_RefreshImageProgress(const AGENTPET_IMAGE_STATUS *pStatus)
 }
 
 /*
+ * PET_RefreshExpressionAnimation
+ * Function: apply the newest desktop expression request and load only its selected slot.
+ * Parameters:
+ *   - bConnected: current Agent Pet BLE connection state.
+ * Return: none.
+ */
+static void PET_RefreshExpressionAnimation(bool bConnected)
+{
+    AGENTPET_ANIMATION_EVENT tEvent;
+    AGENTPET_IMAGE_STATUS tImageStatus;
+    uint32_t ulGeneration;
+    uint8_t ucSlot;
+    bool bHasEvent;
+
+    rt_enter_critical();
+    bHasEvent = AGENTPET_GetAnimationEvent(&tEvent, &ulGeneration);
+    rt_exit_critical();
+    if (!bConnected)
+    {
+        g_pet_ui.ucRequestedImageSlot = AGENTPET_IMAGE_BASE_SLOT;
+    }
+    else if (bHasEvent &&
+        (g_pet_ui.ulRenderedAnimationGeneration != ulGeneration))
+    {
+        g_pet_ui.ulRenderedAnimationGeneration = ulGeneration;
+        g_pet_ui.ucRequestedImageSlot =
+            (AGENTPET_ANIMATION_ACTION_PLAY == tEvent.ucAction) ?
+            tEvent.ucSlot : AGENTPET_IMAGE_BASE_SLOT;
+    }
+
+    ucSlot = g_pet_ui.ucRequestedImageSlot;
+    if (!AGENTPETIMAGE_GetSlotStatus(ucSlot, &tImageStatus) ||
+        ((AGENTPET_IMAGE_BASE_SLOT != ucSlot) &&
+         !tImageStatus.bImageAvailable))
+    {
+        ucSlot = AGENTPET_IMAGE_BASE_SLOT;
+        (void)AGENTPETIMAGE_GetSlotStatus(ucSlot, &tImageStatus);
+    }
+    PET_RefreshMascotImage(&tImageStatus);
+
+    return;
+}
+
+/*
  * PET_RefreshStatus
  * 功能：在 LVGL 线程中读取已发布快照并刷新桌宠状态文字。
  * 参数：
@@ -1215,7 +1279,7 @@ static void PET_RefreshStatus(lv_timer_t *pTimer)
         return;
     }
     PET_RefreshImageProgress(&tStatus.tImageStatus);
-    PET_RefreshMascotImage(&tStatus.tImageStatus);
+    PET_RefreshExpressionAnimation(tStatus.bConnected);
     ulQuestDay = PET_QuestCurrentDay();
     if (QUESTGARDEN_Rollover(
             &g_pet_ui.tQuestGarden, ulQuestDay, &tQuestResult) &&
@@ -2337,7 +2401,10 @@ static void pet_on_start(void)
 
     g_pet_ui.ulRenderedGeneration = 0xFFFFFFFFUL;
     g_pet_ui.ulRenderedImageGeneration = 0xFFFFFFFFUL;
+    g_pet_ui.ulRenderedAnimationGeneration = 0U;
     g_pet_ui.ucRenderedImageProgress = 0xFFU;
+    g_pet_ui.ucRenderedImageSlot = 0xFFU;
+    g_pet_ui.ucRequestedImageSlot = AGENTPET_IMAGE_BASE_SLOT;
     g_pet_ui.eRenderedImageState = AGENTPET_IMAGE_IDLE;
     g_pet_ui.bRenderedConnected = false;
     g_pet_ui.bRenderedCustomImage = false;

@@ -234,6 +234,7 @@ static uint8_t *Local_GattReadCallback(
 {
     AGENTPET_IMAGE_STATUS tImageStatus;
     bool bImageAvailable;
+    uint8_t ucDigestSlot;
 
     (void)ucConnectionIndex;
     if (NULL == pLength)
@@ -264,8 +265,9 @@ static uint8_t *Local_GattReadCallback(
     bImageAvailable = false;
     l_aImageDigestResponse[0] = 0x41U;
     l_aImageDigestResponse[1] = 0x49U;
-    l_aImageDigestResponse[2] = 2U;
-    if (!AGENTPETIMAGE_GetStatus(&tImageStatus))
+    l_aImageDigestResponse[2] = 3U;
+    ucDigestSlot = AGENTPETIMAGE_GetSelectedDigestSlot();
+    if (!AGENTPETIMAGE_GetSlotStatus(ucDigestSlot, &tImageStatus))
     {
         LOG_W("Custom mascot status snapshot unavailable");
     }
@@ -286,6 +288,7 @@ static uint8_t *Local_GattReadCallback(
     l_aImageDigestResponse[27] = (uint8_t)(tImageStatus.ulTotal >> 24U);
     l_aImageDigestResponse[28] = (uint8_t)tImageStatus.eState;
     l_aImageDigestResponse[29] = (uint8_t)tImageStatus.eLastResult;
+    l_aImageDigestResponse[30] = ucDigestSlot;
     *pLength = sizeof(l_aImageDigestResponse);
 
     return l_aImageDigestResponse;
@@ -447,6 +450,7 @@ static uint8_t Local_GattWriteCallback(
     AGENTPET_RESULT eResult;
     bool bQueued;
     rt_err_t eMailboxResult;
+    uint8_t ucIndex;
     (void)ucConnectionIndex;
     if ((NULL == pParameter) || (NULL == pParameter->value))
     {
@@ -462,6 +466,7 @@ static uint8_t Local_GattWriteCallback(
             (AGENTPET_RESULT_SNAPSHOT_PUBLISHED == eResult) ||
             (AGENTPET_RESULT_EVENT_PUBLISHED == eResult) ||
             (AGENTPET_RESULT_TIME_SYNC_PUBLISHED == eResult) ||
+            (AGENTPET_RESULT_ANIMATION_PUBLISHED == eResult) ||
             (AGENTPET_RESULT_DUPLICATE == eResult)
         )
         {
@@ -495,9 +500,41 @@ static uint8_t Local_GattWriteCallback(
     }
     else if (AGENTPET_ATT_IMAGE_VALUE == pParameter->idx)
     {
-        bQueued = AGENTPETIMAGE_QueueFrame(
-            pParameter->value,
-            pParameter->len);
+        if ((AGENTPET_IMAGE_CONTROL_FRAME_SIZE == pParameter->len) &&
+            (0x41U == pParameter->value[0]) &&
+            (0x49U == pParameter->value[1]) &&
+            (2U == pParameter->value[2]) &&
+            (5U == pParameter->value[3]) &&
+            (pParameter->value[19] == AGENTPET_Crc8Atm(
+                pParameter->value,
+                19U)))
+        {
+            bQueued = true;
+            for (ucIndex = 5U; ucIndex < 19U; ucIndex++)
+            {
+                if (0U != pParameter->value[ucIndex])
+                {
+                    bQueued = false;
+                    break;
+                }
+            }
+            if (bQueued)
+            {
+                bQueued = AGENTPETIMAGE_SelectDigestSlot(pParameter->value[4]);
+            }
+        }
+        if (AGENTPET_RESULT_ANIMATION_PUBLISHED == eResult)
+        {
+            LOG_I("Expression animation accepted action=%u slot=%u",
+                  pParameter->value[9],
+                  pParameter->value[10]);
+        }
+        else
+        {
+            bQueued = AGENTPETIMAGE_QueueFrame(
+                pParameter->value,
+                pParameter->len);
+        }
         rt_enter_critical();
         if (bQueued)
         {

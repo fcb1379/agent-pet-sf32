@@ -10,6 +10,8 @@
 #define AGENTPET_IMAGE_MD5_SIZE           (16U)
 #define AGENTPET_IMAGE_MAX_PACKET_SIZE    (244U)
 #define AGENTPET_IMAGE_MAX_FILE_SIZE      (512U * 1024U)
+#define AGENTPET_IMAGE_SLOT_COUNT         (5U)
+#define AGENTPET_IMAGE_BASE_SLOT          (0U)
 #define AGENTPET_IMAGE_PATH               "/pet.img"
 #define AGENTPET_IMAGE_LEGACY_PATH        "/pet.jpg"
 #define AGENTPET_IMAGE_LVGL_PATH          "/:/pet.img"
@@ -49,6 +51,7 @@ typedef struct _AGENTPET_IMAGE_STATUS
     uint32_t ulGeneration;
     AGENTPET_IMAGE_RESULT eLastResult;
     uint8_t ucFormat;
+    uint8_t ucSlot;
 } AGENTPET_IMAGE_STATUS;
 
 void AGENTPETIMAGE_Init(void);
@@ -58,6 +61,13 @@ AGENTPET_IMAGE_RESULT AGENTPETIMAGE_ProcessFrame(
     const uint8_t *pFrame,
     size_t ulLength);
 bool AGENTPETIMAGE_GetStatus(AGENTPET_IMAGE_STATUS *pStatus);
+bool AGENTPETIMAGE_GetSlotStatus(
+    uint8_t ucSlot,
+    AGENTPET_IMAGE_STATUS *pStatus);
 bool AGENTPETIMAGE_GetDigest(bool *pAvailable, uint8_t *pDigest);
+bool AGENTPETIMAGE_SelectDigestSlot(uint8_t ucSlot);
+uint8_t AGENTPETIMAGE_GetSelectedDigestSlot(void);
+const char *AGENTPETIMAGE_GetPath(uint8_t ucSlot);
+const char *AGENTPETIMAGE_GetLvglPath(uint8_t ucSlot);
 
 #endif /* AGENT_PET_IMAGE_TRANSFER_H */
