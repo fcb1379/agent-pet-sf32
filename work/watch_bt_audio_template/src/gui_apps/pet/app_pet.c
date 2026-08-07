@@ -1,16 +1,18 @@
 #include <rtthread.h>
+#include <time.h>
 
 #include "littlevgl2rtt.h"
 #include "app_mem.h"
 #include "agent_pet_ble_service.h"
 #include "agent_quest_garden.h"
 #include "agent_pet_merit.h"
+#include "pet_behavior.h"
+#include "pet_state_assets.h"
 #if !defined(BSP_USING_PC_SIMULATOR) || !defined(AGENT_PET_STANDALONE_PREVIEW)
     #include "lv_ext_resource_manager.h"
     #include "gui_app_fwk.h"
 #endif
 #ifndef BSP_USING_PC_SIMULATOR
-    #include <time.h>
     #include "share_prefs.h"
 #endif
 #if defined(AGENT_PET_USING_IMU) && !defined(BSP_USING_PC_SIMULATOR)
@@ -60,6 +62,8 @@ LV_IMG_DECLARE(agent_pet_merit_plus_one);
 #define PET_MOTION_SWITCH_HEIGHT (26)
 #define PET_QUEST_GARDEN_ENABLED (1U)
 #define PET_QUEST_GARDEN_WIDTH (76)
+#define PET_BEHAVIOR_SAVE_INTERVAL_MS (300000U)
+#define PET_BEHAVIOR_INVALID_STATE (0xFFU)
 #ifndef BSP_USING_PC_SIMULATOR
     #define PET_QUEST_PREF_NAME "agent_pet_quest_garden_pref_v1_"
     #define PET_QUEST_PREF_VERSION_KEY "q_ver"
@@ -69,6 +73,13 @@ LV_IMG_DECLARE(agent_pet_merit_plus_one);
     #define PET_QUEST_PREF_PENDING_KEY "q_pending"
     #define PET_QUEST_PREF_STREAK_KEY "q_streak"
     #define PET_QUEST_PREF_OVERFLOW_KEY "q_over"
+    #define PET_BEHAVIOR_PREF_NAME "agent_pet_behavior_v1_________"
+    #define PET_BEHAVIOR_PREF_VERSION_KEY "b_ver"
+    #define PET_BEHAVIOR_PREF_AFFINITY_KEY "b_aff"
+    #define PET_BEHAVIOR_PREF_ENERGY_KEY "b_energy"
+    #define PET_BEHAVIOR_PREF_AROUSAL_KEY "b_arousal"
+    #define PET_BEHAVIOR_PREF_INTERACTION_KEY "b_last"
+    #define PET_BEHAVIOR_PREF_RANDOM_KEY "b_rng"
 #endif
 
 #if defined(AGENT_PET_USING_IMU) && !defined(BSP_USING_PC_SIMULATOR)
@@ -128,6 +139,7 @@ typedef struct
     lv_obj_t *seed_label;
     lv_obj_t *status_label;
     lv_obj_t *task_label;
+    lv_obj_t *behavior_label;
     lv_obj_t *image_progress_panel;
     lv_obj_t *image_progress_label;
     lv_obj_t *image_progress_bar;
@@ -139,15 +151,20 @@ typedef struct
     lv_obj_t *motion_switch;
 #ifndef BSP_USING_PC_SIMULATOR
     share_prefs_t *pQuestPrefs;
+    share_prefs_t *pBehaviorPrefs;
 #endif
     QUEST_GARDEN tQuestGarden;
+    PET_BEHAVIOR tBehavior;
     uint32_t ulRenderedGeneration;
     uint32_t ulRenderedWoodenFishGeneration;
     uint32_t ulRenderedImageGeneration;
     uint32_t ulRenderedMeritGeneration;
     uint32_t ulLastHitTick;
+    uint32_t ulLastBehaviorSaveTick;
     uint32_t ulMeritCount;
     uint8_t ucRenderedState;
+    uint8_t ucRenderedBehaviorState;
+    uint8_t ucLoadedBehaviorAsset;
     uint8_t ucRenderedImageProgress;
     AGENTPET_IMAGE_STATE eRenderedImageState;
     lv_img_dsc_t tCustomMascot;
@@ -159,6 +176,8 @@ typedef struct
 #endif
     bool bRenderedConnected;
     bool bRenderedCustomImage;
+    bool bBehaviorReady;
+    bool bBehaviorStateAsset;
 #if defined(AGENT_PET_USING_IMU) && !defined(BSP_USING_PC_SIMULATOR)
     PET_MOTION_DETECTOR tMotionDetector;
     uint8_t ucMotionReadErrors;
@@ -168,9 +187,15 @@ typedef struct
 
 static pet_ui_t g_pet_ui;
 
-static void PET_ApplyStateAnimation(uint8_t ucState);
+static void PET_ApplyStateAnimation(
+    uint8_t ucState,
+    PET_BEHAVIOR_VISUAL_STATE eBehaviorState);
+static uint16_t PET_MascotZoom(const lv_img_header_t *pHeader);
 static void PET_PlayWoodenFishAnimation(const lv_point_t *pPoint);
 static void PET_PlayWoodenFish(lv_event_t *pEvent);
+static void PET_HandleMascotEvent(lv_event_t *pEvent);
+static bool PET_PostBehaviorEvent(PET_BEHAVIOR_EVENT_TYPE eType,
+                                  uint8_t ucValue);
 
 #if defined(AGENT_PET_USING_IMU) && !defined(BSP_USING_PC_SIMULATOR)
 /***************************
@@ -388,6 +413,8 @@ static void PET_StopMotionDetection(void)
 static void PET_MotionSample(lv_timer_t *pTimer)
 {
     PET_IMU_SAMPLE tSample;
+    PET_MOTION_STATE ePreviousState;
+    bool bImpactDetected;
     int32_t lRetVal;
 
     (void)pTimer;
@@ -417,13 +444,21 @@ static void PET_MotionSample(lv_timer_t *pTimer)
     }
 
     g_pet_ui.ucMotionReadErrors = 0U;
-    if (PET_MotionDetectorUpdate(
-            &g_pet_ui.tMotionDetector,
-            &tSample,
-            PET_MOTION_SAMPLE_MS))
+    ePreviousState = g_pet_ui.tMotionDetector.eState;
+    bImpactDetected = PET_MotionDetectorUpdate(
+        &g_pet_ui.tMotionDetector,
+        &tSample,
+        PET_MOTION_SAMPLE_MS);
+    if (bImpactDetected)
     {
+        (void)PET_PostBehaviorEvent(PET_BEHAVIOR_EVENT_IMPACT, 0U);
         PET_PlayWoodenFishAnimation(NULL);
         rt_kprintf("agent pet: motion wooden fish hit\n");
+    }
+    else if ((PET_MOTION_STATE_IDLE == ePreviousState) &&
+             (PET_MOTION_STATE_SWING == g_pet_ui.tMotionDetector.eState))
+    {
+        (void)PET_PostBehaviorEvent(PET_BEHAVIOR_EVENT_MOTION, 0U);
     }
 
     return;
@@ -720,7 +755,7 @@ static void PET_ReleaseCustomGif(void)
  *   - pHeader: output logical GIF dimensions.
  * Return: true when the GIF object is playing, otherwise false.
  */
-static bool PET_LoadCustomGif(lv_img_header_t *pHeader)
+static bool PET_LoadCustomGifPath(const char *pPath, lv_img_header_t *pHeader)
 {
     lv_fs_file_t tFile;
     lv_fs_res_t eResult;
@@ -729,13 +764,13 @@ static bool PET_LoadCustomGif(lv_img_header_t *pHeader)
     uint32_t ulReadLength;
     uint32_t ulChunkSize;
 
-    if (NULL == pHeader)
+    if ((NULL == pPath) || (NULL == pHeader))
     {
         return false;
     }
 
     (void)rt_memset(&tFile, 0, sizeof(tFile));
-    eResult = lv_fs_open(&tFile, AGENTPET_IMAGE_LVGL_PATH, LV_FS_MODE_RD);
+    eResult = lv_fs_open(&tFile, pPath, LV_FS_MODE_RD);
     if (LV_FS_RES_OK != eResult)
     {
         rt_kprintf("agent pet: custom GIF open failed %d\n", eResult);
@@ -853,8 +888,8 @@ static bool PET_LoadCustomGif(lv_img_header_t *pHeader)
     lv_obj_add_flag(g_pet_ui.mascot_gif, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(
         g_pet_ui.mascot_gif,
-        PET_PlayWoodenFish,
-        LV_EVENT_SHORT_CLICKED,
+        PET_HandleMascotEvent,
+        LV_EVENT_ALL,
         NULL);
     g_pet_ui.gif_timer = lv_timer_create(
         PET_AdvanceCustomGif,
@@ -869,6 +904,71 @@ static bool PET_LoadCustomGif(lv_img_header_t *pHeader)
                pHeader->w,
                pHeader->h,
                (unsigned long)ulFileSize);
+
+    return true;
+}
+
+/*
+ * PET_GifPathExists
+ * Function: check a state asset before releasing the currently displayed GIF.
+ * Parameters:
+ *   - pPath: LVGL filesystem path.
+ * Return: true when the file can be opened for reading.
+ */
+static bool PET_GifPathExists(const char *pPath)
+{
+    lv_fs_file_t tFile;
+    lv_fs_res_t eResult;
+
+    if (NULL == pPath)
+    {
+        return false;
+    }
+    (void)rt_memset(&tFile, 0, sizeof(tFile));
+    eResult = lv_fs_open(&tFile, pPath, LV_FS_MODE_RD);
+    if (LV_FS_RES_OK != eResult)
+    {
+        return false;
+    }
+    (void)lv_fs_close(&tFile);
+
+    return true;
+}
+
+/*
+ * PET_ShowGifPath
+ * Function: replace the active GIF with one pre-checked state or base asset.
+ * Parameters:
+ *   - pPath: LVGL filesystem path.
+ * Return: true after a complete decoder/object/timer setup.
+ */
+static bool PET_ShowGifPath(const char *pPath)
+{
+    lv_img_header_t tHeader;
+    uint16_t usZoom;
+
+    if (!PET_GifPathExists(pPath))
+    {
+        return false;
+    }
+
+    PET_ReleaseCustomGif();
+    if (!PET_LoadCustomGifPath(pPath, &tHeader))
+    {
+        return false;
+    }
+    lv_anim_del(g_pet_ui.stage, NULL);
+    lv_anim_del(g_pet_ui.attention_panel, NULL);
+    lv_obj_set_pos(g_pet_ui.stage, PET_MASCOT_X, PET_MASCOT_Y);
+    lv_obj_set_pos(
+        g_pet_ui.attention_panel,
+        PET_ATTENTION_PANEL_X,
+        PET_ATTENTION_PANEL_Y);
+    usZoom = PET_MascotZoom(&tHeader);
+    lv_img_set_zoom(g_pet_ui.mascot_gif, usZoom);
+    lv_img_set_antialias(g_pet_ui.mascot_gif, false);
+    lv_obj_center(g_pet_ui.mascot_gif);
+    lv_obj_add_flag(g_pet_ui.mascot, LV_OBJ_FLAG_HIDDEN);
 
     return true;
 }
@@ -980,6 +1080,372 @@ static uint16_t PET_MascotZoom(const lv_img_header_t *pHeader)
 static void PET_UpdateQuestGarden(void);
 static void PET_SaveQuestGarden(void);
 static uint32_t PET_QuestCurrentDay(void);
+#ifndef BSP_USING_PC_SIMULATOR
+static int32_t PET_QuestPersistedInteger(uint32_t ulValue);
+#endif
+static void PET_RefreshBehaviorAsset(
+    const AGENTPET_IMAGE_STATUS *pStatus,
+    PET_BEHAVIOR_VISUAL_STATE eState);
+
+/*
+ * PET_BehaviorLock
+ * Function: protect the compact behavior model from shell/UI concurrent access.
+ * Parameters: none.
+ * Return: hardware interrupt level; zero in the single-threaded PC adapter.
+ */
+static rt_base_t PET_BehaviorLock(void)
+{
+#ifndef BSP_USING_PC_SIMULATOR
+    return rt_hw_interrupt_disable();
+#else
+    return 0;
+#endif
+}
+
+/*
+ * PET_BehaviorUnlock
+ * Function: restore the lock state acquired by PET_BehaviorLock.
+ * Parameters:
+ *   - tLevel: saved hardware interrupt level.
+ * Return: none.
+ */
+static void PET_BehaviorUnlock(rt_base_t tLevel)
+{
+#ifndef BSP_USING_PC_SIMULATOR
+    rt_hw_interrupt_enable(tLevel);
+#else
+    (void)tLevel;
+#endif
+
+    return;
+}
+
+/*
+ * PET_CurrentEpochSeconds
+ * Function: read a bounded device epoch for behavior persistence and elapsed-time rules.
+ * Parameters: none.
+ * Return: epoch seconds, or zero while RTC time is unavailable or out of range.
+ */
+static uint32_t PET_CurrentEpochSeconds(void)
+{
+    time_t tNow;
+
+    tNow = time(NULL);
+    if (((time_t)86400 > tNow) ||
+        ((uint64_t)tNow > (uint64_t)UINT32_MAX))
+    {
+        return 0U;
+    }
+
+    return (uint32_t)tNow;
+}
+
+/*
+ * PET_PostBehaviorEvent
+ * Function: translate an LVGL-side interaction into one bounded behavior event.
+ * Parameters:
+ *   - eType: validated behavior event type.
+ *   - ucValue: optional event value, used by Agent-state events.
+ * Return: true when the event was accepted.
+ */
+static bool PET_PostBehaviorEvent(PET_BEHAVIOR_EVENT_TYPE eType,
+                                  uint8_t ucValue)
+{
+    PET_BEHAVIOR_EVENT tEvent;
+    rt_base_t tLevel;
+    bool bAccepted;
+
+    if (!g_pet_ui.bBehaviorReady)
+    {
+        return false;
+    }
+
+    tEvent.eType = eType;
+    tEvent.ulNowMs = lv_tick_get();
+    tEvent.ulEpochSeconds = PET_CurrentEpochSeconds();
+    tEvent.ucValue = ucValue;
+
+    tLevel = PET_BehaviorLock();
+    bAccepted = PETBEHAVIOR_ProcessEvent(&g_pet_ui.tBehavior, &tEvent);
+    PET_BehaviorUnlock(tLevel);
+
+    return bAccepted;
+}
+
+/*
+ * PET_BehaviorColor
+ * Function: select the page accent for one effective pet visual state.
+ * Parameters:
+ *   - eState: effective state from the behavior model.
+ * Return: LVGL color for the state.
+ */
+static lv_color_t PET_BehaviorColor(PET_BEHAVIOR_VISUAL_STATE eState)
+{
+    static const uint32_t l_aColors[PET_BEHAVIOR_VISUAL_COUNT] =
+    {
+        0x10232BU, 0x173B35U, 0x173247U, 0x171F35U, 0x2B2138U,
+        0x4A3414U, 0x43222AU, 0x3A2930U, 0x142D40U, 0x3A310FU,
+        0x421D27U
+    };
+
+    if (PET_BEHAVIOR_VISUAL_COUNT <= eState)
+    {
+        eState = PET_BEHAVIOR_VISUAL_CALM;
+    }
+
+    return lv_color_hex(l_aColors[eState]);
+}
+
+/*
+ * PET_SaveBehavior
+ * Function: persist bounded long-term pet attributes with the version key last.
+ * Parameters: none.
+ * Return: none.
+ */
+static void PET_SaveBehavior(void)
+{
+#ifndef BSP_USING_PC_SIMULATOR
+    PET_BEHAVIOR_PERSISTED tPersisted;
+    PET_BEHAVIOR_PERSISTED tCurrentPersisted;
+    rt_base_t tLevel;
+    rt_err_t tResult;
+    rt_err_t tWriteResult;
+
+    if (NULL == g_pet_ui.pBehaviorPrefs)
+    {
+        return;
+    }
+    tLevel = PET_BehaviorLock();
+    tResult = PETBEHAVIOR_GetPersisted(
+        &g_pet_ui.tBehavior, &tPersisted) ? RT_EOK : -RT_ERROR;
+    PET_BehaviorUnlock(tLevel);
+    if (RT_EOK != tResult)
+    {
+        return;
+    }
+
+    tResult = share_prefs_set_int(
+        g_pet_ui.pBehaviorPrefs, PET_BEHAVIOR_PREF_VERSION_KEY, 0);
+    tWriteResult = share_prefs_set_int(
+        g_pet_ui.pBehaviorPrefs, PET_BEHAVIOR_PREF_AFFINITY_KEY,
+        (int32_t)tPersisted.ucAffinity);
+    if (RT_EOK != tWriteResult)
+    {
+        tResult = tWriteResult;
+    }
+    tWriteResult = share_prefs_set_int(
+        g_pet_ui.pBehaviorPrefs, PET_BEHAVIOR_PREF_ENERGY_KEY,
+        (int32_t)tPersisted.ucEnergy);
+    if (RT_EOK != tWriteResult)
+    {
+        tResult = tWriteResult;
+    }
+    tWriteResult = share_prefs_set_int(
+        g_pet_ui.pBehaviorPrefs, PET_BEHAVIOR_PREF_AROUSAL_KEY,
+        (int32_t)tPersisted.ucArousal);
+    if (RT_EOK != tWriteResult)
+    {
+        tResult = tWriteResult;
+    }
+    tWriteResult = share_prefs_set_int(
+        g_pet_ui.pBehaviorPrefs, PET_BEHAVIOR_PREF_INTERACTION_KEY,
+        PET_QuestPersistedInteger(tPersisted.ulLastInteractionEpoch));
+    if (RT_EOK != tWriteResult)
+    {
+        tResult = tWriteResult;
+    }
+    tWriteResult = share_prefs_set_int(
+        g_pet_ui.pBehaviorPrefs, PET_BEHAVIOR_PREF_RANDOM_KEY,
+        (int32_t)tPersisted.ulRandomState);
+    if (RT_EOK != tWriteResult)
+    {
+        tResult = tWriteResult;
+    }
+    if (RT_EOK == tResult)
+    {
+        tResult = share_prefs_set_int(
+            g_pet_ui.pBehaviorPrefs, PET_BEHAVIOR_PREF_VERSION_KEY,
+            (int32_t)PET_BEHAVIOR_PERSIST_VERSION);
+    }
+    if (RT_EOK == tResult)
+    {
+        tLevel = PET_BehaviorLock();
+        if (PETBEHAVIOR_GetPersisted(
+                &g_pet_ui.tBehavior, &tCurrentPersisted) &&
+            (tPersisted.ulLastInteractionEpoch ==
+             tCurrentPersisted.ulLastInteractionEpoch) &&
+            (tPersisted.ulRandomState == tCurrentPersisted.ulRandomState) &&
+            (tPersisted.ucAffinity == tCurrentPersisted.ucAffinity) &&
+            (tPersisted.ucEnergy == tCurrentPersisted.ucEnergy) &&
+            (tPersisted.ucArousal == tCurrentPersisted.ucArousal))
+        {
+            PETBEHAVIOR_MarkSaved(&g_pet_ui.tBehavior);
+        }
+        PET_BehaviorUnlock(tLevel);
+        g_pet_ui.ulLastBehaviorSaveTick = lv_tick_get();
+    }
+    else
+    {
+        rt_kprintf("agent pet: save behavior failed %d\n", tResult);
+    }
+#endif
+
+    return;
+}
+
+/*
+ * PET_LoadBehavior
+ * Function: restore versioned long-term attributes and initialize the pure-C model.
+ * Parameters: none.
+ * Return: none.
+ */
+static void PET_LoadBehavior(void)
+{
+    PET_BEHAVIOR_PERSISTED tPersisted;
+    const PET_BEHAVIOR_PERSISTED *pPersisted;
+    uint32_t ulEpochSeconds;
+    uint32_t ulSeed;
+#ifndef BSP_USING_PC_SIMULATOR
+    int32_t lAffinity;
+    int32_t lArousal;
+    int32_t lEnergy;
+    int32_t lLastInteraction;
+    int32_t lRandomState;
+#endif
+
+    rt_memset(&tPersisted, 0, sizeof(tPersisted));
+    pPersisted = NULL;
+#ifndef BSP_USING_PC_SIMULATOR
+    g_pet_ui.pBehaviorPrefs = share_prefs_open(
+        PET_BEHAVIOR_PREF_NAME, SHAREPREFS_MODE_PRIVATE);
+    if (NULL != g_pet_ui.pBehaviorPrefs)
+    {
+        tPersisted.ulVersion = (uint32_t)share_prefs_get_int(
+            g_pet_ui.pBehaviorPrefs, PET_BEHAVIOR_PREF_VERSION_KEY, 0);
+        lAffinity = share_prefs_get_int(
+            g_pet_ui.pBehaviorPrefs, PET_BEHAVIOR_PREF_AFFINITY_KEY,
+            (int32_t)PET_BEHAVIOR_AFFINITY_DEFAULT);
+        lEnergy = share_prefs_get_int(
+            g_pet_ui.pBehaviorPrefs, PET_BEHAVIOR_PREF_ENERGY_KEY,
+            (int32_t)PET_BEHAVIOR_ENERGY_DEFAULT);
+        lArousal = share_prefs_get_int(
+            g_pet_ui.pBehaviorPrefs, PET_BEHAVIOR_PREF_AROUSAL_KEY,
+            (int32_t)PET_BEHAVIOR_AROUSAL_DEFAULT);
+        lLastInteraction = share_prefs_get_int(
+            g_pet_ui.pBehaviorPrefs, PET_BEHAVIOR_PREF_INTERACTION_KEY, 0);
+        lRandomState = share_prefs_get_int(
+            g_pet_ui.pBehaviorPrefs, PET_BEHAVIOR_PREF_RANDOM_KEY, 0);
+        if ((0 > lAffinity) || (100 < lAffinity) ||
+            (0 > lEnergy) || (100 < lEnergy) ||
+            (0 > lArousal) || (100 < lArousal) ||
+            (0 > lLastInteraction))
+        {
+            tPersisted.ulVersion = 0U;
+            rt_kprintf("agent pet: invalid behavior storage, using defaults\n");
+        }
+        else
+        {
+            tPersisted.ucAffinity = (uint8_t)lAffinity;
+            tPersisted.ucEnergy = (uint8_t)lEnergy;
+            tPersisted.ucArousal = (uint8_t)lArousal;
+            tPersisted.ulLastInteractionEpoch =
+                (uint32_t)lLastInteraction;
+            tPersisted.ulRandomState = (uint32_t)lRandomState;
+        }
+        pPersisted = &tPersisted;
+    }
+#endif
+    ulEpochSeconds = PET_CurrentEpochSeconds();
+    ulSeed = lv_tick_get() ^ ulEpochSeconds ^ 0xA6E71B35UL;
+    g_pet_ui.bBehaviorReady = PETBEHAVIOR_Init(
+        &g_pet_ui.tBehavior, pPersisted, lv_tick_get(),
+        ulEpochSeconds, ulSeed);
+    g_pet_ui.ulLastBehaviorSaveTick = lv_tick_get();
+    if (!g_pet_ui.bBehaviorReady)
+    {
+        rt_kprintf("agent pet: behavior init failed\n");
+    }
+
+    return;
+}
+
+/*
+ * PET_UpdateBehavior
+ * Function: advance the model, apply its view state, and coalesce persistence writes.
+ * Parameters:
+ *   - ucAgentState: current aggregate Agent state.
+ *   - pImageStatus: current custom-image status, or NULL when unavailable.
+ * Return: none.
+ */
+static void PET_UpdateBehavior(uint8_t ucAgentState,
+                               const AGENTPET_IMAGE_STATUS *pImageStatus)
+{
+    PET_BEHAVIOR_EVENT tEvent;
+    PET_BEHAVIOR_SNAPSHOT tSnapshot;
+    rt_base_t tLevel;
+    uint32_t ulEpochSeconds;
+    uint32_t ulNowMs;
+    bool bSnapshotReady;
+
+    if (!g_pet_ui.bBehaviorReady)
+    {
+        return;
+    }
+    if (AGENTPET_STATE_ERROR < ucAgentState)
+    {
+        ucAgentState = AGENTPET_STATE_IDLE;
+    }
+    ulNowMs = lv_tick_get();
+    ulEpochSeconds = PET_CurrentEpochSeconds();
+    tLevel = PET_BehaviorLock();
+    if (g_pet_ui.tBehavior.ucAgentState != ucAgentState)
+    {
+        tEvent.eType = PET_BEHAVIOR_EVENT_AGENT_STATE;
+        tEvent.ulNowMs = ulNowMs;
+        tEvent.ulEpochSeconds = ulEpochSeconds;
+        tEvent.ucValue = ucAgentState;
+        (void)PETBEHAVIOR_ProcessEvent(&g_pet_ui.tBehavior, &tEvent);
+    }
+    (void)PETBEHAVIOR_Update(
+        &g_pet_ui.tBehavior, ulNowMs, ulEpochSeconds);
+    bSnapshotReady = PETBEHAVIOR_GetSnapshot(
+        &g_pet_ui.tBehavior, &tSnapshot);
+    PET_BehaviorUnlock(tLevel);
+    if (!bSnapshotReady)
+    {
+        return;
+    }
+
+    if ((g_pet_ui.ucRenderedBehaviorState !=
+         (uint8_t)tSnapshot.eVisualState) &&
+        (NULL != g_pet_ui.behavior_label))
+    {
+        lv_label_set_text_fmt(
+            g_pet_ui.behavior_label,
+            "Agent Pet  |  %s",
+            PETBEHAVIOR_VisualStateName(tSnapshot.eVisualState));
+    }
+    if ((g_pet_ui.ucRenderedBehaviorState !=
+         (uint8_t)tSnapshot.eVisualState) &&
+        (NULL != g_pet_ui.root))
+    {
+        lv_obj_set_style_bg_color(
+            g_pet_ui.root, PET_BehaviorColor(tSnapshot.eVisualState), 0);
+    }
+    PET_ApplyStateAnimation(ucAgentState, tSnapshot.eVisualState);
+    if (NULL != pImageStatus)
+    {
+        PET_RefreshBehaviorAsset(pImageStatus, tSnapshot.eVisualState);
+    }
+    if (tSnapshot.bSaveRequired &&
+        (PET_BEHAVIOR_SAVE_INTERVAL_MS <=
+         lv_tick_elaps(g_pet_ui.ulLastBehaviorSaveTick)))
+    {
+        PET_SaveBehavior();
+    }
+
+    return;
+}
 
 static const char *PET_StateName(uint8_t ucState)
 {
@@ -1078,6 +1544,8 @@ static void PET_RefreshMascotImage(const AGENTPET_IMAGE_STATUS *pStatus)
 
     g_pet_ui.ulRenderedImageGeneration = pStatus->ulGeneration;
     g_pet_ui.bRenderedCustomImage = pStatus->bImageAvailable;
+    g_pet_ui.bBehaviorStateAsset = false;
+    g_pet_ui.ucLoadedBehaviorAsset = PET_BEHAVIOR_INVALID_STATE;
 #if LV_USE_GIF
     PET_ReleaseCustomGif();
 #endif
@@ -1089,20 +1557,9 @@ static void PET_RefreshMascotImage(const AGENTPET_IMAGE_STATUS *pStatus)
     {
 #if LV_USE_GIF
         if ((AGENTPET_IMAGE_FORMAT_GIF == pStatus->ucFormat) &&
-            PET_LoadCustomGif(&tHeader))
+            PET_ShowGifPath(AGENTPET_IMAGE_LVGL_PATH))
         {
-            lv_anim_del(g_pet_ui.stage, NULL);
-            lv_anim_del(g_pet_ui.attention_panel, NULL);
-            lv_obj_set_pos(g_pet_ui.stage, PET_MASCOT_X, PET_MASCOT_Y);
-            lv_obj_set_pos(
-                g_pet_ui.attention_panel,
-                PET_ATTENTION_PANEL_X,
-                PET_ATTENTION_PANEL_Y);
-            usZoom = PET_MascotZoom(&tHeader);
-            lv_img_set_zoom(g_pet_ui.mascot_gif, usZoom);
-            lv_img_set_antialias(g_pet_ui.mascot_gif, false);
-            lv_obj_center(g_pet_ui.mascot_gif);
-            lv_obj_add_flag(g_pet_ui.mascot, LV_OBJ_FLAG_HIDDEN);
+            /* PET_ShowGifPath completes positioning and hides the fallback. */
         }
         else
 #endif /* LV_USE_GIF */
@@ -1116,6 +1573,71 @@ static void PET_RefreshMascotImage(const AGENTPET_IMAGE_STATUS *pStatus)
         }
     }
     lv_obj_center(g_pet_ui.mascot);
+
+    return;
+}
+
+/*
+ * PET_RefreshBehaviorAsset
+ * Function: switch to an optional per-state GIF and safely restore the base mascot.
+ * Parameters:
+ *   - pStatus: current base custom-image status.
+ *   - eState: effective visual state selected by the behavior model.
+ * Return: none.
+ */
+static void PET_RefreshBehaviorAsset(
+    const AGENTPET_IMAGE_STATUS *pStatus,
+    PET_BEHAVIOR_VISUAL_STATE eState)
+{
+#if LV_USE_GIF
+    const PET_STATE_ASSET *pAsset;
+
+    if ((NULL == pStatus) || (PET_BEHAVIOR_VISUAL_COUNT <= eState))
+    {
+        return;
+    }
+    if (g_pet_ui.ucLoadedBehaviorAsset == (uint8_t)eState)
+    {
+        g_pet_ui.ucRenderedBehaviorState = (uint8_t)eState;
+        return;
+    }
+
+    pAsset = PETSTATEASSET_Get(eState);
+    if ((NULL != pAsset) && PET_GifPathExists(pAsset->pPath))
+    {
+        if (PET_ShowGifPath(pAsset->pPath))
+        {
+            lv_img_set_src(g_pet_ui.mascot, &agent_pet_mascot);
+            PET_ReleaseCustomMascot();
+            g_pet_ui.bBehaviorStateAsset = true;
+            g_pet_ui.ucLoadedBehaviorAsset = (uint8_t)eState;
+            g_pet_ui.ucRenderedBehaviorState = (uint8_t)eState;
+            return;
+        }
+        rt_kprintf(
+            "agent pet: state GIF fallback %u\n",
+            (unsigned int)eState);
+        g_pet_ui.bBehaviorStateAsset = false;
+        g_pet_ui.ucLoadedBehaviorAsset = (uint8_t)eState;
+        g_pet_ui.ulRenderedImageGeneration = 0xFFFFFFFFUL;
+        PET_RefreshMascotImage(pStatus);
+        g_pet_ui.ucLoadedBehaviorAsset = (uint8_t)eState;
+        return;
+    }
+
+    if (g_pet_ui.bBehaviorStateAsset)
+    {
+        g_pet_ui.bBehaviorStateAsset = false;
+        g_pet_ui.ucLoadedBehaviorAsset = PET_BEHAVIOR_INVALID_STATE;
+        g_pet_ui.ulRenderedImageGeneration = 0xFFFFFFFFUL;
+        PET_RefreshMascotImage(pStatus);
+    }
+    g_pet_ui.ucLoadedBehaviorAsset = (uint8_t)eState;
+    g_pet_ui.ucRenderedBehaviorState = (uint8_t)eState;
+#else
+    (void)pStatus;
+    g_pet_ui.ucRenderedBehaviorState = (uint8_t)eState;
+#endif /* LV_USE_GIF */
 
     return;
 }
@@ -1193,6 +1715,7 @@ static void PET_RefreshStatus(lv_timer_t *pTimer)
     uint32_t ulQuestDay;
     uint32_t ulPendingHitCount;
     uint8_t ucHitIndex;
+    uint8_t ucAgentState;
 
     (void)pTimer;
     if (AGENTPETMERIT_GetSnapshot(&tMeritSnapshot) &&
@@ -1210,10 +1733,14 @@ static void PET_RefreshStatus(lv_timer_t *pTimer)
     }
     if (!AGENTPETBLE_GetStatus(&tStatus))
     {
+        PET_UpdateBehavior(AGENTPET_STATE_IDLE, NULL);
         return;
     }
     PET_RefreshImageProgress(&tStatus.tImageStatus);
     PET_RefreshMascotImage(&tStatus.tImageStatus);
+    ucAgentState = tStatus.bHasSnapshot ?
+        tStatus.tSnapshot.ucAggregateState : AGENTPET_STATE_IDLE;
+    PET_UpdateBehavior(ucAgentState, &tStatus.tImageStatus);
     ulQuestDay = PET_QuestCurrentDay();
     if (QUESTGARDEN_Rollover(
             &g_pet_ui.tQuestGarden, ulQuestDay, &tQuestResult) &&
@@ -1256,7 +1783,6 @@ static void PET_RefreshStatus(lv_timer_t *pTimer)
             g_pet_ui.status_label,
             tStatus.bConnected ? "BLE connected - waiting" : "BLE disconnected");
         lv_label_set_text(g_pet_ui.task_label, "No Agent snapshot");
-        PET_ApplyStateAnimation(AGENTPET_STATE_IDLE);
         return;
     }
 
@@ -1313,8 +1839,6 @@ static void PET_RefreshStatus(lv_timer_t *pTimer)
                 " !" : "");
     }
 
-    PET_ApplyStateAnimation(tStatus.tSnapshot.ucAggregateState);
-
     return;
 }
 
@@ -1367,7 +1891,9 @@ static void pet_start_y_animation(lv_obj_t *object, lv_coord_t from, lv_coord_t 
  * PET_ApplyStateAnimation
  * Function: Match the desktop Agent Pet motion for each aggregate state.
  */
-static void PET_ApplyStateAnimation(uint8_t ucState)
+static void PET_ApplyStateAnimation(
+    uint8_t ucState,
+    PET_BEHAVIOR_VISUAL_STATE eBehaviorState)
 {
     lv_anim_t tAnimation;
     lv_anim_t tAttentionAnimation;
@@ -1380,12 +1906,14 @@ static void PET_ApplyStateAnimation(uint8_t ucState)
 
     if ((NULL == g_pet_ui.stage) ||
         (NULL == g_pet_ui.attention_panel) ||
-        (g_pet_ui.ucRenderedState == ucState))
+        ((g_pet_ui.ucRenderedState == ucState) &&
+         (g_pet_ui.ucRenderedBehaviorState == (uint8_t)eBehaviorState)))
     {
         return;
     }
 
     g_pet_ui.ucRenderedState = ucState;
+    g_pet_ui.ucRenderedBehaviorState = (uint8_t)eBehaviorState;
     lv_anim_del(g_pet_ui.stage, NULL);
     lv_anim_del(g_pet_ui.attention_panel, NULL);
     lv_obj_set_pos(g_pet_ui.stage, PET_MASCOT_X, PET_MASCOT_Y);
@@ -1408,7 +1936,55 @@ static void PET_ApplyStateAnimation(uint8_t ucState)
     ulTime = 1600U;
     usRepeatCount = LV_ANIM_REPEAT_INFINITE;
 
-    if (AGENTPET_STATE_RUNNING == ucState)
+    if (AGENTPET_STATE_IDLE == ucState)
+    {
+        if (PET_BEHAVIOR_VISUAL_HAPPY == eBehaviorState)
+        {
+            lFrom = PET_MASCOT_Y + 4;
+            lTo = PET_MASCOT_Y - 8;
+            ulTime = 360U;
+        }
+        else if (PET_BEHAVIOR_VISUAL_CURIOUS == eBehaviorState)
+        {
+            pExecCallback = (lv_anim_exec_xcb_t)lv_obj_set_x;
+            lFrom = PET_MASCOT_X - 3;
+            lTo = PET_MASCOT_X + 3;
+            ulTime = 700U;
+        }
+        else if (PET_BEHAVIOR_VISUAL_SLEEPY == eBehaviorState)
+        {
+            lFrom = PET_MASCOT_Y + 1;
+            lTo = PET_MASCOT_Y - 1;
+            ulTime = 2400U;
+        }
+        else if (PET_BEHAVIOR_VISUAL_LONELY == eBehaviorState)
+        {
+            lFrom = PET_MASCOT_Y + 2;
+            lTo = PET_MASCOT_Y - 1;
+            ulTime = 2300U;
+        }
+        else if (PET_BEHAVIOR_VISUAL_CELEBRATE == eBehaviorState)
+        {
+            lFrom = PET_MASCOT_Y + 4;
+            lTo = PET_MASCOT_Y - 14;
+            ulTime = 375U;
+        }
+        else if (PET_BEHAVIOR_VISUAL_STARTLED == eBehaviorState)
+        {
+            pExecCallback = (lv_anim_exec_xcb_t)lv_obj_set_x;
+            lFrom = PET_MASCOT_X - 4;
+            lTo = PET_MASCOT_X + 4;
+            ulTime = 110U;
+        }
+        else if (PET_BEHAVIOR_VISUAL_ANNOYED == eBehaviorState)
+        {
+            pExecCallback = (lv_anim_exec_xcb_t)lv_obj_set_x;
+            lFrom = PET_MASCOT_X - 2;
+            lTo = PET_MASCOT_X + 2;
+            ulTime = 180U;
+        }
+    }
+    else if (AGENTPET_STATE_RUNNING == ucState)
     {
         lFrom = PET_MASCOT_Y + 5;
         lTo = PET_MASCOT_Y - 5;
@@ -2111,6 +2687,35 @@ static void PET_PlayWoodenFish(lv_event_t *pEvent)
 }
 
 /*
+ * PET_HandleMascotEvent
+ * Function: feed petting gestures to the behavior model while preserving wooden-fish taps.
+ * Parameters:
+ *   - pEvent: LVGL mascot event.
+ * Return: none.
+ */
+static void PET_HandleMascotEvent(lv_event_t *pEvent)
+{
+    lv_event_code_t eCode;
+
+    if (NULL == pEvent)
+    {
+        return;
+    }
+    eCode = lv_event_get_code(pEvent);
+    if (LV_EVENT_SHORT_CLICKED == eCode)
+    {
+        (void)PET_PostBehaviorEvent(PET_BEHAVIOR_EVENT_TAP, 0U);
+        PET_PlayWoodenFish(pEvent);
+    }
+    else if (LV_EVENT_LONG_PRESSED == eCode)
+    {
+        (void)PET_PostBehaviorEvent(PET_BEHAVIOR_EVENT_COMFORT, 0U);
+    }
+
+    return;
+}
+
+/*
  * PET_CreateWoodenFish
  * Function: Build independent image layers exported from the desktop CSS.
  */
@@ -2154,11 +2759,12 @@ static void PET_CreateWoodenFish(void)
 
 static void pet_on_start(void)
 {
-    lv_obj_t *name;
     lv_obj_t *floor;
 
     rt_memset(&g_pet_ui, 0, sizeof(g_pet_ui));
     g_pet_ui.ucRenderedState = 0xFFU;
+    g_pet_ui.ucRenderedBehaviorState = PET_BEHAVIOR_INVALID_STATE;
+    g_pet_ui.ucLoadedBehaviorAsset = PET_BEHAVIOR_INVALID_STATE;
     g_pet_ui.root = lv_obj_create(lv_scr_act());
     lv_obj_set_size(g_pet_ui.root, LV_HOR_RES_MAX, LV_VER_RES_MAX);
     lv_obj_set_style_bg_color(g_pet_ui.root, lv_color_hex(0x10232b), 0);
@@ -2167,14 +2773,17 @@ static void pet_on_start(void)
     lv_obj_set_style_pad_all(g_pet_ui.root, 0, 0);
     lv_obj_clear_flag(g_pet_ui.root, LV_OBJ_FLAG_SCROLLABLE);
 
-    name = lv_label_create(g_pet_ui.root);
-    lv_label_set_text(name, "Agent Pet");
-    lv_obj_set_width(name, 120);
-    lv_obj_set_pos(name, 55, 8);
-    lv_obj_set_style_text_align(name, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_style_text_color(name, lv_color_hex(0xd8f7ee), 0);
-    lv_obj_set_style_text_letter_space(name, 1, 0);
-    lv_obj_set_style_text_opa(name, LV_OPA_COVER, 0);
+    g_pet_ui.behavior_label = lv_label_create(g_pet_ui.root);
+    lv_label_set_text(g_pet_ui.behavior_label, "Agent Pet  |  Calm");
+    lv_obj_set_width(g_pet_ui.behavior_label, 160);
+    lv_obj_set_pos(g_pet_ui.behavior_label, 8, 8);
+    lv_obj_set_style_text_align(
+        g_pet_ui.behavior_label, LV_TEXT_ALIGN_LEFT, 0);
+    lv_obj_set_style_text_color(
+        g_pet_ui.behavior_label, lv_color_hex(0xd8f7ee), 0);
+    lv_obj_set_style_text_letter_space(g_pet_ui.behavior_label, 1, 0);
+    lv_obj_set_style_text_opa(
+        g_pet_ui.behavior_label, LV_OPA_COVER, 0);
 
     floor = pet_shape(g_pet_ui.root, 40,
                       PET_MASCOT_Y + PET_MASCOT_SIZE - 18,
@@ -2200,8 +2809,8 @@ static void pet_on_start(void)
     lv_obj_add_flag(g_pet_ui.mascot, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(
         g_pet_ui.mascot,
-        PET_PlayWoodenFish,
-        LV_EVENT_SHORT_CLICKED,
+        PET_HandleMascotEvent,
+        LV_EVENT_ALL,
         NULL);
 
     g_pet_ui.sparkle_a = pet_shape(g_pet_ui.root, 30,
@@ -2312,6 +2921,7 @@ static void pet_on_start(void)
 
     PET_LoadMerit();
     PET_LoadQuestGarden();
+    PET_LoadBehavior();
     PET_UpdateQuestGarden();
     g_pet_ui.wooden_timer = lv_timer_create(
         PET_EndWoodenFish,
@@ -2338,7 +2948,7 @@ static void pet_on_start(void)
         PET_RefreshStatus,
         PET_STATUS_REFRESH_MS,
         NULL);
-    PET_ApplyStateAnimation(AGENTPET_STATE_IDLE);
+    PET_UpdateBehavior(AGENTPET_STATE_IDLE, NULL);
     PET_RefreshStatus(g_pet_ui.status_timer);
 }
 
@@ -2368,6 +2978,20 @@ static void pet_on_stop(void)
         g_pet_ui.daily_timer = NULL;
     }
 #ifndef BSP_USING_PC_SIMULATOR
+    if (NULL != g_pet_ui.pBehaviorPrefs)
+    {
+        rt_err_t tBehaviorCloseResult;
+
+        PET_SaveBehavior();
+        tBehaviorCloseResult = share_prefs_close(g_pet_ui.pBehaviorPrefs);
+        if (RT_EOK != tBehaviorCloseResult)
+        {
+            rt_kprintf(
+                "agent pet: close behavior storage failed %d\n",
+                tBehaviorCloseResult);
+        }
+        g_pet_ui.pBehaviorPrefs = NULL;
+    }
     if (NULL != g_pet_ui.pQuestPrefs)
     {
         rt_err_t tQuestCloseResult;
@@ -2398,6 +3022,86 @@ static void pet_on_stop(void)
     }
     rt_memset(&g_pet_ui, 0, sizeof(g_pet_ui));
 }
+
+#ifndef BSP_USING_PC_SIMULATOR
+/*
+ * petmood
+ * Function: inspect or inject one behavior event from the RT-Thread shell.
+ * Parameters:
+ *   - argc: argument count.
+ *   - argv: status, tap, comfort, motion, impact, or agent <0-4>.
+ * Return: none.
+ */
+static void petmood(int argc, char **argv)
+{
+    PET_BEHAVIOR_SNAPSHOT tSnapshot;
+    PET_BEHAVIOR_EVENT_TYPE eType;
+    rt_base_t tLevel;
+    uint8_t ucValue;
+    bool bAccepted;
+
+    if (!g_pet_ui.bBehaviorReady)
+    {
+        rt_kprintf("pet behavior inactive; open the pet page first\n");
+        return;
+    }
+    bAccepted = false;
+    ucValue = 0U;
+    if ((2 <= argc) && (0 != rt_strcmp(argv[1], "status")))
+    {
+        if (0 == rt_strcmp(argv[1], "tap"))
+        {
+            eType = PET_BEHAVIOR_EVENT_TAP;
+        }
+        else if (0 == rt_strcmp(argv[1], "comfort"))
+        {
+            eType = PET_BEHAVIOR_EVENT_COMFORT;
+        }
+        else if (0 == rt_strcmp(argv[1], "motion"))
+        {
+            eType = PET_BEHAVIOR_EVENT_MOTION;
+        }
+        else if (0 == rt_strcmp(argv[1], "impact"))
+        {
+            eType = PET_BEHAVIOR_EVENT_IMPACT;
+        }
+        else if ((3 == argc) && (0 == rt_strcmp(argv[1], "agent")) &&
+                 ('\0' == argv[2][1]) && ('0' <= argv[2][0]) &&
+                 ('4' >= argv[2][0]))
+        {
+            eType = PET_BEHAVIOR_EVENT_AGENT_STATE;
+            ucValue = (uint8_t)(argv[2][0] - '0');
+        }
+        else
+        {
+            rt_kprintf("usage: petmood status|tap|comfort|motion|impact|agent <0-4>\n");
+            return;
+        }
+        bAccepted = PET_PostBehaviorEvent(eType, ucValue);
+    }
+
+    tLevel = PET_BehaviorLock();
+    if (!PETBEHAVIOR_GetSnapshot(&g_pet_ui.tBehavior, &tSnapshot))
+    {
+        PET_BehaviorUnlock(tLevel);
+        return;
+    }
+    PET_BehaviorUnlock(tLevel);
+    rt_kprintf(
+        "pet behavior accepted=%u mood=%u reaction=%u visual=%s affinity=%u energy=%u arousal=%u generation=%lu\n",
+        bAccepted ? 1U : 0U,
+        (unsigned int)tSnapshot.eMood,
+        (unsigned int)tSnapshot.eReaction,
+        PETBEHAVIOR_VisualStateName(tSnapshot.eVisualState),
+        (unsigned int)tSnapshot.ucAffinity,
+        (unsigned int)tSnapshot.ucEnergy,
+        (unsigned int)tSnapshot.ucArousal,
+        (unsigned long)tSnapshot.ulGeneration);
+
+    return;
+}
+MSH_CMD_EXPORT(petmood, inspect or inject agent pet behavior state);
+#endif /* BSP_USING_PC_SIMULATOR */
 
 #if defined(BSP_USING_PC_SIMULATOR) && defined(AGENT_PET_STANDALONE_PREVIEW)
 /* PC simulator entry: drive the pet UI directly without the GUI app framework.
