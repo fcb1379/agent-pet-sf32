@@ -19,11 +19,26 @@ V1 不创建新的常驻 RTOS 线程。当前事件源都由 LVGL 回调或 LVGL
 
 从高到低：
 
-1. Agent Error / Needs input / Running / Completed。
-2. Celebrate / Startled / Annoyed / Happy / Curious 短时反应。
-3. Lonely / Sleepy / Happy / Curious / Calm 基础情绪。
+1. 上位机打字场景和显式 `PLAY(slot)` 表情覆盖。
+2. Agent Error / Needs input / Running / Completed。
+3. Celebrate / Startled / Annoyed / Happy / Curious 短时反应。
+4. Lonely / Sleepy / Happy / Curious / Calm 基础情绪。
 
 Agent 状态只覆盖显示，不写入 affinity、energy 或 arousal。
+上位机覆盖同样只接管视图；行为模型继续计时和接收事件。`RESTORE` 或连接断开时，
+视图直接读取当前行为快照恢复，不重置情绪状态。
+
+## 主分支多 GIF 接口适配
+
+- 复用 `AGENTPETIMAGE_GetSlotStatus()` 和 `AGENTPETIMAGE_GetLvglPath()` 加载上位机
+  指定的 0~4 号槽位，不再假定基础图片固定为 `/pet.img`。
+- `app_pet.c` 维护远端覆盖标志。远端覆盖或打字期间，行为模型照常运行，但不执行
+  `/pet/<state>.gif` 替换；覆盖结束后重新装载当前自主状态素材。
+- 任一切换路径都先释放旧 decoder，再创建新 decoder；JPEG、GIF 和内置 mascot
+  共用同一显示出口，避免双 decoder 和悬空 timer。
+- 现有 5 个槽位是通用上位机资源，没有情绪角色元数据，因此本版本不把槽位编号
+  硬编码为行为状态。后续若统一素材传输，协议需提供版本化角色清单，至少包含
+  `role`、`slot`、`format`、`digest` 和缺省回退角色。
 
 ## 状态稳定策略
 

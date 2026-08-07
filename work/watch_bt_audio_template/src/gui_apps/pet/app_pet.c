@@ -6,6 +6,7 @@
 #include "agent_pet_ble_service.h"
 #include "agent_quest_garden.h"
 #include "agent_pet_merit.h"
+#include "local_music_player.h"
 #include "pet_behavior.h"
 #include "pet_state_assets.h"
 #if !defined(BSP_USING_PC_SIMULATOR) || !defined(AGENT_PET_STANDALONE_PREVIEW)
@@ -32,6 +33,7 @@ LV_IMG_DECLARE(agent_pet_merit_plus_one);
 #define PET_MASCOT_Y (((LV_VER_RES_MAX - PET_MASCOT_SIZE) / 2) - 12)
 #define PET_GIF_MIN_FRAME_MS (20U)
 #define PET_WOODEN_FISH_IDLE_MS (1700U)
+#define PET_WOODEN_FISH_SOUND_PATH "/940muyu3.wav"
 #define PET_DAILY_SUMMARY_MS (1900U)
 #define PET_TURBO_INTERVAL_MS (180U)
 #define PET_FAST_INTERVAL_MS (360U)
@@ -44,6 +46,21 @@ LV_IMG_DECLARE(agent_pet_merit_plus_one);
 #define PET_ATTENTION_PANEL_HEIGHT (90)
 #define PET_ATTENTION_PANEL_X ((LV_HOR_RES_MAX - PET_ATTENTION_PANEL_WIDTH) / 2)
 #define PET_ATTENTION_PANEL_Y (38)
+#define PET_TYPING_SCENE_WIDTH (PET_MASCOT_SIZE)
+#define PET_TYPING_SCENE_HEIGHT (PET_MASCOT_SIZE)
+#define PET_TYPING_SCENE_X (PET_MASCOT_X)
+#define PET_TYPING_SCENE_Y (PET_MASCOT_Y)
+#define PET_TYPING_ANIMATION_MS (220U)
+#define PET_TYPING_KEY_COUNT (12U)
+#define PET_TYPING_KEYBOARD_X (21)
+#define PET_TYPING_KEYBOARD_Y (146)
+#define PET_TYPING_KEYBOARD_WIDTH (150)
+#define PET_TYPING_KEYBOARD_HEIGHT (42)
+#define PET_TYPING_PAW_WIDTH (30)
+#define PET_TYPING_PAW_HEIGHT (22)
+#define PET_TYPING_PAW_Y (126)
+#define PET_TYPING_PAW_LEFT_X (50)
+#define PET_TYPING_PAW_RIGHT_X (112)
 #define PET_MOTION_SAMPLE_MS (20U)
 #define PET_MOTION_SWING_DYN_MG (120U)
 #define PET_MOTION_SWING_GYRO_MDPS (60000U)
@@ -130,6 +147,10 @@ typedef struct
     lv_obj_t *attention_panel;
     lv_obj_t *attention_title;
     lv_obj_t *attention_hint;
+    lv_obj_t *typing_scene;
+    lv_obj_t *typing_keyboard;
+    lv_obj_t *typing_paw_left;
+    lv_obj_t *typing_paw_right;
     lv_obj_t *garden_pot;
     lv_obj_t *garden_stem;
     lv_obj_t *aGardenLeaves[QUEST_GARDEN_MAX_LEAVES];
@@ -158,6 +179,7 @@ typedef struct
     uint32_t ulRenderedGeneration;
     uint32_t ulRenderedWoodenFishGeneration;
     uint32_t ulRenderedImageGeneration;
+    uint32_t ulRenderedAnimationGeneration;
     uint32_t ulRenderedMeritGeneration;
     uint32_t ulLastHitTick;
     uint32_t ulLastBehaviorSaveTick;
@@ -166,6 +188,8 @@ typedef struct
     uint8_t ucRenderedBehaviorState;
     uint8_t ucLoadedBehaviorAsset;
     uint8_t ucRenderedImageProgress;
+    uint8_t ucRenderedImageSlot;
+    uint8_t ucRequestedImageSlot;
     AGENTPET_IMAGE_STATE eRenderedImageState;
     lv_img_dsc_t tCustomMascot;
     uint8_t *pCustomMascotPixels;
@@ -178,6 +202,9 @@ typedef struct
     bool bRenderedCustomImage;
     bool bBehaviorReady;
     bool bBehaviorStateAsset;
+    bool bExpressionOverride;
+    bool bTypingActive;
+    bool bRenderedTypingActive;
 #if defined(AGENT_PET_USING_IMU) && !defined(BSP_USING_PC_SIMULATOR)
     PET_MOTION_DETECTOR tMotionDetector;
     uint8_t ucMotionReadErrors;
@@ -752,10 +779,13 @@ static void PET_ReleaseCustomGif(void)
  * PET_LoadCustomGif
  * Function: copy the bounded committed GIF into PSRAM and start LVGL playback.
  * Parameters:
+ *   - pLvglPath: read-only LVGL filesystem path for the selected slot.
  *   - pHeader: output logical GIF dimensions.
  * Return: true when the GIF object is playing, otherwise false.
  */
-static bool PET_LoadCustomGifPath(const char *pPath, lv_img_header_t *pHeader)
+static bool PET_LoadCustomGif(
+    const char *pLvglPath,
+    lv_img_header_t *pHeader)
 {
     lv_fs_file_t tFile;
     lv_fs_res_t eResult;
@@ -764,13 +794,13 @@ static bool PET_LoadCustomGifPath(const char *pPath, lv_img_header_t *pHeader)
     uint32_t ulReadLength;
     uint32_t ulChunkSize;
 
-    if ((NULL == pPath) || (NULL == pHeader))
+    if ((NULL == pLvglPath) || (NULL == pHeader))
     {
         return false;
     }
 
     (void)rt_memset(&tFile, 0, sizeof(tFile));
-    eResult = lv_fs_open(&tFile, pPath, LV_FS_MODE_RD);
+    eResult = lv_fs_open(&tFile, pLvglPath, LV_FS_MODE_RD);
     if (LV_FS_RES_OK != eResult)
     {
         rt_kprintf("agent pet: custom GIF open failed %d\n", eResult);
@@ -953,7 +983,7 @@ static bool PET_ShowGifPath(const char *pPath)
     }
 
     PET_ReleaseCustomGif();
-    if (!PET_LoadCustomGifPath(pPath, &tHeader))
+    if (!PET_LoadCustomGif(pPath, &tHeader))
     {
         return false;
     }
@@ -974,14 +1004,24 @@ static bool PET_ShowGifPath(const char *pPath)
 }
 #endif /* LV_USE_GIF */
 
-static bool PET_DecodeCustomMascot(lv_img_header_t *pHeader)
+/*
+ * PET_DecodeCustomMascot
+ * Function: decode one committed JPEG slot into the fixed image cache.
+ * Parameters:
+ *   - pLvglPath: read-only LVGL filesystem path for the selected slot.
+ *   - pHeader: output decoded image dimensions.
+ * Return: true when decoding succeeds.
+ */
+static bool PET_DecodeCustomMascot(
+    const char *pLvglPath,
+    lv_img_header_t *pHeader)
 {
     lv_img_decoder_dsc_t tDecoder;
     uint32_t ulDataSize;
     uint16_t usRow;
     lv_res_t eResult;
 
-    if (NULL == pHeader)
+    if ((NULL == pLvglPath) || (NULL == pHeader))
     {
         return false;
     }
@@ -990,7 +1030,7 @@ static bool PET_DecodeCustomMascot(lv_img_header_t *pHeader)
     lv_img_cache_invalidate_src(NULL);
     eResult = lv_img_decoder_open(
         &tDecoder,
-        AGENTPET_IMAGE_LVGL_PATH,
+        pLvglPath,
         lv_color_black(),
         0);
     if ((LV_RES_OK != eResult) ||
@@ -1433,7 +1473,9 @@ static void PET_UpdateBehavior(uint8_t ucAgentState,
             g_pet_ui.root, PET_BehaviorColor(tSnapshot.eVisualState), 0);
     }
     PET_ApplyStateAnimation(ucAgentState, tSnapshot.eVisualState);
-    if (NULL != pImageStatus)
+    if ((NULL != pImageStatus) &&
+        !g_pet_ui.bExpressionOverride &&
+        !g_pet_ui.bTypingActive)
     {
         PET_RefreshBehaviorAsset(pImageStatus, tSnapshot.eVisualState);
     }
@@ -1527,6 +1569,7 @@ static const char *PET_ProviderName(uint8_t ucProvider)
  */
 static void PET_RefreshMascotImage(const AGENTPET_IMAGE_STATUS *pStatus)
 {
+    const char *pLvglPath;
     lv_img_header_t tHeader;
     uint16_t usZoom;
 
@@ -1536,6 +1579,7 @@ static void PET_RefreshMascotImage(const AGENTPET_IMAGE_STATUS *pStatus)
     }
     if (
         (g_pet_ui.ulRenderedImageGeneration == pStatus->ulGeneration) &&
+        (g_pet_ui.ucRenderedImageSlot == pStatus->ucSlot) &&
         (g_pet_ui.bRenderedCustomImage == pStatus->bImageAvailable)
     )
     {
@@ -1543,6 +1587,7 @@ static void PET_RefreshMascotImage(const AGENTPET_IMAGE_STATUS *pStatus)
     }
 
     g_pet_ui.ulRenderedImageGeneration = pStatus->ulGeneration;
+    g_pet_ui.ucRenderedImageSlot = pStatus->ucSlot;
     g_pet_ui.bRenderedCustomImage = pStatus->bImageAvailable;
     g_pet_ui.bBehaviorStateAsset = false;
     g_pet_ui.ucLoadedBehaviorAsset = PET_BEHAVIOR_INVALID_STATE;
@@ -1553,18 +1598,19 @@ static void PET_RefreshMascotImage(const AGENTPET_IMAGE_STATUS *pStatus)
     lv_img_set_zoom(g_pet_ui.mascot, PET_MascotZoom(&agent_pet_mascot.header));
     lv_obj_clear_flag(g_pet_ui.mascot, LV_OBJ_FLAG_HIDDEN);
     PET_ReleaseCustomMascot();
+    pLvglPath = AGENTPETIMAGE_GetLvglPath(pStatus->ucSlot);
     if (pStatus->bImageAvailable)
     {
 #if LV_USE_GIF
         if ((AGENTPET_IMAGE_FORMAT_GIF == pStatus->ucFormat) &&
-            PET_ShowGifPath(AGENTPET_IMAGE_LVGL_PATH))
+            PET_ShowGifPath(pLvglPath))
         {
             /* PET_ShowGifPath completes positioning and hides the fallback. */
         }
         else
 #endif /* LV_USE_GIF */
         if ((AGENTPET_IMAGE_FORMAT_JPEG == pStatus->ucFormat) &&
-            PET_DecodeCustomMascot(&tHeader))
+            PET_DecodeCustomMascot(pLvglPath, &tHeader))
         {
             usZoom = PET_MascotZoom(&tHeader);
             lv_img_set_src(g_pet_ui.mascot, &g_pet_ui.tCustomMascot);
@@ -1700,6 +1746,83 @@ static void PET_RefreshImageProgress(const AGENTPET_IMAGE_STATUS *pStatus)
 }
 
 /*
+ * PET_RefreshExpressionAnimation
+ * Function: apply the newest desktop expression request and load only its selected slot.
+ * Parameters:
+ *   - bConnected: current Agent Pet BLE connection state.
+ * Return: none.
+ */
+static void PET_RefreshExpressionAnimation(bool bConnected)
+{
+    AGENTPET_ANIMATION_EVENT tEvent;
+    AGENTPET_IMAGE_STATUS tImageStatus;
+    uint32_t ulGeneration;
+    uint8_t ucSlot;
+    bool bHasEvent;
+    bool bPresentationChanged;
+
+    bPresentationChanged = false;
+    rt_enter_critical();
+    bHasEvent = AGENTPET_GetAnimationEvent(&tEvent, &ulGeneration);
+    rt_exit_critical();
+    if (!bConnected)
+    {
+        bPresentationChanged =
+            (AGENTPET_IMAGE_BASE_SLOT !=
+             g_pet_ui.ucRequestedImageSlot) ||
+            g_pet_ui.bExpressionOverride ||
+            g_pet_ui.bTypingActive;
+        g_pet_ui.ucRequestedImageSlot = AGENTPET_IMAGE_BASE_SLOT;
+        g_pet_ui.bExpressionOverride = false;
+        g_pet_ui.bTypingActive = false;
+    }
+    else if (bHasEvent &&
+        (g_pet_ui.ulRenderedAnimationGeneration != ulGeneration))
+    {
+        g_pet_ui.ulRenderedAnimationGeneration = ulGeneration;
+        if (AGENTPET_ANIMATION_ACTION_PLAY == tEvent.ucAction)
+        {
+            g_pet_ui.ucRequestedImageSlot = tEvent.ucSlot;
+            g_pet_ui.bExpressionOverride = true;
+            bPresentationChanged = true;
+        }
+        else if (AGENTPET_ANIMATION_ACTION_RESTORE == tEvent.ucAction)
+        {
+            g_pet_ui.ucRequestedImageSlot = AGENTPET_IMAGE_BASE_SLOT;
+            g_pet_ui.bExpressionOverride = false;
+            bPresentationChanged = true;
+        }
+        else if (AGENTPET_ANIMATION_ACTION_TYPING_START == tEvent.ucAction)
+        {
+            g_pet_ui.bTypingActive = true;
+            bPresentationChanged = true;
+        }
+        else if (AGENTPET_ANIMATION_ACTION_TYPING_STOP == tEvent.ucAction)
+        {
+            g_pet_ui.bTypingActive = false;
+            bPresentationChanged = true;
+        }
+    }
+
+    if (bPresentationChanged)
+    {
+        g_pet_ui.ulRenderedImageGeneration = 0xFFFFFFFFUL;
+    }
+
+    ucSlot = g_pet_ui.ucRequestedImageSlot;
+    if (!AGENTPETIMAGE_GetSlotStatus(ucSlot, &tImageStatus) ||
+        ((AGENTPET_IMAGE_BASE_SLOT != ucSlot) &&
+         !tImageStatus.bImageAvailable))
+    {
+        ucSlot = AGENTPET_IMAGE_BASE_SLOT;
+        (void)AGENTPETIMAGE_GetSlotStatus(ucSlot, &tImageStatus);
+    }
+    PET_RefreshMascotImage(&tImageStatus);
+
+    return;
+}
+
+/*
  * PET_RefreshStatus
  * 功能：在 LVGL 线程中读取已发布快照并刷新桌宠状态文字。
  * 参数：
@@ -1737,7 +1860,7 @@ static void PET_RefreshStatus(lv_timer_t *pTimer)
         return;
     }
     PET_RefreshImageProgress(&tStatus.tImageStatus);
-    PET_RefreshMascotImage(&tStatus.tImageStatus);
+    PET_RefreshExpressionAnimation(tStatus.bConnected);
     ucAgentState = tStatus.bHasSnapshot ?
         tStatus.tSnapshot.ucAggregateState : AGENTPET_STATE_IDLE;
     PET_UpdateBehavior(ucAgentState, &tStatus.tImageStatus);
@@ -1897,6 +2020,8 @@ static void PET_ApplyStateAnimation(
 {
     lv_anim_t tAnimation;
     lv_anim_t tAttentionAnimation;
+    lv_anim_t tTypingLeftAnimation;
+    lv_anim_t tTypingRightAnimation;
     lv_anim_exec_xcb_t pExecCallback;
     bool bAnimateOverlay;
     int32_t lFrom;
@@ -1906,22 +2031,90 @@ static void PET_ApplyStateAnimation(
 
     if ((NULL == g_pet_ui.stage) ||
         (NULL == g_pet_ui.attention_panel) ||
+        (NULL == g_pet_ui.typing_scene) ||
+        (NULL == g_pet_ui.typing_paw_left) ||
+        (NULL == g_pet_ui.typing_paw_right) ||
         ((g_pet_ui.ucRenderedState == ucState) &&
-         (g_pet_ui.ucRenderedBehaviorState == (uint8_t)eBehaviorState)))
+         (g_pet_ui.ucRenderedBehaviorState == (uint8_t)eBehaviorState) &&
+         (g_pet_ui.bRenderedTypingActive == g_pet_ui.bTypingActive)))
     {
         return;
     }
 
     g_pet_ui.ucRenderedState = ucState;
     g_pet_ui.ucRenderedBehaviorState = (uint8_t)eBehaviorState;
+    g_pet_ui.bRenderedTypingActive = g_pet_ui.bTypingActive;
     lv_anim_del(g_pet_ui.stage, NULL);
     lv_anim_del(g_pet_ui.attention_panel, NULL);
+    lv_anim_del(g_pet_ui.typing_paw_left, NULL);
+    lv_anim_del(g_pet_ui.typing_paw_right, NULL);
     lv_obj_set_pos(g_pet_ui.stage, PET_MASCOT_X, PET_MASCOT_Y);
     lv_obj_set_pos(
         g_pet_ui.attention_panel,
         PET_ATTENTION_PANEL_X,
         PET_ATTENTION_PANEL_Y);
+    lv_obj_set_pos(
+        g_pet_ui.typing_scene,
+        PET_TYPING_SCENE_X,
+        PET_TYPING_SCENE_Y);
     lv_obj_add_flag(g_pet_ui.attention_panel, LV_OBJ_FLAG_HIDDEN);
+    if (g_pet_ui.bTypingActive)
+    {
+        lv_obj_clear_flag(g_pet_ui.stage, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(g_pet_ui.typing_scene, LV_OBJ_FLAG_HIDDEN);
+#if LV_USE_GIF
+        if (NULL != g_pet_ui.gif_timer)
+        {
+            lv_timer_pause(g_pet_ui.gif_timer);
+        }
+#endif /* LV_USE_GIF */
+        lv_anim_init(&tTypingLeftAnimation);
+        lv_anim_set_var(&tTypingLeftAnimation, g_pet_ui.typing_paw_left);
+        lv_anim_set_values(
+            &tTypingLeftAnimation,
+            PET_TYPING_PAW_Y + 3,
+            PET_TYPING_PAW_Y - 3);
+        lv_anim_set_exec_cb(
+            &tTypingLeftAnimation,
+            (lv_anim_exec_xcb_t)lv_obj_set_y);
+        lv_anim_set_time(&tTypingLeftAnimation, PET_TYPING_ANIMATION_MS);
+        lv_anim_set_playback_time(
+            &tTypingLeftAnimation,
+            PET_TYPING_ANIMATION_MS);
+        lv_anim_set_repeat_count(
+            &tTypingLeftAnimation,
+            LV_ANIM_REPEAT_INFINITE);
+        lv_anim_start(&tTypingLeftAnimation);
+
+        lv_anim_init(&tTypingRightAnimation);
+        lv_anim_set_var(&tTypingRightAnimation, g_pet_ui.typing_paw_right);
+        lv_anim_set_values(
+            &tTypingRightAnimation,
+            PET_TYPING_PAW_Y - 3,
+            PET_TYPING_PAW_Y + 3);
+        lv_anim_set_exec_cb(
+            &tTypingRightAnimation,
+            (lv_anim_exec_xcb_t)lv_obj_set_y);
+        lv_anim_set_time(&tTypingRightAnimation, PET_TYPING_ANIMATION_MS);
+        lv_anim_set_playback_time(
+            &tTypingRightAnimation,
+            PET_TYPING_ANIMATION_MS);
+        lv_anim_set_repeat_count(
+            &tTypingRightAnimation,
+            LV_ANIM_REPEAT_INFINITE);
+        lv_anim_start(&tTypingRightAnimation);
+        return;
+    }
+
+    lv_obj_clear_flag(g_pet_ui.stage, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(g_pet_ui.typing_scene, LV_OBJ_FLAG_HIDDEN);
+#if LV_USE_GIF
+    if ((NULL != g_pet_ui.mascot_gif) &&
+        (NULL != g_pet_ui.gif_timer))
+    {
+        lv_timer_resume(g_pet_ui.gif_timer);
+    }
+#endif /* LV_USE_GIF */
     bAnimateOverlay = true;
 #if LV_USE_GIF
     if (NULL != g_pet_ui.mascot_gif)
@@ -2572,6 +2765,11 @@ static void PET_PlayWoodenFishAnimation(const lv_point_t *pPoint)
         return;
     }
 
+    if (RT_EOK != LOCALMUSIC_PlayEffect(PET_WOODEN_FISH_SOUND_PATH))
+    {
+        rt_kprintf("pet: wooden-fish sound queue failed\n");
+    }
+
     if (NULL != pPoint)
     {
         tFishX = pPoint->x - (PET_WOODEN_FISH_WIDTH / 2);
@@ -2760,6 +2958,10 @@ static void PET_CreateWoodenFish(void)
 static void pet_on_start(void)
 {
     lv_obj_t *floor;
+    lv_obj_t *pTypingKey;
+    uint8_t ucTypingKeyIndex;
+    lv_coord_t lTypingKeyX;
+    lv_coord_t lTypingKeyY;
 
     rt_memset(&g_pet_ui, 0, sizeof(g_pet_ui));
     g_pet_ui.ucRenderedState = 0xFFU;
@@ -2812,6 +3014,112 @@ static void pet_on_start(void)
         PET_HandleMascotEvent,
         LV_EVENT_ALL,
         NULL);
+
+    g_pet_ui.typing_scene = lv_obj_create(g_pet_ui.root);
+    lv_obj_set_pos(
+        g_pet_ui.typing_scene,
+        PET_TYPING_SCENE_X,
+        PET_TYPING_SCENE_Y);
+    lv_obj_set_size(
+        g_pet_ui.typing_scene,
+        PET_TYPING_SCENE_WIDTH,
+        PET_TYPING_SCENE_HEIGHT);
+    lv_obj_set_style_bg_opa(g_pet_ui.typing_scene, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(g_pet_ui.typing_scene, 0, 0);
+    lv_obj_set_style_pad_all(g_pet_ui.typing_scene, 0, 0);
+    lv_obj_clear_flag(g_pet_ui.typing_scene, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(g_pet_ui.typing_scene, LV_OBJ_FLAG_CLICKABLE);
+
+    g_pet_ui.typing_keyboard = pet_shape(
+        g_pet_ui.typing_scene,
+        PET_TYPING_KEYBOARD_X,
+        PET_TYPING_KEYBOARD_Y,
+        PET_TYPING_KEYBOARD_WIDTH,
+        PET_TYPING_KEYBOARD_HEIGHT,
+        0x42516AU,
+        10);
+    if (NULL != g_pet_ui.typing_keyboard)
+    {
+        lv_obj_set_style_border_width(g_pet_ui.typing_keyboard, 3, 0);
+        lv_obj_set_style_border_color(
+            g_pet_ui.typing_keyboard,
+            lv_color_hex(0x10182AU),
+            0);
+        for (ucTypingKeyIndex = 0U;
+             ucTypingKeyIndex < PET_TYPING_KEY_COUNT;
+             ucTypingKeyIndex++)
+        {
+            lTypingKeyX = 8 +
+                (lv_coord_t)((ucTypingKeyIndex % 6U) * 22U);
+            lTypingKeyY = 7 +
+                (lv_coord_t)((ucTypingKeyIndex / 6U) * 15U);
+            pTypingKey = pet_shape(
+                g_pet_ui.typing_keyboard,
+                lTypingKeyX,
+                lTypingKeyY,
+                18,
+                9,
+                (0U == (ucTypingKeyIndex % 3U)) ?
+                    0x75ECFFU : 0xA8BAD0U,
+                3);
+            if (NULL != pTypingKey)
+            {
+                lv_obj_set_style_border_width(pTypingKey, 0, 0);
+            }
+        }
+    }
+
+    g_pet_ui.typing_paw_left = pet_shape(
+        g_pet_ui.typing_scene,
+        PET_TYPING_PAW_LEFT_X,
+        PET_TYPING_PAW_Y,
+        PET_TYPING_PAW_WIDTH,
+        PET_TYPING_PAW_HEIGHT,
+        0xFFC96BU,
+        12);
+    g_pet_ui.typing_paw_right = pet_shape(
+        g_pet_ui.typing_scene,
+        PET_TYPING_PAW_RIGHT_X,
+        PET_TYPING_PAW_Y,
+        PET_TYPING_PAW_WIDTH,
+        PET_TYPING_PAW_HEIGHT,
+        0xFFC96BU,
+        12);
+    if (NULL != g_pet_ui.typing_paw_left)
+    {
+        lv_obj_set_style_border_width(g_pet_ui.typing_paw_left, 3, 0);
+        lv_obj_set_style_border_color(
+            g_pet_ui.typing_paw_left,
+            lv_color_hex(0x16223AU),
+            0);
+        (void)pet_shape(
+            g_pet_ui.typing_paw_left,
+            8,
+            5,
+            12,
+            8,
+            0xFF9B75U,
+            6);
+    }
+    if (NULL != g_pet_ui.typing_paw_right)
+    {
+        lv_obj_set_style_border_width(g_pet_ui.typing_paw_right, 3, 0);
+        lv_obj_set_style_border_color(
+            g_pet_ui.typing_paw_right,
+            lv_color_hex(0x16223AU),
+            0);
+        (void)pet_shape(
+            g_pet_ui.typing_paw_right,
+            8,
+            5,
+            12,
+            8,
+            0xFF9B75U,
+            6);
+    }
+    (void)pet_shape(g_pet_ui.typing_scene, 16, 112, 7, 7, 0x75ECFFU, 4);
+    (void)pet_shape(g_pet_ui.typing_scene, 171, 98, 6, 6, 0x75ECFFU, 3);
+    (void)pet_shape(g_pet_ui.typing_scene, 177, 137, 5, 5, 0x75ECFFU, 3);
 
     g_pet_ui.sparkle_a = pet_shape(g_pet_ui.root, 30,
                                    PET_MASCOT_Y + 95, 10, 10, 0xf6c75e, 10);
@@ -2940,10 +3248,16 @@ static void pet_on_start(void)
 
     g_pet_ui.ulRenderedGeneration = 0xFFFFFFFFUL;
     g_pet_ui.ulRenderedImageGeneration = 0xFFFFFFFFUL;
+    g_pet_ui.ulRenderedAnimationGeneration = 0U;
     g_pet_ui.ucRenderedImageProgress = 0xFFU;
+    g_pet_ui.ucRenderedImageSlot = 0xFFU;
+    g_pet_ui.ucRequestedImageSlot = AGENTPET_IMAGE_BASE_SLOT;
     g_pet_ui.eRenderedImageState = AGENTPET_IMAGE_IDLE;
     g_pet_ui.bRenderedConnected = false;
     g_pet_ui.bRenderedCustomImage = false;
+    g_pet_ui.bExpressionOverride = false;
+    g_pet_ui.bTypingActive = false;
+    g_pet_ui.bRenderedTypingActive = false;
     g_pet_ui.status_timer = lv_timer_create(
         PET_RefreshStatus,
         PET_STATUS_REFRESH_MS,

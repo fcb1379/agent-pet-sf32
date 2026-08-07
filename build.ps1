@@ -82,13 +82,14 @@ try {
                 continue
             }
             try {
-                $versionOutput = & $candidate -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>$null
-                if ($versionOutput -match '^(\d+)\.(\d+)') {
+                $versionOutput = & $candidate -c "import platform, sys; print(f'{sys.version_info.major}.{sys.version_info.minor}|{platform.machine()}')" 2>$null
+                if ($versionOutput -match '^(\d+)\.(\d+)\|(.+)$') {
                     $pythonMajor = [int]$Matches[1]
                     $pythonMinor = [int]$Matches[2]
+                    $pythonArchitecture = $Matches[3]
                     if (($pythonMajor -gt 3) -or (($pythonMajor -eq 3) -and ($pythonMinor -ge 9))) {
                         $env:PATH = "$(Split-Path $candidate);$env:PATH"
-                        Write-Host "Using Python $pythonMajor.$pythonMinor at $candidate"
+                        Write-Host "Using Python $pythonMajor.$pythonMinor ($pythonArchitecture) at $candidate"
                         break
                     }
                 }

@@ -164,6 +164,70 @@ static int TEST_TimeSync(void)
     return 0;
 }
 
+static int TEST_AnimationEvent(void)
+{
+    uint8_t aFrame[AGENTPET_FRAME_SIZE] = {0U};
+    AGENTPET_ANIMATION_EVENT tEvent;
+    uint32_t ulGeneration;
+
+    aFrame[0] = 0x41U;
+    aFrame[1] = 0x50U;
+    aFrame[2] = 1U;
+    aFrame[3] = 4U;
+    aFrame[4] = 0x34U;
+    aFrame[5] = 0x12U;
+    aFrame[6] = 0U;
+    aFrame[7] = 1U;
+    aFrame[8] = 2U;
+    aFrame[9] = AGENTPET_ANIMATION_ACTION_PLAY;
+    aFrame[10] = 3U;
+    TEST_FinalizeFrame(aFrame);
+
+    AGENTPET_ProtocolInit();
+    TEST_ASSERT(
+        AGENTPET_RESULT_ANIMATION_PUBLISHED ==
+        AGENTPET_ProcessFrame(aFrame, sizeof(aFrame)));
+    TEST_ASSERT(AGENTPET_GetAnimationEvent(&tEvent, &ulGeneration));
+    TEST_ASSERT(AGENTPET_ANIMATION_ACTION_PLAY == tEvent.ucAction);
+    TEST_ASSERT(3U == tEvent.ucSlot);
+    TEST_ASSERT(0x1234U == tEvent.usSequence);
+    TEST_ASSERT(1U == ulGeneration);
+    TEST_ASSERT(
+        AGENTPET_RESULT_DUPLICATE ==
+        AGENTPET_ProcessFrame(aFrame, sizeof(aFrame)));
+
+    aFrame[4]++;
+    aFrame[10] = 5U;
+    TEST_FinalizeFrame(aFrame);
+    TEST_ASSERT(
+        AGENTPET_ERROR_ANIMATION ==
+        AGENTPET_ProcessFrame(aFrame, sizeof(aFrame)));
+
+    aFrame[4]++;
+    aFrame[9] = AGENTPET_ANIMATION_ACTION_TYPING_START;
+    aFrame[10] = 0U;
+    TEST_FinalizeFrame(aFrame);
+    TEST_ASSERT(
+        AGENTPET_RESULT_ANIMATION_PUBLISHED ==
+        AGENTPET_ProcessFrame(aFrame, sizeof(aFrame)));
+    TEST_ASSERT(AGENTPET_GetAnimationEvent(&tEvent, &ulGeneration));
+    TEST_ASSERT(AGENTPET_ANIMATION_ACTION_TYPING_START == tEvent.ucAction);
+    TEST_ASSERT(0U == tEvent.ucSlot);
+    TEST_ASSERT(2U == ulGeneration);
+
+    aFrame[4]++;
+    aFrame[9] = AGENTPET_ANIMATION_ACTION_TYPING_STOP;
+    TEST_FinalizeFrame(aFrame);
+    TEST_ASSERT(
+        AGENTPET_RESULT_ANIMATION_PUBLISHED ==
+        AGENTPET_ProcessFrame(aFrame, sizeof(aFrame)));
+    TEST_ASSERT(AGENTPET_GetAnimationEvent(&tEvent, &ulGeneration));
+    TEST_ASSERT(AGENTPET_ANIMATION_ACTION_TYPING_STOP == tEvent.ucAction);
+    TEST_ASSERT(3U == ulGeneration);
+
+    return 0;
+}
+
 static int TEST_RejectInvalidFrame(void)
 {
     uint8_t aFrame[AGENTPET_FRAME_SIZE] =
@@ -203,6 +267,11 @@ int main(void)
         return lRetVal;
     }
     lRetVal = TEST_TimeSync();
+    if (0 != lRetVal)
+    {
+        return lRetVal;
+    }
+    lRetVal = TEST_AnimationEvent();
     if (0 != lRetVal)
     {
         return lRetVal;

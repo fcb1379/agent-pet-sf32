@@ -28,6 +28,7 @@ typedef enum _AGENTPET_RESULT
     AGENTPET_RESULT_DUPLICATE = 2,
     AGENTPET_RESULT_EVENT_PUBLISHED = 3,
     AGENTPET_RESULT_TIME_SYNC_PUBLISHED = 4,
+    AGENTPET_RESULT_ANIMATION_PUBLISHED = 5,
     AGENTPET_ERROR_INVALID_PARAMETER = 100,
     AGENTPET_ERROR_FRAME_LENGTH = 101,
     AGENTPET_ERROR_HEADER = 102,
@@ -36,8 +37,27 @@ typedef enum _AGENTPET_RESULT
     AGENTPET_ERROR_PADDING = 105,
     AGENTPET_ERROR_SNAPSHOT = 106,
     AGENTPET_ERROR_EVENT = 107,
-    AGENTPET_ERROR_TIME_SYNC = 108
+    AGENTPET_ERROR_TIME_SYNC = 108,
+    AGENTPET_ERROR_ANIMATION = 109
 } AGENTPET_RESULT;
+
+#define AGENTPET_ANIMATION_ACTION_PLAY    (1U)
+#define AGENTPET_ANIMATION_ACTION_RESTORE (2U)
+#define AGENTPET_ANIMATION_ACTION_TYPING_START (3U)
+#define AGENTPET_ANIMATION_ACTION_TYPING_STOP  (4U)
+
+/* AGENTPET_ANIMATION_EVENT: validated desktop request to play an expression slot.
+ * Members:
+ *   - ucAction: PLAY or RESTORE action
+ *   - ucSlot: fixed image slot; RESTORE always uses slot zero
+ *   - usSequence: protocol sequence used for duplicate rejection
+ */
+typedef struct _AGENTPET_ANIMATION_EVENT
+{
+    uint8_t ucAction;
+    uint8_t ucSlot;
+    uint16_t usSequence;
+} AGENTPET_ANIMATION_EVENT;
 
 /* AGENTPET_SESSION: Agent 会话的固定资源状态记录。
  * 成员说明：
@@ -95,5 +115,8 @@ AGENTPET_RESULT AGENTPET_ProcessFrame(const uint8_t *pFrame, size_t ulLength);
 bool AGENTPET_GetSnapshot(AGENTPET_SNAPSHOT *pSnapshot, uint32_t *pGeneration);
 bool AGENTPET_GetWoodenFishEvent(uint16_t *pSequence, uint32_t *pGeneration);
 bool AGENTPET_GetTimeSync(AGENTPET_TIME_SYNC *pTimeSync, uint32_t *pGeneration);
+bool AGENTPET_GetAnimationEvent(
+    AGENTPET_ANIMATION_EVENT *pEvent,
+    uint32_t *pGeneration);
 
 #endif /* AGENT_PET_PROTOCOL_H */

@@ -86,6 +86,16 @@ static badge_transfer_snapshot_t l_tBadge =
 static AGENTPET_BLE_STATUS l_tAgentStatus;
 static bool l_bAgentInitialized;
 
+/* Fixed LVGL paths mirror the five persistent image slots used by hardware. */
+static const char *l_aAgentPetImageLvglPaths[AGENTPET_IMAGE_SLOT_COUNT] =
+{
+    "/:/pet.img",
+    "/:/pet1.gif",
+    "/:/pet2.gif",
+    "/:/pet3.gif",
+    "/:/pet4.gif"
+};
+
 /***************************
  * rt_spi_msd_init: report that removable SPI storage is unavailable in the
  * PC simulator. Hardware builds link the real SPI mass-storage driver.
@@ -482,6 +492,73 @@ bool AGENTPETBLE_GetStatus(AGENTPET_BLE_STATUS *pStatus)
 
     *pStatus = l_tAgentStatus;
     return true;
+}
+
+/*
+ * AGENTPET_GetAnimationEvent
+ * Function: report that the deterministic PC preview has no pending desktop
+ * expression command.
+ * Parameters:
+ *   - pEvent: optional event output.
+ *   - pGeneration: optional generation output.
+ * Return: false because no event is queued.
+ */
+bool AGENTPET_GetAnimationEvent(
+    AGENTPET_ANIMATION_EVENT *pEvent,
+    uint32_t *pGeneration)
+{
+    if (NULL != pEvent)
+    {
+        memset(pEvent, 0, sizeof(*pEvent));
+    }
+    if (NULL != pGeneration)
+    {
+        *pGeneration = 0U;
+    }
+
+    return false;
+}
+
+/*
+ * AGENTPETIMAGE_GetSlotStatus
+ * Function: expose empty but valid image slots to the PC preview.
+ * Parameters:
+ *   - ucSlot: fixed slot index.
+ *   - pStatus: output status pointer.
+ * Return: true for a valid slot and pointer.
+ */
+bool AGENTPETIMAGE_GetSlotStatus(
+    uint8_t ucSlot,
+    AGENTPET_IMAGE_STATUS *pStatus)
+{
+    if ((AGENTPET_IMAGE_SLOT_COUNT <= ucSlot) || (NULL == pStatus))
+    {
+        return false;
+    }
+
+    memset(pStatus, 0, sizeof(*pStatus));
+    pStatus->eState = AGENTPET_IMAGE_IDLE;
+    pStatus->eLastResult = AGENTPET_IMAGE_RESULT_ACCEPTED;
+    pStatus->ucSlot = ucSlot;
+
+    return true;
+}
+
+/*
+ * AGENTPETIMAGE_GetLvglPath
+ * Function: return the simulator path for one fixed image slot.
+ * Parameters:
+ *   - ucSlot: fixed slot index.
+ * Return: static path pointer, or NULL for an invalid slot.
+ */
+const char *AGENTPETIMAGE_GetLvglPath(uint8_t ucSlot)
+{
+    if (AGENTPET_IMAGE_SLOT_COUNT <= ucSlot)
+    {
+        return NULL;
+    }
+
+    return l_aAgentPetImageLvglPaths[ucSlot];
 }
 
 void AGENTPETBLE_NotifyMerit(void)

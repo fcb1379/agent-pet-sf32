@@ -53,3 +53,22 @@ PSRAM 解码路径；任一时刻只保留一个 GIF decoder 和一套显示帧�
    损坏文件后确认安全回退 `/pet.img` 或内置 mascot。
 6. 页面反复进入/退出 100 次，检查 timer、PSRAM 和持久化；随后执行 4 小时稳定性、
    1000 次状态切换和功耗对比。
+
+## 2026-08-07 主分支多 GIF 同步回归
+
+同步基线：`origin/master` 的 `9d94611a98b44ed3f19a717cdddbba3e390e1c43`。
+
+| 项目 | 实际命令 | 结果 |
+|---|---|---|
+| 行为模型与素材映射主机测试 | `powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests\run_pet_behavior_host_test.ps1` | PASS |
+| Agent Pet 协议回归（包含表情事件） | `powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests\run_agent_pet_protocol_host_test.ps1` | PASS |
+| 任务花园回归 | `powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests\run_agent_quest_garden_host_test.ps1` | PASS |
+| 烧录工具回归 | `powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests\build-flash-utils.test.ps1` | PASS |
+| PC 完整手表模拟器 | `work\watch_bt_audio_template\simulator\build.bat` | PASS |
+| 模拟器运行冒烟 | 后台启动 `project\build_pc_hcpu\main.exe` 并观察 5 秒 | PASS，进程持续存活 |
+| SF32LB52 完整固件 | `powershell.exe -NoProfile -ExecutionPolicy Bypass -File build.ps1` | PASS |
+| 差异格式检查 | `git diff --check` | PASS |
+
+同步后 `main.elf` 大小：text 3,755,900 B，data 12,052 B，bss 3,972,768 B。
+本轮验证覆盖编译与模拟器启动，没有连接真实设备。上位机 `PLAY/RESTORE`、打字动画、
+蓝牙断开时的视觉控制权交接，以及 5 个槽位逐一传输与损坏回退仍标记为待硬件验收。
