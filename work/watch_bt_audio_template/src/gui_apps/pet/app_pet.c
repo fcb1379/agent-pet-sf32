@@ -3,10 +3,15 @@
 #include "littlevgl2rtt.h"
 #include "app_mem.h"
 #include "agent_pet_ble_service.h"
+#include "agent_quest_garden.h"
 #include "agent_pet_merit.h"
 #if !defined(BSP_USING_PC_SIMULATOR) || !defined(AGENT_PET_STANDALONE_PREVIEW)
     #include "lv_ext_resource_manager.h"
     #include "gui_app_fwk.h"
+#endif
+#ifndef BSP_USING_PC_SIMULATOR
+    #include <time.h>
+    #include "share_prefs.h"
 #endif
 #if defined(AGENT_PET_USING_IMU) && !defined(BSP_USING_PC_SIMULATOR)
     #include "pet_imu.h"
@@ -53,6 +58,18 @@ LV_IMG_DECLARE(agent_pet_merit_plus_one);
 #define PET_MOTION_SWITCH_Y (8)
 #define PET_MOTION_SWITCH_WIDTH (52)
 #define PET_MOTION_SWITCH_HEIGHT (26)
+#define PET_QUEST_GARDEN_ENABLED (1U)
+#define PET_QUEST_GARDEN_WIDTH (76)
+#ifndef BSP_USING_PC_SIMULATOR
+    #define PET_QUEST_PREF_NAME "agent_pet_quest_garden_pref_v1_"
+    #define PET_QUEST_PREF_VERSION_KEY "q_ver"
+    #define PET_QUEST_PREF_DAY_KEY "q_day"
+    #define PET_QUEST_PREF_COMPLETED_KEY "q_done"
+    #define PET_QUEST_PREF_COLLECTED_KEY "q_claim"
+    #define PET_QUEST_PREF_PENDING_KEY "q_pending"
+    #define PET_QUEST_PREF_STREAK_KEY "q_streak"
+    #define PET_QUEST_PREF_OVERFLOW_KEY "q_over"
+#endif
 
 #if defined(AGENT_PET_USING_IMU) && !defined(BSP_USING_PC_SIMULATOR)
 /* PET_MOTION_STATE: 体感敲木鱼动作识别状态。 */
@@ -102,6 +119,13 @@ typedef struct
     lv_obj_t *attention_panel;
     lv_obj_t *attention_title;
     lv_obj_t *attention_hint;
+    lv_obj_t *garden_pot;
+    lv_obj_t *garden_stem;
+    lv_obj_t *aGardenLeaves[QUEST_GARDEN_MAX_LEAVES];
+    lv_obj_t *garden_flower;
+    lv_obj_t *garden_label;
+    lv_obj_t *seed_button;
+    lv_obj_t *seed_label;
     lv_obj_t *status_label;
     lv_obj_t *task_label;
     lv_obj_t *image_progress_panel;
@@ -113,6 +137,10 @@ typedef struct
     lv_timer_t *motion_timer;
     lv_obj_t *motion_label;
     lv_obj_t *motion_switch;
+#ifndef BSP_USING_PC_SIMULATOR
+    share_prefs_t *pQuestPrefs;
+#endif
+    QUEST_GARDEN tQuestGarden;
     uint32_t ulRenderedGeneration;
     uint32_t ulRenderedWoodenFishGeneration;
     uint32_t ulRenderedImageGeneration;
@@ -949,6 +977,9 @@ static uint16_t PET_MascotZoom(const lv_img_header_t *pHeader)
         LV_IMG_ZOOM_NONE,
         LV_MIN(ulZoomWidth, ulZoomHeight));
 }
+static void PET_UpdateQuestGarden(void);
+static void PET_SaveQuestGarden(void);
+static uint32_t PET_QuestCurrentDay(void);
 
 static const char *PET_StateName(uint8_t ucState)
 {
@@ -1158,6 +1189,8 @@ static void PET_RefreshStatus(lv_timer_t *pTimer)
     AGENTPET_BLE_STATUS tStatus;
     AGENTPET_MERIT_SNAPSHOT tMeritSnapshot;
     const AGENTPET_SESSION *pSession;
+    QUEST_GARDEN_RESULT tQuestResult;
+    uint32_t ulQuestDay;
     uint32_t ulPendingHitCount;
     uint8_t ucHitIndex;
 
@@ -1181,6 +1214,17 @@ static void PET_RefreshStatus(lv_timer_t *pTimer)
     }
     PET_RefreshImageProgress(&tStatus.tImageStatus);
     PET_RefreshMascotImage(&tStatus.tImageStatus);
+    ulQuestDay = PET_QuestCurrentDay();
+    if (QUESTGARDEN_Rollover(
+            &g_pet_ui.tQuestGarden, ulQuestDay, &tQuestResult) &&
+        (true == tQuestResult.bChanged))
+    {
+        PET_UpdateQuestGarden();
+        if (true == tQuestResult.bSaveRequired)
+        {
+            PET_SaveQuestGarden();
+        }
+    }
     if (tStatus.bHasWoodenFishEvent)
     {
         ulPendingHitCount = tStatus.ulWoodenFishGeneration -
@@ -1214,6 +1258,31 @@ static void PET_RefreshStatus(lv_timer_t *pTimer)
         lv_label_set_text(g_pet_ui.task_label, "No Agent snapshot");
         PET_ApplyStateAnimation(AGENTPET_STATE_IDLE);
         return;
+    }
+
+    if (!QUESTGARDEN_ProcessSnapshot(
+            &g_pet_ui.tQuestGarden, ulQuestDay,
+            &tStatus.tSnapshot, &tQuestResult))
+    {
+        rt_kprintf("agent pet: quest snapshot rejected\n");
+    }
+    else if (true == tQuestResult.bChanged)
+    {
+        PET_UpdateQuestGarden();
+        if (true == tQuestResult.bSaveRequired)
+        {
+            PET_SaveQuestGarden();
+        }
+        if ((0U != tQuestResult.ucNewSeedCount) &&
+            (NULL != g_pet_ui.daily_summary) &&
+            (NULL != g_pet_ui.daily_timer))
+        {
+            lv_label_set_text(g_pet_ui.daily_summary, "Seed ready");
+            lv_obj_clear_flag(
+                g_pet_ui.daily_summary, LV_OBJ_FLAG_HIDDEN);
+            lv_timer_reset(g_pet_ui.daily_timer);
+            lv_timer_resume(g_pet_ui.daily_timer);
+        }
     }
 
     lv_label_set_text_fmt(
@@ -1253,7 +1322,18 @@ static lv_obj_t *pet_shape(lv_obj_t *parent, lv_coord_t x, lv_coord_t y,
                            lv_coord_t width, lv_coord_t height, uint32_t color,
                            lv_coord_t radius)
 {
-    lv_obj_t *object = lv_obj_create(parent);
+    lv_obj_t *object;
+
+    if (NULL == parent)
+    {
+        return NULL;
+    }
+
+    object = lv_obj_create(parent);
+    if (NULL == object)
+    {
+        return NULL;
+    }
 
     lv_obj_set_pos(object, x, y);
     lv_obj_set_size(object, width, height);
@@ -1419,6 +1499,392 @@ static void PET_ApplyStateAnimation(uint8_t ucState)
                 &tAttentionAnimation,
                 LV_ANIM_REPEAT_INFINITE);
             lv_anim_start(&tAttentionAnimation);
+        }
+    }
+
+    return;
+}
+
+/*
+ * PET_QuestCurrentDay
+ * 功能：返回任务花园使用的 UTC epoch day，RTC 未同步时返回 0。
+ * 参数：无。
+ * 返回值：UTC epoch day，0 表示日期未知。
+ */
+static uint32_t PET_QuestCurrentDay(void)
+{
+#ifndef BSP_USING_PC_SIMULATOR
+    time_t tNow;
+
+    tNow = time(NULL);
+    if ((time_t)86400 > tNow)
+    {
+        return 0U;
+    }
+
+    return (uint32_t)(tNow / (time_t)86400);
+#else
+    return 0U;
+#endif
+}
+
+#ifndef BSP_USING_PC_SIMULATOR
+/*
+ * PET_ReadQuestPreference
+ * 功能：读取非负花园整数，负值和存储不可用时返回默认值。
+ * 参数：
+ *   - pKey: share_prefs 键名，仅输入
+ *   - ulDefault: 无有效值时使用的默认值
+ * 返回值：经过非负校验的 32 位值。
+ */
+static uint32_t PET_ReadQuestPreference(const char *pKey,
+                                         uint32_t ulDefault)
+{
+    int32_t lValue;
+
+    if ((NULL == g_pet_ui.pQuestPrefs) || (NULL == pKey) ||
+        (INT32_MAX < ulDefault))
+    {
+        return ulDefault;
+    }
+
+    lValue = share_prefs_get_int(
+        g_pet_ui.pQuestPrefs, pKey, (int32_t)ulDefault);
+    if (0 > lValue)
+    {
+        return ulDefault;
+    }
+
+    return (uint32_t)lValue;
+}
+
+/*
+ * PET_QuestPersistedInteger
+ * 功能：把业务无符号计数安全限制到 share_prefs 的 int32_t 范围。
+ * 参数：
+ *   - ulValue: 待持久化计数
+ * 返回值：范围为 0~INT32_MAX 的持久化整数。
+ */
+static int32_t PET_QuestPersistedInteger(uint32_t ulValue)
+{
+    if ((uint32_t)INT32_MAX < ulValue)
+    {
+        return INT32_MAX;
+    }
+
+    return (int32_t)ulValue;
+}
+#endif
+
+/*
+ * PET_LoadQuestGarden
+ * 功能：从版本化产品存储恢复花园聚合状态并初始化短期去重槽。
+ * 参数：无。
+ * 返回值：无。
+ */
+static void PET_LoadQuestGarden(void)
+{
+    QUEST_GARDEN_PERSISTED tPersisted;
+    const QUEST_GARDEN_PERSISTED *pPersisted;
+
+    rt_memset(&tPersisted, 0, sizeof(tPersisted));
+    pPersisted = NULL;
+#ifndef BSP_USING_PC_SIMULATOR
+    g_pet_ui.pQuestPrefs = share_prefs_open(
+        PET_QUEST_PREF_NAME, SHAREPREFS_MODE_PRIVATE);
+    if (NULL != g_pet_ui.pQuestPrefs)
+    {
+        tPersisted.ulVersion = PET_ReadQuestPreference(
+            PET_QUEST_PREF_VERSION_KEY, 0U);
+        tPersisted.ulDay = PET_ReadQuestPreference(
+            PET_QUEST_PREF_DAY_KEY, 0U);
+        tPersisted.ulTodayCompleted = PET_ReadQuestPreference(
+            PET_QUEST_PREF_COMPLETED_KEY, 0U);
+        tPersisted.ulTodayCollected = PET_ReadQuestPreference(
+            PET_QUEST_PREF_COLLECTED_KEY, 0U);
+        tPersisted.ulPending = PET_ReadQuestPreference(
+            PET_QUEST_PREF_PENDING_KEY, 0U);
+        tPersisted.ulStreak = PET_ReadQuestPreference(
+            PET_QUEST_PREF_STREAK_KEY, 0U);
+        tPersisted.ulOverflow = PET_ReadQuestPreference(
+            PET_QUEST_PREF_OVERFLOW_KEY, 0U);
+        pPersisted = &tPersisted;
+    }
+#endif
+    if (!QUESTGARDEN_Init(&g_pet_ui.tQuestGarden, pPersisted))
+    {
+        rt_kprintf("agent pet: quest garden init failed\n");
+    }
+
+    return;
+}
+
+/*
+ * PET_SaveQuestGarden
+ * 功能：在离散业务事件后保存花园聚合状态，版本键最后提交。
+ * 参数：无。
+ * 返回值：无。
+ */
+static void PET_SaveQuestGarden(void)
+{
+#ifndef BSP_USING_PC_SIMULATOR
+    QUEST_GARDEN_PERSISTED tPersisted;
+    rt_err_t tResult;
+    rt_err_t tWriteResult;
+
+    if ((NULL == g_pet_ui.pQuestPrefs) ||
+        !QUESTGARDEN_GetPersisted(&g_pet_ui.tQuestGarden, &tPersisted))
+    {
+        return;
+    }
+
+    tResult = share_prefs_set_int(
+        g_pet_ui.pQuestPrefs, PET_QUEST_PREF_VERSION_KEY, 0);
+    tWriteResult = share_prefs_set_int(
+        g_pet_ui.pQuestPrefs, PET_QUEST_PREF_DAY_KEY,
+        PET_QuestPersistedInteger(tPersisted.ulDay));
+    if (RT_EOK != tWriteResult)
+    {
+        tResult = tWriteResult;
+    }
+    tWriteResult = share_prefs_set_int(
+        g_pet_ui.pQuestPrefs, PET_QUEST_PREF_COMPLETED_KEY,
+        PET_QuestPersistedInteger(tPersisted.ulTodayCompleted));
+    if (RT_EOK != tWriteResult)
+    {
+        tResult = tWriteResult;
+    }
+    tWriteResult = share_prefs_set_int(
+        g_pet_ui.pQuestPrefs, PET_QUEST_PREF_COLLECTED_KEY,
+        PET_QuestPersistedInteger(tPersisted.ulTodayCollected));
+    if (RT_EOK != tWriteResult)
+    {
+        tResult = tWriteResult;
+    }
+    tWriteResult = share_prefs_set_int(
+        g_pet_ui.pQuestPrefs, PET_QUEST_PREF_PENDING_KEY,
+        PET_QuestPersistedInteger(tPersisted.ulPending));
+    if (RT_EOK != tWriteResult)
+    {
+        tResult = tWriteResult;
+    }
+    tWriteResult = share_prefs_set_int(
+        g_pet_ui.pQuestPrefs, PET_QUEST_PREF_STREAK_KEY,
+        PET_QuestPersistedInteger(tPersisted.ulStreak));
+    if (RT_EOK != tWriteResult)
+    {
+        tResult = tWriteResult;
+    }
+    tWriteResult = share_prefs_set_int(
+        g_pet_ui.pQuestPrefs, PET_QUEST_PREF_OVERFLOW_KEY,
+        PET_QuestPersistedInteger(tPersisted.ulOverflow));
+    if (RT_EOK != tWriteResult)
+    {
+        tResult = tWriteResult;
+    }
+    if (RT_EOK == tResult)
+    {
+        tResult = share_prefs_set_int(
+            g_pet_ui.pQuestPrefs, PET_QUEST_PREF_VERSION_KEY,
+            (int32_t)QUEST_GARDEN_PERSIST_VERSION);
+    }
+    if (RT_EOK != tResult)
+    {
+        rt_kprintf("agent pet: save quest garden failed %d\n", tResult);
+    }
+#endif
+
+    return;
+}
+
+/*
+ * PET_UpdateQuestGarden
+ * 功能：根据纯 C 状态视图更新固定数量的花园 LVGL 对象。
+ * 参数：无。
+ * 返回值：无。
+ */
+static void PET_UpdateQuestGarden(void)
+{
+    QUEST_GARDEN_VIEW tView;
+    uint8_t ucIndex;
+
+    if (!QUESTGARDEN_GetView(&g_pet_ui.tQuestGarden, &tView))
+    {
+        return;
+    }
+
+    if (NULL != g_pet_ui.garden_label)
+    {
+        lv_label_set_text_fmt(
+            g_pet_ui.garden_label,
+            "Today %lu / 5   Seeds %lu   Streak %lu",
+            (unsigned long)tView.ulTodayCollected,
+            (unsigned long)tView.ulPending,
+            (unsigned long)tView.ulStreak);
+    }
+    for (ucIndex = 0U; ucIndex < QUEST_GARDEN_MAX_LEAVES; ucIndex++)
+    {
+        if (NULL == g_pet_ui.aGardenLeaves[ucIndex])
+        {
+            continue;
+        }
+        if (tView.ucVisibleLeaves > ucIndex)
+        {
+            lv_obj_clear_flag(
+                g_pet_ui.aGardenLeaves[ucIndex], LV_OBJ_FLAG_HIDDEN);
+        }
+        else
+        {
+            lv_obj_add_flag(
+                g_pet_ui.aGardenLeaves[ucIndex], LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+    if (NULL != g_pet_ui.garden_flower)
+    {
+        if (true == tView.bFlowerVisible)
+        {
+            lv_obj_clear_flag(g_pet_ui.garden_flower, LV_OBJ_FLAG_HIDDEN);
+        }
+        else
+        {
+            lv_obj_add_flag(g_pet_ui.garden_flower, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+    if (NULL != g_pet_ui.seed_button)
+    {
+        if (0U != tView.ulPending)
+        {
+            lv_obj_clear_flag(g_pet_ui.seed_button, LV_OBJ_FLAG_HIDDEN);
+        }
+        else
+        {
+            lv_obj_add_flag(g_pet_ui.seed_button, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+    if (NULL != g_pet_ui.seed_label)
+    {
+        lv_label_set_text_fmt(
+            g_pet_ui.seed_label, "Collect seed (%lu)",
+            (unsigned long)tView.ulPending);
+    }
+
+    return;
+}
+
+/*
+ * PET_CollectQuestSeed
+ * 功能：处理花园领取点击，仅更新本地状态和持久化。
+ * 参数：
+ *   - pEvent: LVGL 点击事件
+ * 返回值：无。
+ */
+static void PET_CollectQuestSeed(lv_event_t *pEvent)
+{
+    QUEST_GARDEN_RESULT tResult;
+
+    if ((NULL == pEvent) ||
+        (LV_EVENT_SHORT_CLICKED != lv_event_get_code(pEvent)))
+    {
+        return;
+    }
+    if (!QUESTGARDEN_Collect(&g_pet_ui.tQuestGarden, &tResult))
+    {
+        return;
+    }
+    if (true == tResult.bChanged)
+    {
+        PET_UpdateQuestGarden();
+        PET_SaveQuestGarden();
+        if ((NULL != g_pet_ui.daily_summary) &&
+            (NULL != g_pet_ui.daily_timer))
+        {
+            lv_label_set_text(g_pet_ui.daily_summary, "Seed collected");
+            lv_obj_clear_flag(
+                g_pet_ui.daily_summary, LV_OBJ_FLAG_HIDDEN);
+            lv_timer_reset(g_pet_ui.daily_timer);
+            lv_timer_resume(g_pet_ui.daily_timer);
+        }
+    }
+
+    return;
+}
+
+/*
+ * PET_CreateQuestGarden
+ * 功能：使用 LVGL 基本对象创建固定容量任务花园，不加载外部素材。
+ * 参数：无。
+ * 返回值：无。
+ */
+static void PET_CreateQuestGarden(void)
+{
+    lv_coord_t tGardenX;
+    lv_coord_t tGardenY;
+    uint8_t ucIndex;
+    static const lv_coord_t l_aLeafX[QUEST_GARDEN_MAX_LEAVES] =
+        {8, 42, 4, 44, 25};
+    static const lv_coord_t l_aLeafY[QUEST_GARDEN_MAX_LEAVES] =
+        {33, 28, 18, 12, 2};
+
+    if (NULL == g_pet_ui.root)
+    {
+        return;
+    }
+
+    tGardenX = LV_HOR_RES_MAX - PET_QUEST_GARDEN_WIDTH - 8;
+    tGardenY = 63;
+    g_pet_ui.garden_pot = pet_shape(
+        g_pet_ui.root, tGardenX + 13, tGardenY + 45,
+        50, 22, 0xA85D32U, 6);
+    g_pet_ui.garden_stem = pet_shape(
+        g_pet_ui.root, tGardenX + 36, tGardenY + 10,
+        4, 42, 0x65D69EU, 2);
+    for (ucIndex = 0U; ucIndex < QUEST_GARDEN_MAX_LEAVES; ucIndex++)
+    {
+        g_pet_ui.aGardenLeaves[ucIndex] = pet_shape(
+            g_pet_ui.root,
+            tGardenX + l_aLeafX[ucIndex],
+            tGardenY + l_aLeafY[ucIndex],
+            24, 12, 0x65D69EU, 8);
+        if (NULL != g_pet_ui.aGardenLeaves[ucIndex])
+        {
+            lv_obj_add_flag(
+                g_pet_ui.aGardenLeaves[ucIndex], LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+    g_pet_ui.garden_flower = pet_shape(
+        g_pet_ui.root, tGardenX + 27, tGardenY - 5,
+        22, 22, 0xFF8AAEU, 11);
+    if (NULL != g_pet_ui.garden_flower)
+    {
+        lv_obj_add_flag(g_pet_ui.garden_flower, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    g_pet_ui.garden_label = lv_label_create(g_pet_ui.root);
+    if (NULL != g_pet_ui.garden_label)
+    {
+        lv_obj_set_width(g_pet_ui.garden_label, LV_HOR_RES_MAX - 16);
+        lv_obj_set_pos(g_pet_ui.garden_label, 8, 34);
+        lv_obj_set_style_text_align(
+            g_pet_ui.garden_label, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_style_text_color(
+            g_pet_ui.garden_label, lv_color_hex(0xB9EBCBU), 0);
+    }
+
+    g_pet_ui.seed_button = lv_btn_create(g_pet_ui.root);
+    if (NULL != g_pet_ui.seed_button)
+    {
+        lv_obj_set_pos(g_pet_ui.seed_button, 8, 64);
+        lv_obj_set_size(g_pet_ui.seed_button, 122, 38);
+        lv_obj_set_style_bg_color(
+            g_pet_ui.seed_button, lv_color_hex(0x287A55U), 0);
+        lv_obj_add_event_cb(
+            g_pet_ui.seed_button, PET_CollectQuestSeed,
+            LV_EVENT_SHORT_CLICKED, NULL);
+        lv_obj_add_flag(g_pet_ui.seed_button, LV_OBJ_FLAG_HIDDEN);
+        g_pet_ui.seed_label = lv_label_create(g_pet_ui.seed_button);
+        if (NULL != g_pet_ui.seed_label)
+        {
+            lv_obj_center(g_pet_ui.seed_label);
         }
     }
 
@@ -1713,7 +2179,10 @@ static void pet_on_start(void)
     floor = pet_shape(g_pet_ui.root, 40,
                       PET_MASCOT_Y + PET_MASCOT_SIZE - 18,
                       LV_HOR_RES_MAX - 80, 20, 0x183942, 20);
-    lv_obj_set_style_bg_opa(floor, LV_OPA_60, 0);
+    if (NULL != floor)
+    {
+        lv_obj_set_style_bg_opa(floor, LV_OPA_60, 0);
+    }
 
     g_pet_ui.stage = lv_obj_create(g_pet_ui.root);
     lv_obj_set_pos(g_pet_ui.stage, PET_MASCOT_X, PET_MASCOT_Y);
@@ -1772,6 +2241,7 @@ static void pet_on_start(void)
     lv_obj_add_flag(g_pet_ui.daily_summary, LV_OBJ_FLAG_HIDDEN);
 
     PET_CreateAttentionCue();
+    PET_CreateQuestGarden();
 
     g_pet_ui.status_label = lv_label_create(g_pet_ui.root);
     lv_obj_set_width(g_pet_ui.status_label, LV_HOR_RES_MAX - 24);
@@ -1841,6 +2311,8 @@ static void pet_on_start(void)
     PET_CreateMotionSwitch();
 
     PET_LoadMerit();
+    PET_LoadQuestGarden();
+    PET_UpdateQuestGarden();
     g_pet_ui.wooden_timer = lv_timer_create(
         PET_EndWoodenFish,
         PET_WOODEN_FISH_IDLE_MS,
@@ -1895,6 +2367,22 @@ static void pet_on_stop(void)
         lv_timer_del(g_pet_ui.daily_timer);
         g_pet_ui.daily_timer = NULL;
     }
+#ifndef BSP_USING_PC_SIMULATOR
+    if (NULL != g_pet_ui.pQuestPrefs)
+    {
+        rt_err_t tQuestCloseResult;
+
+        PET_SaveQuestGarden();
+        tQuestCloseResult = share_prefs_close(g_pet_ui.pQuestPrefs);
+        if (RT_EOK != tQuestCloseResult)
+        {
+            rt_kprintf(
+                "agent pet: close quest storage failed %d\n",
+                tQuestCloseResult);
+        }
+        g_pet_ui.pQuestPrefs = NULL;
+    }
+#endif
     AGENTPETMERIT_Save();
     if (g_pet_ui.root)
     {

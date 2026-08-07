@@ -93,7 +93,11 @@ static uint32_t Local_CurrentDay(uint32_t *pLegacyDay)
     {
         return 0U;
     }
+#if defined(_MSC_VER)
+    if (0 != gmtime_s(&tDate, &tNow))
+#else
     if (NULL == gmtime_r(&tNow, &tDate))
+#endif
     {
         return 0U;
     }
