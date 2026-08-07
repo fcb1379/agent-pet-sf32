@@ -1,0 +1,58 @@
+work/watch_bt_audio_template/src/gui_apps/pet/app_pet.c
+  s_285146986cdcdb::t_f306efb84a96da 149,155-156,729-731,740,746,893-895,902,911,1082,1092,1100,1109,1114,1132,1245
+  s_285146986cdcdb::t_91593e1b956858 1205-1206
+  s_285146986cdcdb::t_3a894d587cdb5e 1202-1204,1207-1208,1210-1219,1225-1244
+  s_285146986cdcdb::t_a0d34dcfc7fcf4 2404,2406-2407
+  s_285146986cdcdb::t_69bee41203f767 725,885-892
+  s_285146986cdcdb::t_fa1f15749382dc 1209,1220-1224,1282
+work/watch_bt_audio_template/src/app_utils/agent_pet_image_transfer.c
+  s_285146986cdcdb::t_1c9016c6ceaffa 163,1531-1556,1558-1573,1584,1593,1595-1596,1600-1664
+  s_285146986cdcdb::t_d71d5a1ffcdce6 200,206,215
+  s_285146986cdcdb::t_01373eda18aff0 143-159,428,923,925,1036,1041,1046,1048,1052,1054,1057,1085-1086,1090-1091,1186-1190,1195,1323
+  s_285146986cdcdb::t_d6e1171f87d628 26-27,66,72-86,120-141,238,1459-1462
+  s_285146986cdcdb::t_e5cf731f245027 430,1360-1361,1372-1373,1386-1387,1398-1405,1414-1415,1453-1458,1463-1485,1492-1493
+  s_285146986cdcdb::t_54a987ce7c243e 1557
+  s_285146986cdcdb::t_4270c4309627d8 1191-1194
+  s_285146986cdcdb::t_feebbb2d873099 164-199,201-205,207-214,216-219,895-896,905-906,922,1007-1008,1019-1020,1047,1064-1066,1074,1078-1081,1083,1095-1096,1100-1101,1120-1121
+  s_285146986cdcdb::t_2a16370e609cba 1168,1181-1185,1196-1218,1327
+  s_285146986cdcdb::t_2ca01b5f9c192a 142
+work/watch_bt_audio_template/src/app_utils/agent_pet_protocol.h
+  s_285146986cdcdb::t_af733acaf43662 31,40-41,44-59,116-118
+tests/agent_pet_protocol_host_test.c
+  s_285146986cdcdb::t_e9312a3b886c2a 167-208,252
+  s_abbb2bd46b4afc::t_d6278b2413fc37 253-256
+work/watch_bt_audio_template/src/app_utils/agent_pet_ble_service.c
+  s_285146986cdcdb::t_cb7da8332ad570 237,268-270,291,503-510,534-536
+  s_285146986cdcdb::t_8885fa9b25cacd 453,512-524
+  s_285146986cdcdb::t_3ac830e5afa68a 469,511,525-531,533,537
+  s_285146986cdcdb::t_382b7122ea2779 532
+work/watch_bt_audio_template/src/app_utils/agent_pet_protocol.c
+  s_285146986cdcdb::t_af733acaf43662 11,15-16,72-77,206-208,299-300,390-423,544-566
+  s_abbb2bd46b4afc::t_5ae041e103c88f 567-569
+work/watch_bt_audio_template/src/app_utils/agent_pet_image_transfer.h
+  s_285146986cdcdb::t_d6e1171f87d628 13-14,54,64-66,68-71
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "828972dc93bee05fb5c4ce3527c1ff3a3542327d",
+  "prompts": {},
+  "sessions": {
+    "s_285146986cdcdb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd167-97e3-7830-af9f-4e8a198f25b3",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    },
+    "s_abbb2bd46b4afc": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc6ed-063f-7a23-889d-19eb899eb590",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}
