@@ -7,6 +7,7 @@
 #include "bf0_sibles.h"
 #include "bf0_sibles_internal.h"
 #include "watch_settings.h"
+#include "agent_pet_merit.h"
 
 #define LOG_TAG "agent_pet_ble"
 #include "log.h"
@@ -47,6 +48,13 @@
     0x5CU, 0x4FU, 0x5FU, 0x6BU, \
     0x04U, 0x00U, 0x1EU, 0x7AU \
 }
+#define AGENTPET_MERIT_UUID_BYTES \
+{ \
+    0x00U, 0x10U, 0x0BU, 0x1AU, \
+    0x2FU, 0x3EU, 0x9DU, 0x8CU, \
+    0x5CU, 0x4FU, 0x5FU, 0x6BU, \
+    0x05U, 0x00U, 0x1EU, 0x7AU \
+}
 
 enum AGENTPET_ATT_INDEX
 {
@@ -57,6 +65,9 @@ enum AGENTPET_ATT_INDEX
     AGENTPET_ATT_IMAGE_VALUE,
     AGENTPET_ATT_IMAGE_DIGEST_CHAR,
     AGENTPET_ATT_IMAGE_DIGEST_VALUE,
+    AGENTPET_ATT_MERIT_CHAR,
+    AGENTPET_ATT_MERIT_VALUE,
+    AGENTPET_ATT_MERIT_CCCD,
     AGENTPET_ATT_COUNT
 };
 
@@ -69,6 +80,12 @@ static sibles_hdl l_tAgentPetServiceHandle;
 static AGENTPET_BLE_STATUS l_tAgentPetBleStatus;
 /* Read response: magic/version/availability followed by the persistent JPEG MD5. */
 static uint8_t l_aImageDigestResponse[AGENTPET_IMAGE_DIGEST_FRAME_SIZE];
+/* Read response for the date-aware daily merit synchronization frame. */
+static uint8_t l_aMeritResponse[AGENTPET_MERIT_FRAME_SIZE];
+/* Merit notification subscription state, valid only for the active BLE link. */
+static bool l_bMeritNotifyEnabled;
+/* Connection index that most recently configured the merit CCCD. */
+static uint8_t l_ucMeritConnectionIndex;
 /* Static mailbox used only as a non-blocking wake signal; time data stays in the protocol state. */
 static struct rt_mailbox l_tTimeSyncMailbox;
 /* One-entry mailbox pool; additional updates coalesce into the latest protocol generation. */
@@ -120,7 +137,95 @@ BLE_GATT_SERVICE_DEFINE_128(l_tAgentPetAttributeDatabase)
         BLE_GATT_VALUE_PERM_UUID_128 |
         BLE_GATT_VALUE_PERM_RI_ENABLE,
         AGENTPET_IMAGE_DIGEST_FRAME_SIZE),
+    BLE_GATT_CHAR_DECLARE(
+        AGENTPET_ATT_MERIT_CHAR,
+        AGENTPET_UUID_16_LE(0x2803U),
+        BLE_GATT_PERM_READ_ENABLE),
+    BLE_GATT_CHAR_VALUE_DECLARE(
+        AGENTPET_ATT_MERIT_VALUE,
+        AGENTPET_MERIT_UUID_BYTES,
+        BLE_GATT_PERM_READ_ENABLE |
+        BLE_GATT_PERM_WRITE_REQ_ENABLE |
+        BLE_GATT_PERM_NOTIFY_ENABLE,
+        BLE_GATT_VALUE_PERM_UUID_128 |
+        BLE_GATT_VALUE_PERM_RI_ENABLE,
+        AGENTPET_MERIT_FRAME_SIZE),
+    BLE_GATT_DESCRIPTOR_DECLARE(
+        AGENTPET_ATT_MERIT_CCCD,
+        AGENTPET_UUID_16_LE(0x2902U),
+        BLE_GATT_PERM_READ_ENABLE |
+        BLE_GATT_PERM_WRITE_REQ_ENABLE,
+        BLE_GATT_VALUE_PERM_RI_ENABLE,
+        2U),
 };
+
+/*
+ * Local_ReadLe32
+ * Function: decode one bounded little-endian 32-bit field.
+ * Parameters:
+ *   - pData: pointer to at least four bytes.
+ * Return: decoded value, or zero for NULL.
+ */
+static uint32_t Local_ReadLe32(const uint8_t *pData)
+{
+    if (NULL == pData)
+    {
+        return 0U;
+    }
+
+    return (uint32_t)pData[0] |
+        ((uint32_t)pData[1] << 8U) |
+        ((uint32_t)pData[2] << 16U) |
+        ((uint32_t)pData[3] << 24U);
+}
+
+/*
+ * Local_WriteLe32
+ * Function: encode one little-endian 32-bit field.
+ * Parameters:
+ *   - pData: output pointer to at least four bytes.
+ *   - ulValue: value to encode.
+ * Return: none.
+ */
+static void Local_WriteLe32(uint8_t *pData, uint32_t ulValue)
+{
+    if (NULL != pData)
+    {
+        pData[0] = (uint8_t)ulValue;
+        pData[1] = (uint8_t)(ulValue >> 8U);
+        pData[2] = (uint8_t)(ulValue >> 16U);
+        pData[3] = (uint8_t)(ulValue >> 24U);
+    }
+
+    return;
+}
+
+/*
+ * Local_BuildMeritFrame
+ * Function: encode the current daily merit snapshot for reads and notifications.
+ * Parameters:
+ *   - pFrame: output buffer of AGENTPET_MERIT_FRAME_SIZE bytes.
+ * Return: true when a current snapshot was encoded.
+ */
+static bool Local_BuildMeritFrame(uint8_t *pFrame)
+{
+    AGENTPET_MERIT_SNAPSHOT tMeritSnapshot;
+
+    if ((NULL == pFrame) || !AGENTPETMERIT_GetSnapshot(&tMeritSnapshot))
+    {
+        return false;
+    }
+    (void)rt_memset(pFrame, 0, AGENTPET_MERIT_FRAME_SIZE);
+    pFrame[0] = 0x41U;
+    pFrame[1] = 0x4DU;
+    pFrame[2] = 1U;
+    pFrame[3] = 1U;
+    Local_WriteLe32(&pFrame[4], tMeritSnapshot.ulDay);
+    Local_WriteLe32(&pFrame[8], tMeritSnapshot.ulCount);
+    pFrame[15] = AGENTPET_Crc8Atm(pFrame, 15U);
+
+    return true;
+}
 
 static uint8_t *Local_GattReadCallback(
     uint8_t ucConnectionIndex,
@@ -136,6 +241,16 @@ static uint8_t *Local_GattReadCallback(
         return NULL;
     }
     *pLength = 0U;
+    if (AGENTPET_ATT_MERIT_VALUE == ucAttributeIndex)
+    {
+        if (!Local_BuildMeritFrame(l_aMeritResponse))
+        {
+            return NULL;
+        }
+        *pLength = sizeof(l_aMeritResponse);
+
+        return l_aMeritResponse;
+    }
     if (AGENTPET_ATT_IMAGE_DIGEST_VALUE != ucAttributeIndex)
     {
         return NULL;
@@ -229,6 +344,7 @@ static bool Local_ApplyTimeSync(const AGENTPET_TIME_SYNC *pTimeSync)
     {
         LOG_W("Time sync persistence failed result=%d", eSettingsResult);
     }
+    AGENTPETMERIT_RefreshDay();
     LOG_I("Time synchronized epoch=%lu tz=%d sequence=%u",
           (unsigned long)pTimeSync->ulUtcEpoch,
           pTimeSync->sTimezoneOffsetMinutes,
@@ -398,6 +514,43 @@ static uint8_t Local_GattWriteCallback(
             return 1U;
         }
     }
+    else if (AGENTPET_ATT_MERIT_VALUE == pParameter->idx)
+    {
+        bQueued = (AGENTPET_MERIT_FRAME_SIZE == pParameter->len) &&
+            (0x41U == pParameter->value[0]) &&
+            (0x4DU == pParameter->value[1]) &&
+            (1U == pParameter->value[2]) &&
+            (pParameter->value[15] ==
+                AGENTPET_Crc8Atm(pParameter->value, 15U)) &&
+            AGENTPETMERIT_Merge(
+                Local_ReadLe32(&pParameter->value[4]),
+                Local_ReadLe32(&pParameter->value[8]));
+        rt_enter_critical();
+        if (bQueued)
+        {
+            l_tAgentPetBleStatus.ulAcceptedFrameCount++;
+        }
+        else
+        {
+            l_tAgentPetBleStatus.ulRejectedFrameCount++;
+        }
+        rt_exit_critical();
+        if (!bQueued)
+        {
+            LOG_W("Daily merit synchronization frame rejected");
+            return 1U;
+        }
+    }
+    else if (AGENTPET_ATT_MERIT_CCCD == pParameter->idx)
+    {
+        rt_enter_critical();
+        l_bMeritNotifyEnabled = (2U <= pParameter->len) &&
+            (0U != (pParameter->value[0] & 0x01U));
+        l_ucMeritConnectionIndex = ucConnectionIndex;
+        rt_exit_critical();
+        LOG_I("Daily merit notification %s",
+              l_bMeritNotifyEnabled ? "enabled" : "disabled");
+    }
 
     return 0U;
 }
@@ -414,6 +567,9 @@ void AGENTPETBLE_Init(void)
     AGENTPET_ProtocolInit();
     rt_exit_critical();
     AGENTPETIMAGE_Init();
+    AGENTPETMERIT_Init();
+    l_bMeritNotifyEnabled = false;
+    l_ucMeritConnectionIndex = 0U;
     (void)Local_InitTimeSyncWorker();
     l_tAgentPetServiceHandle = 0U;
 
@@ -477,6 +633,48 @@ void AGENTPETBLE_SetConnected(bool bConnected)
     if (!bConnected)
     {
         AGENTPETIMAGE_ResetTransfer();
+        rt_enter_critical();
+        l_bMeritNotifyEnabled = false;
+        rt_exit_critical();
+    }
+
+    return;
+}
+
+/*
+ * AGENTPETBLE_NotifyMerit
+ * Function: notify the subscribed desktop after a device-side wooden-fish hit.
+ * Parameters: none.
+ * Return: none.
+ */
+void AGENTPETBLE_NotifyMerit(void)
+{
+    uint8_t aFrame[AGENTPET_MERIT_FRAME_SIZE];
+    sibles_value_t tValue;
+    sibles_hdl tServiceHandle;
+    uint8_t ucConnectionIndex;
+    bool bCanNotify;
+    int32_t lResult;
+
+    rt_enter_critical();
+    bCanNotify = l_tAgentPetBleStatus.bConnected &&
+        l_bMeritNotifyEnabled && (0U != l_tAgentPetServiceHandle);
+    tServiceHandle = l_tAgentPetServiceHandle;
+    ucConnectionIndex = l_ucMeritConnectionIndex;
+    rt_exit_critical();
+    if (!bCanNotify || !Local_BuildMeritFrame(aFrame))
+    {
+        return;
+    }
+
+    tValue.hdl = tServiceHandle;
+    tValue.idx = AGENTPET_ATT_MERIT_VALUE;
+    tValue.len = sizeof(aFrame);
+    tValue.value = aFrame;
+    lResult = sibles_write_value(ucConnectionIndex, &tValue);
+    if ((int32_t)sizeof(aFrame) != lResult)
+    {
+        LOG_W("Daily merit notification dropped result=%ld", (long)lResult);
     }
 
     return;

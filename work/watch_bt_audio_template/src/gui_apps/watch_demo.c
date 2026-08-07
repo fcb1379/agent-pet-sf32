@@ -26,6 +26,7 @@
 #define SLEEP_CTRL_PIN   (BSP_KEY1_PIN)
 #define LCD_DEVICE_NAME  "lcd"
 #define IDLE_TIME_LIMIT  (10000)
+#define WATCH_STARTUP_APP_ID "pet"
 
 typedef enum
 {
@@ -540,7 +541,7 @@ void app_watch_entry(void *parameter)
 #endif /* BSP_USING_PM */
     keypad_default_handler_register(default_keypad_handler);
 
-    gui_app_run("Main");
+    gui_app_run(WATCH_STARTUP_APP_ID);
     lv_disp_trig_activity(NULL);
 #if defined(GUI_APP_FRAMEWORK)&&(!defined (APP_TRANS_ANIMATION_NONE))
     lvsf_gesture_init(lv_layer_top());
