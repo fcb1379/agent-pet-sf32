@@ -16,6 +16,9 @@
 
 #define PCSIM_VOLUME_MAX                 (15U)
 #define PCSIM_DEFAULT_TIMER_SECONDS      (300U)
+#ifdef AGENT_PET_WEATHER_MOMENTS
+    #define PCSIM_WEATHER_PHASE_SECONDS  (6U)
+#endif
 
 /* Persistent simulator settings; values mirror a normally configured watch. */
 static watch_settings_snapshot_t l_tSettings =
@@ -85,6 +88,93 @@ static badge_transfer_snapshot_t l_tBadge =
 /* Agent state is populated lazily to keep nested initializers portable to MSVC. */
 static AGENTPET_BLE_STATUS l_tAgentStatus;
 static bool l_bAgentInitialized;
+#ifdef AGENT_PET_WEATHER_MOMENTS
+static uint32_t l_ulWeatherPhase = UINT32_MAX;
+static uint16_t l_usWeatherSequence;
+#endif
+
+#ifdef AGENT_PET_WEATHER_MOMENTS
+static void PcSim_WriteLe16(uint8_t *pData, uint16_t usValue)
+{
+    pData[0] = (uint8_t)usValue;
+    pData[1] = (uint8_t)(usValue >> 8U);
+
+    return;
+}
+
+static void PcSim_WriteLe32(uint8_t *pData, uint32_t ulValue)
+{
+    pData[0] = (uint8_t)ulValue;
+    pData[1] = (uint8_t)(ulValue >> 8U);
+    pData[2] = (uint8_t)(ulValue >> 16U);
+    pData[3] = (uint8_t)(ulValue >> 24U);
+
+    return;
+}
+
+/* Deterministic PC-only injection for visual weather and priority smoke tests. */
+static void PcSim_UpdateWeather(void)
+{
+    static const uint8_t l_aConditions[] =
+    {
+        AGENTPET_WEATHER_CLEAR,
+        AGENTPET_WEATHER_CLOUDY,
+        AGENTPET_WEATHER_RAIN,
+        AGENTPET_WEATHER_SNOW,
+        AGENTPET_WEATHER_CLEAR,
+        AGENTPET_WEATHER_CLEAR,
+        AGENTPET_WEATHER_UNKNOWN,
+        AGENTPET_WEATHER_STORM,
+        AGENTPET_WEATHER_CLEAR
+    };
+    uint8_t aPayload[AGENTPET_WEATHER_PAYLOAD_SIZE];
+    uint32_t ulNowTick;
+    uint32_t ulPhase;
+    uint32_t ulReceivedTick;
+    uint8_t ucFlags;
+
+    ulNowTick = (uint32_t)rt_tick_get();
+    ulPhase = ((ulNowTick / RT_TICK_PER_SECOND) /
+        PCSIM_WEATHER_PHASE_SECONDS) %
+        (sizeof(l_aConditions) / sizeof(l_aConditions[0]));
+    if (l_ulWeatherPhase == ulPhase)
+    {
+        return;
+    }
+    l_ulWeatherPhase = ulPhase;
+    l_usWeatherSequence++;
+    (void)memset(aPayload, 0, sizeof(aPayload));
+    aPayload[0] = l_aConditions[ulPhase];
+    PcSim_WriteLe16(&aPayload[1], 230U);
+    PcSim_WriteLe32(&aPayload[3], 1786147200UL);
+    PcSim_WriteLe16(&aPayload[7], 15U);
+    ucFlags = 0U;
+    if (4U == ulPhase)
+    {
+        ucFlags = AGENTPET_WEATHER_FLAG_HOT;
+    }
+    else if (5U == ulPhase)
+    {
+        ucFlags = AGENTPET_WEATHER_FLAG_COLD;
+    }
+    aPayload[9] = ucFlags;
+    ulReceivedTick = ulNowTick;
+    if (6U == ulPhase)
+    {
+        ulReceivedTick -= 901U * RT_TICK_PER_SECOND;
+    }
+    (void)AGENTPETWEATHER_ProcessPayload(
+        l_usWeatherSequence,
+        aPayload,
+        sizeof(aPayload),
+        ulReceivedTick);
+    l_tAgentStatus.tSnapshot.ucAggregateState =
+        (8U == ulPhase) ? AGENTPET_STATE_RUNNING : AGENTPET_STATE_IDLE;
+    l_tAgentStatus.ulGeneration++;
+
+    return;
+}
+#endif
 
 /***************************
  * rt_spi_msd_init: report that removable SPI storage is unavailable in the
@@ -443,6 +533,11 @@ void AGENTPETBLE_Init(void)
     l_tAgentStatus.tSnapshot.aSessions[1].ucFlags = AGENTPET_TASK_FLAG_APPROVAL;
     l_tAgentStatus.tSnapshot.aSessions[1].ulTaskHash = 0x5F320001UL;
     l_tAgentStatus.tSnapshot.aSessions[1].usAgeSeconds = 12U;
+#ifdef AGENT_PET_WEATHER_MOMENTS
+    AGENTPETWEATHER_Init();
+    l_ulWeatherPhase = UINT32_MAX;
+    l_usWeatherSequence = 0U;
+#endif
     l_bAgentInitialized = true;
     return;
 }
@@ -480,13 +575,92 @@ bool AGENTPETBLE_GetStatus(AGENTPET_BLE_STATUS *pStatus)
         AGENTPETBLE_Init();
     }
 
+#ifdef AGENT_PET_WEATHER_MOMENTS
+    PcSim_UpdateWeather();
+    l_tAgentStatus.bHasWeatherSnapshot = AGENTPETWEATHER_GetSnapshot(
+        &l_tAgentStatus.tWeatherSnapshot,
+        &l_tAgentStatus.tWeatherDiagnostics);
+#endif
     *pStatus = l_tAgentStatus;
     return true;
 }
 
+#ifdef AGENT_PET_WEATHER_MOMENTS
+bool AGENTPETBLE_CanClaimWeatherInteraction(
+    const AGENTPET_WEATHER_SNAPSHOT *pSnapshot,
+    uint32_t ulNowMonotonicTicks)
+{
+    return AGENTPETWEATHER_CanInteract(
+        pSnapshot,
+        ulNowMonotonicTicks,
+        RT_TICK_PER_SECOND);
+}
+
+bool AGENTPETBLE_ClaimWeatherInteraction(
+    uint16_t usSequence,
+    uint32_t ulNowMonotonicTicks)
+{
+    return AGENTPETWEATHER_ClaimInteraction(
+        usSequence,
+        ulNowMonotonicTicks,
+        RT_TICK_PER_SECOND);
+}
+#endif
+
 void AGENTPETBLE_NotifyMerit(void)
 {
     return;
+}
+
+bool AGENTPET_GetAnimationEvent(
+    AGENTPET_ANIMATION_EVENT *pEvent,
+    uint32_t *pGeneration)
+{
+    if (NULL != pEvent)
+    {
+        (void)memset(pEvent, 0, sizeof(*pEvent));
+    }
+    if (NULL != pGeneration)
+    {
+        *pGeneration = 0U;
+    }
+
+    return false;
+}
+
+bool AGENTPETIMAGE_GetSlotStatus(
+    uint8_t ucSlot,
+    AGENTPET_IMAGE_STATUS *pStatus)
+{
+    if ((AGENTPET_IMAGE_SLOT_COUNT <= ucSlot) || (NULL == pStatus))
+    {
+        return false;
+    }
+
+    (void)memset(pStatus, 0, sizeof(*pStatus));
+    pStatus->ucSlot = ucSlot;
+    pStatus->eState = AGENTPET_IMAGE_IDLE;
+
+    return true;
+}
+
+const char *AGENTPETIMAGE_GetLvglPath(uint8_t ucSlot)
+{
+    static const char *l_aPaths[AGENTPET_IMAGE_SLOT_COUNT] =
+    {
+        "A:/pet.img",
+        "A:/pet1.gif",
+        "A:/pet2.gif",
+        "A:/pet3.gif",
+        "A:/pet4.gif"
+    };
+
+    if (AGENTPET_IMAGE_SLOT_COUNT <= ucSlot)
+    {
+        return NULL;
+    }
+
+    return l_aPaths[ucSlot];
 }
 
 /***************************

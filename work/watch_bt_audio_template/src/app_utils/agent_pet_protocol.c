@@ -2,6 +2,10 @@
 
 #include <string.h>
 
+#ifdef AGENT_PET_WEATHER_MOMENTS
+    #include "agent_pet_weather.h"
+#endif
+
 #define AGENTPET_MAGIC_FIRST             (0x41U)
 #define AGENTPET_MAGIC_SECOND            (0x50U)
 #define AGENTPET_PROTOCOL_VERSION        (1U)
@@ -9,6 +13,7 @@
 #define AGENTPET_MESSAGE_TYPE_WOODEN_FISH (2U)
 #define AGENTPET_MESSAGE_TYPE_TIME_SYNC  (3U)
 #define AGENTPET_MESSAGE_TYPE_ANIMATION  (4U)
+#define AGENTPET_MESSAGE_TYPE_WEATHER    (5U)
 #define AGENTPET_WOODEN_FISH_ACTION      (1U)
 #define AGENTPET_WOODEN_FISH_PAYLOAD_SIZE (1U)
 #define AGENTPET_TIME_SYNC_PAYLOAD_SIZE  (6U)
@@ -206,6 +211,9 @@ void AGENTPET_ProtocolInit(void)
     (void)memset(&l_tAnimationEvent, 0, sizeof(l_tAnimationEvent));
     l_ulAnimationGeneration = 0U;
     l_bHasAnimationEvent = false;
+#ifdef AGENT_PET_WEATHER_MOMENTS
+    AGENTPETWEATHER_Init();
+#endif
 
     return;
 }
@@ -270,7 +278,10 @@ uint8_t AGENTPET_Crc8Atm(const uint8_t *pData, size_t ulLength)
  *   - ulLength: 输入帧长度，必须为 20。
  * 返回值：接受、发布、重复或具体协议错误码。
  */
-AGENTPET_RESULT AGENTPET_ProcessFrame(const uint8_t *pFrame, size_t ulLength)
+AGENTPET_RESULT AGENTPET_ProcessFrameAt(
+    const uint8_t *pFrame,
+    size_t ulLength,
+    uint32_t ulReceivedMonotonicTicks)
 {
     uint16_t usSequence;
     uint8_t ucMessageType;
@@ -297,7 +308,11 @@ AGENTPET_RESULT AGENTPET_ProcessFrame(const uint8_t *pFrame, size_t ulLength)
         ((AGENTPET_MESSAGE_TYPE_SNAPSHOT != pFrame[3]) &&
          (AGENTPET_MESSAGE_TYPE_WOODEN_FISH != pFrame[3]) &&
          (AGENTPET_MESSAGE_TYPE_TIME_SYNC != pFrame[3]) &&
-         (AGENTPET_MESSAGE_TYPE_ANIMATION != pFrame[3]))
+         (AGENTPET_MESSAGE_TYPE_ANIMATION != pFrame[3])
+#ifdef AGENT_PET_WEATHER_MOMENTS
+         && (AGENTPET_MESSAGE_TYPE_WEATHER != pFrame[3])
+#endif
+        )
     )
     {
         return AGENTPET_ERROR_HEADER;
@@ -427,6 +442,36 @@ AGENTPET_RESULT AGENTPET_ProcessFrame(const uint8_t *pFrame, size_t ulLength)
         l_bHasAnimationEvent = true;
         return AGENTPET_RESULT_ANIMATION_PUBLISHED;
     }
+#ifdef AGENT_PET_WEATHER_MOMENTS
+    if (AGENTPET_MESSAGE_TYPE_WEATHER == ucMessageType)
+    {
+        AGENTPET_WEATHER_RESULT eWeatherResult;
+
+        if ((0U != ucChunkIndex) ||
+            (1U != ucChunkCount) ||
+            (AGENTPET_WEATHER_PAYLOAD_SIZE != ucPayloadLength))
+        {
+            return AGENTPET_ERROR_WEATHER;
+        }
+        eWeatherResult = AGENTPETWEATHER_ProcessPayload(
+            usSequence,
+            &pFrame[AGENTPET_FRAME_HEADER_SIZE],
+            ucPayloadLength,
+            ulReceivedMonotonicTicks);
+        if (AGENTPET_WEATHER_RESULT_PUBLISHED == eWeatherResult)
+        {
+            return AGENTPET_RESULT_WEATHER_PUBLISHED;
+        }
+        if (AGENTPET_WEATHER_RESULT_DUPLICATE == eWeatherResult)
+        {
+            return AGENTPET_RESULT_DUPLICATE;
+        }
+
+        return AGENTPET_ERROR_WEATHER;
+    }
+#else
+    (void)ulReceivedMonotonicTicks;
+#endif
 
     if (l_bHasSnapshot && (l_usPublishedSequence == usSequence))
     {
@@ -462,6 +507,19 @@ AGENTPET_RESULT AGENTPET_ProcessFrame(const uint8_t *pFrame, size_t ulLength)
         l_tAssembly.aChunkLength[ucChunkCount - 1U];
 
     return Local_PublishSnapshot(ulSnapshotLength);
+}
+
+/*
+ * AGENTPET_ProcessFrame
+ * Function: process a frame when no monotonic receipt time is supplied.
+ * Parameters:
+ *   - pFrame: input frame, read-only.
+ *   - ulLength: input frame length.
+ * Return: protocol result from AGENTPET_ProcessFrameAt.
+ */
+AGENTPET_RESULT AGENTPET_ProcessFrame(const uint8_t *pFrame, size_t ulLength)
+{
+    return AGENTPET_ProcessFrameAt(pFrame, ulLength, 0U);
 }
 
 /*

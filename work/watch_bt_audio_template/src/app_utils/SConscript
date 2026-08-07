@@ -6,6 +6,9 @@ import os
 cwd = GetCurrentDir()
 src = ['main.c', 'noise_monitor.c', 'agent_pet_merit.c']
 
+if GetDepend('AGENT_PET_WEATHER_MOMENTS'):
+    src += ['agent_pet_weather.c']
+
 if GetDepend('BSP_USING_PC_SIMULATOR'):
     # The full UI target needs stable service state but has no BLE, flash,
     # audio codec, or interrupt controller. Keep all PC behavior in one mock.
@@ -52,7 +55,10 @@ if GetDepend('PKG_USING_CMBACKTRACE'):
     LINKFLAGS += ['-Wl,--defsym=_sstack=__StackLimit',
                   '-Wl,--defsym=_estack=__StackTop']
 
-group = DefineGroup('App_utils', src, depend = [''], CPPPATH = CPPPATH,
-                    LINKFLAGS = LINKFLAGS)
+if LINKFLAGS:
+    group = DefineGroup('App_utils', src, depend = [''], CPPPATH = CPPPATH,
+                        LINKFLAGS = LINKFLAGS)
+else:
+    group = DefineGroup('App_utils', src, depend = [''], CPPPATH = CPPPATH)
 
 Return('group')

@@ -82,8 +82,9 @@ try {
                 continue
             }
             try {
-                $versionOutput = & $candidate -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>$null
-                if ($versionOutput -match '^(\d+)\.(\d+)') {
+                $versionOutput = & $candidate -c "import platform,sys; machine=platform.machine(); print(f'{sys.version_info.major}.{sys.version_info.minor}|{machine}'); sys.exit(0 if machine else 1)" 2>$null
+                if (($LASTEXITCODE -eq 0) -and
+                    ($versionOutput -match '^(\d+)\.(\d+)\|(.+)$')) {
                     $pythonMajor = [int]$Matches[1]
                     $pythonMinor = [int]$Matches[2]
                     if (($pythonMajor -gt 3) -or (($pythonMajor -eq 3) -and ($pythonMinor -ge 9))) {
