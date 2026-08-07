@@ -180,6 +180,7 @@ typedef struct
     lv_img_dsc_t tCustomGif;
     uint8_t *pCustomGifData;
     uint8_t *pCustomGifPixels;
+    uint8_t aCustomGifBackground[LV_IMG_PX_SIZE_ALPHA_BYTE];
 #endif
     bool bRenderedConnected;
     bool bRenderedCustomImage;
@@ -646,6 +647,48 @@ static uint32_t PET_CustomGifDelay(void)
 }
 
 /*
+ * PET_ResetCustomGifCanvas
+ * Function: restore the logical GIF background before rendering its first frame.
+ * Parameters: none.
+ * Return: none.
+ */
+static void PET_ResetCustomGifCanvas(void)
+{
+    uint32_t ulPixelCount;
+    uint32_t ulPixelIndex;
+
+    if ((NULL == g_pet_ui.pCustomGifDecoder) ||
+        (NULL == g_pet_ui.pCustomGifDecoder->canvas))
+    {
+        return;
+    }
+
+    ulPixelCount = (uint32_t)g_pet_ui.pCustomGifDecoder->width *
+        g_pet_ui.pCustomGifDecoder->height;
+    if (0 != g_pet_ui.pCustomGifDecoder->gce.transparency)
+    {
+        rt_memset(
+            g_pet_ui.pCustomGifDecoder->canvas,
+            0,
+            ulPixelCount * LV_IMG_PX_SIZE_ALPHA_BYTE);
+        return;
+    }
+
+    for (ulPixelIndex = 0U;
+         ulPixelIndex < ulPixelCount;
+         ulPixelIndex++)
+    {
+        rt_memcpy(
+            &g_pet_ui.pCustomGifDecoder->canvas[
+                ulPixelIndex * LV_IMG_PX_SIZE_ALPHA_BYTE],
+            g_pet_ui.aCustomGifBackground,
+            LV_IMG_PX_SIZE_ALPHA_BYTE);
+    }
+
+    return;
+}
+
+/*
  * PET_AdvanceCustomGif
  * Function: decode one GIF frame and schedule the next callback from its delay.
  * Parameters:
@@ -678,6 +721,10 @@ static void PET_AdvanceCustomGif(lv_timer_t *pTimer)
         }
         gd_rewind(g_pet_ui.pCustomGifDecoder);
         lResult = gd_get_frame(g_pet_ui.pCustomGifDecoder);
+        if (1 == lResult)
+        {
+            PET_ResetCustomGifCanvas();
+        }
     }
     if (1 != lResult)
     {
@@ -840,6 +887,10 @@ static bool PET_LoadCustomGif(
         PET_ReleaseCustomGif();
         return false;
     }
+    rt_memcpy(
+        g_pet_ui.aCustomGifBackground,
+        g_pet_ui.pCustomGifDecoder->canvas,
+        sizeof(g_pet_ui.aCustomGifBackground));
     if (1 != gd_get_frame(g_pet_ui.pCustomGifDecoder))
     {
         PET_ReleaseCustomGif();
@@ -865,6 +916,7 @@ static bool PET_LoadCustomGif(
         return false;
     }
     g_pet_ui.tCustomGif.data = g_pet_ui.pCustomGifPixels;
+    PET_ResetCustomGifCanvas();
     rt_memcpy(
         g_pet_ui.pCustomGifPixels,
         g_pet_ui.pCustomGifDecoder->canvas,
@@ -879,6 +931,9 @@ static bool PET_LoadCustomGif(
         return false;
     }
     lv_img_set_src(g_pet_ui.mascot_gif, &g_pet_ui.tCustomGif);
+    lv_obj_set_style_bg_opa(g_pet_ui.mascot_gif, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(g_pet_ui.mascot_gif, 0, 0);
+    lv_obj_set_style_pad_all(g_pet_ui.mascot_gif, 0, 0);
     lv_obj_add_flag(g_pet_ui.mascot_gif, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(
         g_pet_ui.mascot_gif,
