@@ -1,0 +1,21 @@
+docs/2026-08-11-momo-find-me-prd.md
+  s_b991e4ff93e87f::t_df38079c9fb5f3 1-209
+docs/2026-08-11-lvgl-pet-watch-idea-scan.md
+  s_b991e4ff93e87f::t_df38079c9fb5f3 1-113
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "018dff56001e5eccd92fde7a3381aa791aa90a27",
+  "prompts": {},
+  "sessions": {
+    "s_b991e4ff93e87f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd60c-817e-7cf2-aadd-448c400c6b83",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}
