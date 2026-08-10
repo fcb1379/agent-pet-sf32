@@ -13,6 +13,8 @@
 #define WATCH_ALARM_EVENT_DAILY (1U << 0)
 #define WATCH_ALARM_EVENT_TIMER (1U << 1)
 #define WATCH_ALARM_EVENT_MASK (WATCH_ALARM_EVENT_DAILY | WATCH_ALARM_EVENT_TIMER)
+#define WATCH_ALARM_WEEK_DAYS (7U)
+#define WATCH_ALARM_REPEAT_ALL (0x7FU)
 
 typedef struct
 {
@@ -20,9 +22,11 @@ typedef struct
     uint8_t alarm_ringing;
     uint8_t timer_ringing;
     uint8_t timer_running;
+    uint8_t alarm_snoozed;
+    uint32_t alarm_snooze_deadline;
     uint32_t timer_deadline;
     uint32_t timer_remaining_seconds;
-    rt_alarm_t daily_alarm;
+    rt_alarm_t aDailyAlarm[WATCH_ALARM_WEEK_DAYS];
     rt_timer_t timer_tick;
     rt_event_t event;
     rt_thread_t thread;
@@ -57,15 +61,22 @@ static void watch_alarm_rearm_locked(const watch_settings_snapshot_t *settings)
 {
     struct rt_alarm_setup setup;
     time_t now;
+    time_t target;
+    uint8_t ucDay;
 
-    if (g_watch_alarm.daily_alarm)
+    for (ucDay = 0U; ucDay < WATCH_ALARM_WEEK_DAYS; ucDay++)
     {
-        rt_alarm_stop(g_watch_alarm.daily_alarm);
-        rt_alarm_delete(g_watch_alarm.daily_alarm);
-        g_watch_alarm.daily_alarm = NULL;
+        if (NULL != g_watch_alarm.aDailyAlarm[ucDay])
+        {
+            rt_alarm_stop(g_watch_alarm.aDailyAlarm[ucDay]);
+            rt_alarm_delete(g_watch_alarm.aDailyAlarm[ucDay]);
+            g_watch_alarm.aDailyAlarm[ucDay] = NULL;
+        }
     }
 
-    if (!settings->alarm_enabled)
+    g_watch_alarm.alarm_snoozed = 0U;
+    g_watch_alarm.alarm_snooze_deadline = 0U;
+    if ((!settings->alarm_present) || (!settings->alarm_enabled))
     {
         return;
     }
@@ -73,18 +84,45 @@ static void watch_alarm_rearm_locked(const watch_settings_snapshot_t *settings)
     rt_memset(&setup, 0, sizeof(setup));
     now = time(NULL);
     gmtime_r(&now, &setup.wktime);
-    setup.flag = RT_ALARM_DAILY;
     setup.wktime.tm_hour = settings->alarm_hour;
     setup.wktime.tm_min = settings->alarm_minute;
     setup.wktime.tm_sec = 0;
-    g_watch_alarm.daily_alarm = rt_alarm_create(watch_alarm_daily_callback, &setup);
-    if (!g_watch_alarm.daily_alarm || rt_alarm_start(g_watch_alarm.daily_alarm) != RT_EOK)
+
+    if (0U == settings->alarm_repeat_mask)
     {
-        LOG_E("failed to arm %02d:%02d", settings->alarm_hour, settings->alarm_minute);
-        if (g_watch_alarm.daily_alarm)
+        target = mktime(&setup.wktime);
+        if (target <= now)
         {
-            rt_alarm_delete(g_watch_alarm.daily_alarm);
-            g_watch_alarm.daily_alarm = NULL;
+            target += 24 * 60 * 60;
+            gmtime_r(&target, &setup.wktime);
+        }
+        setup.flag = RT_ALARM_ONESHOT;
+        g_watch_alarm.aDailyAlarm[0] = rt_alarm_create(
+            watch_alarm_daily_callback, &setup);
+        if ((NULL == g_watch_alarm.aDailyAlarm[0]) ||
+            (RT_EOK != rt_alarm_start(g_watch_alarm.aDailyAlarm[0])))
+        {
+            LOG_E("failed to arm one-shot %02d:%02d", settings->alarm_hour,
+                  settings->alarm_minute);
+        }
+        return;
+    }
+
+    setup.flag = RT_ALARM_WEEKLY;
+    for (ucDay = 0U; ucDay < WATCH_ALARM_WEEK_DAYS; ucDay++)
+    {
+        if (0U == (settings->alarm_repeat_mask & (1U << ucDay)))
+        {
+            continue;
+        }
+        setup.wktime.tm_wday = ucDay;
+        g_watch_alarm.aDailyAlarm[ucDay] = rt_alarm_create(
+            watch_alarm_daily_callback, &setup);
+        if ((NULL == g_watch_alarm.aDailyAlarm[ucDay]) ||
+            (RT_EOK != rt_alarm_start(g_watch_alarm.aDailyAlarm[ucDay])))
+        {
+            LOG_E("failed to arm weekday=%u %02d:%02d", ucDay,
+                  settings->alarm_hour, settings->alarm_minute);
         }
     }
 }
@@ -107,6 +145,7 @@ static void watch_alarm_thread_entry(void *parameter)
         {
             rt_mutex_take(&g_watch_alarm.lock, RT_WAITING_FOREVER);
             g_watch_alarm.alarm_ringing = 1;
+            g_watch_alarm.alarm_snoozed = 0U;
             rt_mutex_release(&g_watch_alarm.lock);
             watch_alarm_notify("HWS1|0|ALARM|RING");
         }
@@ -115,8 +154,16 @@ static void watch_alarm_thread_entry(void *parameter)
         {
             time_t now = time(NULL);
             uint8_t expired = 0;
+            uint8_t alarm_expired = 0;
 
             rt_mutex_take(&g_watch_alarm.lock, RT_WAITING_FOREVER);
+            if (g_watch_alarm.alarm_snoozed &&
+                ((uint32_t)now >= g_watch_alarm.alarm_snooze_deadline))
+            {
+                g_watch_alarm.alarm_snoozed = 0U;
+                g_watch_alarm.alarm_ringing = 1U;
+                alarm_expired = 1U;
+            }
             if (g_watch_alarm.timer_running && (uint32_t)now >= g_watch_alarm.timer_deadline)
             {
                 g_watch_alarm.timer_running = 0;
@@ -133,6 +180,10 @@ static void watch_alarm_thread_entry(void *parameter)
             if (expired)
             {
                 watch_alarm_notify("HWS1|0|TIMER|DONE");
+            }
+            if (alarm_expired)
+            {
+                watch_alarm_notify("HWS1|0|ALARM|SNOOZE");
             }
         }
     }
@@ -199,6 +250,40 @@ rt_err_t watch_alarm_set(uint8_t enabled, uint8_t hour, uint8_t minute)
     return RT_EOK;
 }
 
+rt_err_t watch_alarm_set_repeat(uint8_t repeat_mask)
+{
+    watch_settings_snapshot_t tSettings;
+    rt_err_t tRet;
+
+    tRet = watch_settings_set_alarm_repeat(repeat_mask & WATCH_ALARM_REPEAT_ALL);
+    if (RT_EOK != tRet)
+    {
+        return tRet;
+    }
+    watch_settings_get_snapshot(&tSettings);
+    rt_mutex_take(&g_watch_alarm.lock, RT_WAITING_FOREVER);
+    watch_alarm_rearm_locked(&tSettings);
+    rt_mutex_release(&g_watch_alarm.lock);
+    return RT_EOK;
+}
+
+rt_err_t watch_alarm_set_present(uint8_t present)
+{
+    watch_settings_snapshot_t tSettings;
+    rt_err_t tRet;
+
+    tRet = watch_settings_set_alarm_present(present);
+    if (RT_EOK != tRet)
+    {
+        return tRet;
+    }
+    watch_settings_get_snapshot(&tSettings);
+    rt_mutex_take(&g_watch_alarm.lock, RT_WAITING_FOREVER);
+    watch_alarm_rearm_locked(&tSettings);
+    rt_mutex_release(&g_watch_alarm.lock);
+    return RT_EOK;
+}
+
 rt_err_t watch_alarm_dismiss(void)
 {
     uint8_t was_ringing;
@@ -210,9 +295,35 @@ rt_err_t watch_alarm_dismiss(void)
     rt_mutex_take(&g_watch_alarm.lock, RT_WAITING_FOREVER);
     was_ringing = g_watch_alarm.alarm_ringing || g_watch_alarm.timer_ringing;
     g_watch_alarm.alarm_ringing = 0;
+    g_watch_alarm.alarm_snoozed = 0U;
+    g_watch_alarm.alarm_snooze_deadline = 0U;
     g_watch_alarm.timer_ringing = 0;
     rt_mutex_release(&g_watch_alarm.lock);
     return was_ringing ? local_music_stop() : RT_EOK;
+}
+
+rt_err_t watch_alarm_snooze(uint32_t seconds)
+{
+    uint8_t ucWasRinging;
+
+    if ((!g_watch_alarm.initialized) || (0U == seconds))
+    {
+        return -RT_EINVAL;
+    }
+    rt_mutex_take(&g_watch_alarm.lock, RT_WAITING_FOREVER);
+    ucWasRinging = g_watch_alarm.alarm_ringing;
+    if (0U != ucWasRinging)
+    {
+        g_watch_alarm.alarm_ringing = 0U;
+        g_watch_alarm.alarm_snoozed = 1U;
+        g_watch_alarm.alarm_snooze_deadline = (uint32_t)time(NULL) + seconds;
+    }
+    rt_mutex_release(&g_watch_alarm.lock);
+    if (0U == ucWasRinging)
+    {
+        return -RT_ERROR;
+    }
+    return local_music_stop();
 }
 
 rt_err_t watch_alarm_get_snapshot(watch_alarm_snapshot_t *snapshot)
@@ -233,6 +344,8 @@ rt_err_t watch_alarm_get_snapshot(watch_alarm_snapshot_t *snapshot)
     snapshot->alarm_enabled = settings.alarm_enabled;
     snapshot->alarm_hour = settings.alarm_hour;
     snapshot->alarm_minute = settings.alarm_minute;
+    snapshot->alarm_repeat_mask = settings.alarm_repeat_mask;
+    snapshot->alarm_present = settings.alarm_present;
     snapshot->alarm_ringing = g_watch_alarm.alarm_ringing;
     snapshot->timer_ringing = g_watch_alarm.timer_ringing;
     snapshot->timer_running = g_watch_alarm.timer_running;

@@ -27,7 +27,9 @@ static watch_settings_snapshot_t l_tSettings =
     0U,
     1U,
     7U,
-    30U
+    30U,
+    0x7FU,
+    1U
 };
 
 /* Alarm/timer state is updated from the RT-Thread PC tick counter. */
@@ -36,6 +38,8 @@ static watch_alarm_snapshot_t l_tAlarm =
     1U,
     7U,
     30U,
+    0x7FU,
+    1U,
     0U,
     0U,
     0U,
@@ -152,10 +156,35 @@ rt_err_t watch_alarm_set(uint8_t ucEnabled, uint8_t ucHour, uint8_t ucMinute)
     return RT_EOK;
 }
 
+rt_err_t watch_alarm_set_repeat(uint8_t ucRepeatMask)
+{
+    l_tAlarm.alarm_repeat_mask = ucRepeatMask & 0x7FU;
+    l_tSettings.alarm_repeat_mask = l_tAlarm.alarm_repeat_mask;
+    return RT_EOK;
+}
+
+rt_err_t watch_alarm_set_present(uint8_t ucPresent)
+{
+    l_tAlarm.alarm_present = (0U != ucPresent) ? 1U : 0U;
+    l_tSettings.alarm_present = l_tAlarm.alarm_present;
+    return RT_EOK;
+}
+
 rt_err_t watch_alarm_dismiss(void)
 {
     l_tAlarm.alarm_ringing = 0U;
     l_tAlarm.timer_ringing = 0U;
+    return RT_EOK;
+}
+
+rt_err_t watch_alarm_snooze(uint32_t ulSeconds)
+{
+    (void)ulSeconds;
+    if (0U == l_tAlarm.alarm_ringing)
+    {
+        return -RT_ERROR;
+    }
+    l_tAlarm.alarm_ringing = 0U;
     return RT_EOK;
 }
 

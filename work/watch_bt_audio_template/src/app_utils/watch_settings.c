@@ -32,6 +32,9 @@
 #define WATCH_SETTINGS_KEY_ALARM_ENABLED "alarm_enabled"
 #define WATCH_SETTINGS_KEY_ALARM_HOUR "alarm_hour"
 #define WATCH_SETTINGS_KEY_ALARM_MINUTE "alarm_minute"
+#define WATCH_SETTINGS_KEY_ALARM_REPEAT "alarm_repeat"
+#define WATCH_SETTINGS_KEY_ALARM_PRESENT "alarm_present"
+#define WATCH_SETTINGS_ALARM_REPEAT_ALL (0x7FU)
 
 typedef struct
 {
@@ -104,6 +107,8 @@ static void watch_settings_load_defaults(watch_settings_snapshot_t *value)
     value->alarm_enabled = 0;
     value->alarm_hour = 7;
     value->alarm_minute = 0;
+    value->alarm_repeat_mask = WATCH_SETTINGS_ALARM_REPEAT_ALL;
+    value->alarm_present = 1U;
 }
 
 static rt_err_t watch_settings_save_int_locked(const char *key, int32_t value)
@@ -255,6 +260,36 @@ rt_err_t watch_settings_set_alarm(uint8_t enabled, uint8_t hour, uint8_t minute)
            RT_EOK : -RT_ERROR;
 }
 
+rt_err_t watch_settings_set_alarm_repeat(uint8_t repeat_mask)
+{
+    rt_err_t tRet;
+
+    repeat_mask &= WATCH_SETTINGS_ALARM_REPEAT_ALL;
+    rt_mutex_take(&g_watch_settings.lock, RT_WAITING_FOREVER);
+    g_watch_settings.value.alarm_repeat_mask = repeat_mask;
+    tRet = watch_settings_save_int_locked(WATCH_SETTINGS_KEY_ALARM_REPEAT,
+                                          repeat_mask);
+    rt_mutex_release(&g_watch_settings.lock);
+
+    LOG_I("alarm repeat=0x%02x save=%d", repeat_mask, tRet);
+    return tRet;
+}
+
+rt_err_t watch_settings_set_alarm_present(uint8_t present)
+{
+    rt_err_t tRet;
+
+    present = (0U != present) ? 1U : 0U;
+    rt_mutex_take(&g_watch_settings.lock, RT_WAITING_FOREVER);
+    g_watch_settings.value.alarm_present = present;
+    tRet = watch_settings_save_int_locked(WATCH_SETTINGS_KEY_ALARM_PRESENT,
+                                          present);
+    rt_mutex_release(&g_watch_settings.lock);
+
+    LOG_I("alarm present=%u save=%d", present, tRet);
+    return tRet;
+}
+
 rt_err_t watch_settings_reset(void)
 {
     watch_settings_snapshot_t defaults;
@@ -274,6 +309,8 @@ rt_err_t watch_settings_reset(void)
         share_prefs_remove(g_watch_settings.prefs, WATCH_SETTINGS_KEY_ALARM_ENABLED);
         share_prefs_remove(g_watch_settings.prefs, WATCH_SETTINGS_KEY_ALARM_HOUR);
         share_prefs_remove(g_watch_settings.prefs, WATCH_SETTINGS_KEY_ALARM_MINUTE);
+        share_prefs_remove(g_watch_settings.prefs, WATCH_SETTINGS_KEY_ALARM_REPEAT);
+        share_prefs_remove(g_watch_settings.prefs, WATCH_SETTINGS_KEY_ALARM_PRESENT);
     }
     else
     {
@@ -335,6 +372,15 @@ static int watch_settings_init(void)
         g_watch_settings.value.alarm_minute = watch_settings_clamp_alarm_minute(
             share_prefs_get_int(g_watch_settings.prefs, WATCH_SETTINGS_KEY_ALARM_MINUTE,
                                  defaults.alarm_minute));
+        g_watch_settings.value.alarm_repeat_mask =
+            (uint8_t)share_prefs_get_int(g_watch_settings.prefs,
+                                         WATCH_SETTINGS_KEY_ALARM_REPEAT,
+                                         defaults.alarm_repeat_mask) &
+            WATCH_SETTINGS_ALARM_REPEAT_ALL;
+        g_watch_settings.value.alarm_present =
+            (0 != share_prefs_get_int(g_watch_settings.prefs,
+                                      WATCH_SETTINGS_KEY_ALARM_PRESENT,
+                                      defaults.alarm_present)) ? 1U : 0U;
     }
     else
     {

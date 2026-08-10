@@ -29,7 +29,8 @@ LV_IMG_DECLARE(agent_pet_merit_plus_one);
 #define PET_MASCOT_SIZE (192)
 #define PET_MASCOT_X ((LV_HOR_RES_MAX - PET_MASCOT_SIZE) / 2)
 #define PET_MASCOT_Y (((LV_VER_RES_MAX - PET_MASCOT_SIZE) / 2) - 12)
-#define PET_GIF_MIN_FRAME_MS (20U)
+#define PET_GIF_MIN_FRAME_MS (50U)
+#define PET_GIF_BUFFER_COUNT (2U)
 #define PET_WOODEN_FISH_IDLE_MS (1700U)
 #define PET_WOODEN_FISH_SOUND_PATH "/940muyu3.wav"
 #define PET_DAILY_SUMMARY_MS (1900U)
@@ -179,7 +180,8 @@ typedef struct
 #if LV_USE_GIF
     lv_img_dsc_t tCustomGif;
     uint8_t *pCustomGifData;
-    uint8_t *pCustomGifPixels;
+    uint8_t *aCustomGifPixels[PET_GIF_BUFFER_COUNT];
+    uint8_t ucCustomGifFrontBuffer;
     uint8_t aCustomGifBackground[LV_IMG_PX_SIZE_ALPHA_BYTE];
 #endif
     bool bRenderedConnected;
@@ -689,6 +691,46 @@ static void PET_ResetCustomGifCanvas(void)
 }
 
 /*
+ * PET_PublishCustomGifFrame
+ * Function: render the decoder canvas into the inactive PSRAM buffer and
+ * atomically publish it to LVGL. Alternating buffers prevents EPIC/LCD from
+ * reading pixels while the GIF decoder overwrites the same memory.
+ * Parameters: none.
+ * Return: true after a frame is published, false if buffers are unavailable.
+ */
+static bool PET_PublishCustomGifFrame(void)
+{
+    uint8_t ucBackBuffer;
+    uint8_t *pPixels;
+
+    if ((NULL == g_pet_ui.pCustomGifDecoder) ||
+        (NULL == g_pet_ui.mascot_gif))
+    {
+        return false;
+    }
+
+    ucBackBuffer = (0U == g_pet_ui.ucCustomGifFrontBuffer) ? 1U : 0U;
+    pPixels = g_pet_ui.aCustomGifPixels[ucBackBuffer];
+    if (NULL == pPixels)
+    {
+        return false;
+    }
+
+    rt_memcpy(
+        pPixels,
+        g_pet_ui.pCustomGifDecoder->canvas,
+        g_pet_ui.tCustomGif.data_size);
+    gd_render_frame(g_pet_ui.pCustomGifDecoder, pPixels);
+
+    lv_img_cache_invalidate_src(&g_pet_ui.tCustomGif);
+    g_pet_ui.tCustomGif.data = pPixels;
+    g_pet_ui.ucCustomGifFrontBuffer = ucBackBuffer;
+    lv_obj_invalidate(g_pet_ui.mascot_gif);
+
+    return true;
+}
+
+/*
  * PET_AdvanceCustomGif
  * Function: decode one GIF frame and schedule the next callback from its delay.
  * Parameters:
@@ -701,7 +743,8 @@ static void PET_AdvanceCustomGif(lv_timer_t *pTimer)
 
     if ((NULL == pTimer) ||
         (NULL == g_pet_ui.pCustomGifDecoder) ||
-        (NULL == g_pet_ui.pCustomGifPixels) ||
+        (NULL == g_pet_ui.aCustomGifPixels[0]) ||
+        (NULL == g_pet_ui.aCustomGifPixels[1]) ||
         (NULL == g_pet_ui.mascot_gif))
     {
         return;
@@ -733,15 +776,12 @@ static void PET_AdvanceCustomGif(lv_timer_t *pTimer)
         return;
     }
 
-    rt_memcpy(
-        g_pet_ui.pCustomGifPixels,
-        g_pet_ui.pCustomGifDecoder->canvas,
-        g_pet_ui.tCustomGif.data_size);
-    gd_render_frame(
-        g_pet_ui.pCustomGifDecoder,
-        g_pet_ui.pCustomGifPixels);
-    lv_img_cache_invalidate_src(&g_pet_ui.tCustomGif);
-    lv_obj_invalidate(g_pet_ui.mascot_gif);
+    if (!PET_PublishCustomGifFrame())
+    {
+        lv_timer_pause(pTimer);
+        rt_kprintf("agent pet: custom GIF frame publish failed\n");
+        return;
+    }
     lv_timer_set_period(pTimer, PET_CustomGifDelay());
 
     return;
@@ -755,6 +795,8 @@ static void PET_AdvanceCustomGif(lv_timer_t *pTimer)
  */
 static void PET_ReleaseCustomGif(void)
 {
+    uint8_t ucBufferIndex;
+
     if (NULL != g_pet_ui.gif_timer)
     {
         lv_timer_del(g_pet_ui.gif_timer);
@@ -770,12 +812,18 @@ static void PET_ReleaseCustomGif(void)
         gd_close_gif(g_pet_ui.pCustomGifDecoder);
         g_pet_ui.pCustomGifDecoder = NULL;
     }
-    if (NULL != g_pet_ui.pCustomGifPixels)
+    lv_img_cache_invalidate_src(&g_pet_ui.tCustomGif);
+    for (ucBufferIndex = 0U;
+         ucBufferIndex < PET_GIF_BUFFER_COUNT;
+         ucBufferIndex++)
     {
-        lv_img_cache_invalidate_src(&g_pet_ui.tCustomGif);
-        app_cache_free(g_pet_ui.pCustomGifPixels);
-        g_pet_ui.pCustomGifPixels = NULL;
+        if (NULL != g_pet_ui.aCustomGifPixels[ucBufferIndex])
+        {
+            app_cache_free(g_pet_ui.aCustomGifPixels[ucBufferIndex]);
+            g_pet_ui.aCustomGifPixels[ucBufferIndex] = NULL;
+        }
     }
+    g_pet_ui.ucCustomGifFrontBuffer = 0U;
     if (NULL != g_pet_ui.pCustomGifData)
     {
         app_cache_free(g_pet_ui.pCustomGifData);
@@ -804,6 +852,7 @@ static bool PET_LoadCustomGif(
     uint32_t ulOffset;
     uint32_t ulReadLength;
     uint32_t ulChunkSize;
+    uint8_t ucBufferIndex;
 
     if ((NULL == pLvglPath) || (NULL == pHeader))
     {
@@ -905,25 +954,33 @@ static bool PET_LoadCustomGif(
     g_pet_ui.tCustomGif.header = *pHeader;
     g_pet_ui.tCustomGif.data_size = (uint32_t)pHeader->w * pHeader->h *
         LV_IMG_PX_SIZE_ALPHA_BYTE;
-    g_pet_ui.pCustomGifPixels = app_cache_alloc(
-        g_pet_ui.tCustomGif.data_size,
-        IMAGE_CACHE_PSRAM);
-    if (NULL == g_pet_ui.pCustomGifPixels)
+    for (ucBufferIndex = 0U;
+         ucBufferIndex < PET_GIF_BUFFER_COUNT;
+         ucBufferIndex++)
     {
-        rt_kprintf("agent pet: custom GIF display allocation failed %lu\n",
-                   (unsigned long)g_pet_ui.tCustomGif.data_size);
-        PET_ReleaseCustomGif();
-        return false;
+        g_pet_ui.aCustomGifPixels[ucBufferIndex] = app_cache_alloc(
+            g_pet_ui.tCustomGif.data_size,
+            IMAGE_CACHE_PSRAM);
+        if (NULL == g_pet_ui.aCustomGifPixels[ucBufferIndex])
+        {
+            rt_kprintf(
+                "agent pet: custom GIF display buffer %u allocation failed %lu\n",
+                ucBufferIndex,
+                (unsigned long)g_pet_ui.tCustomGif.data_size);
+            PET_ReleaseCustomGif();
+            return false;
+        }
     }
-    g_pet_ui.tCustomGif.data = g_pet_ui.pCustomGifPixels;
+    g_pet_ui.ucCustomGifFrontBuffer = 0U;
+    g_pet_ui.tCustomGif.data = g_pet_ui.aCustomGifPixels[0];
     PET_ResetCustomGifCanvas();
     rt_memcpy(
-        g_pet_ui.pCustomGifPixels,
+        g_pet_ui.aCustomGifPixels[0],
         g_pet_ui.pCustomGifDecoder->canvas,
         g_pet_ui.tCustomGif.data_size);
     gd_render_frame(
         g_pet_ui.pCustomGifDecoder,
-        g_pet_ui.pCustomGifPixels);
+        g_pet_ui.aCustomGifPixels[0]);
     g_pet_ui.mascot_gif = lv_img_create(g_pet_ui.stage);
     if (NULL == g_pet_ui.mascot_gif)
     {
