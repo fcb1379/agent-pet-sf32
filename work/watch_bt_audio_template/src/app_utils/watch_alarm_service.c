@@ -1,4 +1,5 @@
 #include <rtthread.h>
+#include <rthw.h>
 #include <drivers/alarm.h>
 #include <time.h>
 
@@ -6,6 +7,9 @@
 #include "local_music_player.h"
 #include "watch_alarm_service.h"
 #include "watch_settings.h"
+#ifdef MOMO_FIND_ME
+#include "momo_find_me.h"
+#endif /* MOMO_FIND_ME */
 
 #define LOG_TAG "watch.alarm"
 #include "log.h"
@@ -37,11 +41,27 @@ static watch_alarm_env_t g_watch_alarm;
 
 static void watch_alarm_notify(const char *text)
 {
+#ifdef MOMO_FIND_ME
+    MOMOFIND_PreemptAlarm((uint32_t)rt_tick_get());
+#endif /* MOMO_FIND_ME */
     ble_link_notify_event(text);
     if (local_music_play_file(NULL, 3) != RT_EOK)
     {
         LOG_W("audio alert unavailable");
     }
+}
+
+bool watch_alarm_is_ringing(void)
+{
+    bool bRinging;
+    rt_base_t tLevel;
+
+    tLevel = rt_hw_interrupt_disable();
+    bRinging = (0U != g_watch_alarm.alarm_ringing) ||
+               (0U != g_watch_alarm.timer_ringing);
+    rt_hw_interrupt_enable(tLevel);
+
+    return bRinging;
 }
 
 static void watch_alarm_daily_callback(rt_alarm_t alarm, time_t timestamp)

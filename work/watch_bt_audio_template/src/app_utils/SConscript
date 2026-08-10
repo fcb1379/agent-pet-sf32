@@ -6,6 +6,9 @@ import os
 cwd = GetCurrentDir()
 src = ['main.c', 'noise_monitor.c', 'agent_pet_merit.c']
 
+if GetDepend('MOMO_FIND_ME'):
+    src += ['momo_find_me.c']
+
 if GetDepend('BSP_USING_PC_SIMULATOR'):
     # The full UI target needs stable service state but has no BLE, flash,
     # audio codec, or interrupt controller. Keep all PC behavior in one mock.

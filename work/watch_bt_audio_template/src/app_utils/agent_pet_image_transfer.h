@@ -61,6 +61,7 @@ AGENTPET_IMAGE_RESULT AGENTPETIMAGE_ProcessFrame(
     const uint8_t *pFrame,
     size_t ulLength);
 bool AGENTPETIMAGE_GetStatus(AGENTPET_IMAGE_STATUS *pStatus);
+bool AGENTPETIMAGE_IsTransferBusy(void);
 bool AGENTPETIMAGE_GetSlotStatus(
     uint8_t ucSlot,
     AGENTPET_IMAGE_STATUS *pStatus);

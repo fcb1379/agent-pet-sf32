@@ -1,6 +1,7 @@
 #ifndef BADGE_TRANSFER_H
 #define BADGE_TRANSFER_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #define BADGE_IMAGE_PATH "/badge.jpg"
@@ -25,6 +26,7 @@ typedef struct
 } badge_transfer_snapshot_t;
 
 void badge_transfer_get_snapshot(badge_transfer_snapshot_t *snapshot);
+bool badge_transfer_is_busy(void);
 int badge_transfer_clear(void);
 int badge_transfer_cancel(void);
 

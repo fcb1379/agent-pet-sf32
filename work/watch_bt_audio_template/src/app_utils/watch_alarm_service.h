@@ -1,6 +1,7 @@
 #ifndef WATCH_ALARM_SERVICE_H
 #define WATCH_ALARM_SERVICE_H
 
+#include <stdbool.h>
 #include <stdint.h>
 #include <rtdef.h>
 
@@ -24,6 +25,7 @@ rt_err_t watch_alarm_set_present(uint8_t present);
 rt_err_t watch_alarm_dismiss(void);
 rt_err_t watch_alarm_snooze(uint32_t seconds);
 rt_err_t watch_alarm_get_snapshot(watch_alarm_snapshot_t *snapshot);
+bool watch_alarm_is_ringing(void);
 rt_err_t watch_timer_start(uint32_t seconds);
 rt_err_t watch_timer_pause(void);
 rt_err_t watch_timer_reset(void);

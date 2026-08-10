@@ -8,6 +8,7 @@
 
 #include <rtthread.h>
 #include <rtdevice.h>
+#include <rthw.h>
 #include <board.h>
 #include <string.h>
 #include <stdlib.h>
@@ -26,12 +27,20 @@
 #include "local_music_player.h"
 #include "watch_settings.h"
 #include "watch_protocol.h"
+#ifdef MOMO_FIND_ME
+#include "momo_find_me.h"
+#if defined(BSP_USING_PM) && defined(GUI_APP_PM)
+#include "gui_app_pm.h"
+#endif /* BSP_USING_PM && GUI_APP_PM */
+#endif /* MOMO_FIND_ME */
 
 #define LOG_TAG "ble_link"
 #include "log.h"
 
 #define BLE_LINK_ADV_NAME "AgentPet-HS52"
 #define BLE_LINK_NOTIFY_INTERVAL_MS 5000
+#define BLE_LINK_MSG_FIND_WAKE (0x4D01U)
+#define BLE_LINK_MSG_FIND_END (0x4D02U)
 
 enum ble_link_att_list
 {
@@ -66,6 +75,11 @@ typedef struct
     sibles_hdl srv_handle;
     rt_mailbox_t mb_handle;
     rt_timer_t notify_timer;
+#ifdef MOMO_FIND_ME
+    uint16_t find_end_session_id;
+    char find_end_reason[24];
+    uint8_t find_end_pending;
+#endif /* MOMO_FIND_ME */
 } ble_link_env_t;
 
 static ble_link_env_t g_ble_link_env;
@@ -227,6 +241,65 @@ void ble_link_notify_event(const char *text)
     {
         ble_link_notify(text);
     }
+}
+
+bool ble_link_request_find_wakeup(void)
+{
+#ifdef MOMO_FIND_ME
+    ble_link_env_t *pEnv;
+
+    pEnv = ble_link_env();
+    return (NULL != pEnv->mb_handle) &&
+           (RT_EOK == rt_mb_send(pEnv->mb_handle, BLE_LINK_MSG_FIND_WAKE));
+#else
+    return false;
+#endif /* MOMO_FIND_ME */
+}
+
+bool ble_link_queue_find_end(uint16_t usSessionId, const char *pReason)
+{
+#ifdef MOMO_FIND_ME
+    ble_link_env_t *pEnv;
+    rt_base_t tLevel;
+    rt_err_t tResult;
+
+    if ((0U == usSessionId) || (NULL == pReason))
+    {
+        return false;
+    }
+    pEnv = ble_link_env();
+    if (NULL == pEnv->mb_handle)
+    {
+        return false;
+    }
+
+    tLevel = rt_hw_interrupt_disable();
+    if (0U != pEnv->find_end_pending)
+    {
+        rt_hw_interrupt_enable(tLevel);
+        return false;
+    }
+    pEnv->find_end_session_id = usSessionId;
+    rt_strncpy(pEnv->find_end_reason, pReason,
+               sizeof(pEnv->find_end_reason) - 1U);
+    pEnv->find_end_reason[sizeof(pEnv->find_end_reason) - 1U] = '\0';
+    pEnv->find_end_pending = 1U;
+    rt_hw_interrupt_enable(tLevel);
+
+    tResult = rt_mb_send(pEnv->mb_handle, BLE_LINK_MSG_FIND_END);
+    if (RT_EOK != tResult)
+    {
+        tLevel = rt_hw_interrupt_disable();
+        pEnv->find_end_pending = 0U;
+        rt_hw_interrupt_enable(tLevel);
+    }
+
+    return (RT_EOK == tResult);
+#else
+    (void)usSessionId;
+    (void)pReason;
+    return false;
+#endif /* MOMO_FIND_ME */
 }
 
 static int ble_link_ams_cmd_from_name(const char *name, uint8_t *cmd)
@@ -621,6 +694,35 @@ static void ble_link_thread(void *parameter)
             ble_link_advertising_start();
             LOG_I("BLE link ready name=%s", BLE_LINK_ADV_NAME);
         }
+#ifdef MOMO_FIND_ME
+        else if (BLE_LINK_MSG_FIND_WAKE == value)
+        {
+#if defined(BSP_USING_PM) && defined(GUI_APP_PM)
+            /* 复用现有 PM 线程调用模型；LVGL 覆盖层仍只由 GUI 主线程创建。 */
+            gui_pm_fsm(GUI_PM_ACTION_WAKEUP);
+#elif defined(BSP_USING_PM)
+            /* 未来启用低功耗却未启用 GUI PM 时，只能在亮屏后显示覆盖层。 */
+            LOG_W("Find Momo requires GUI_APP_PM when BSP_USING_PM is enabled");
+#endif /* BSP_USING_PM && GUI_APP_PM */
+        }
+        else if (BLE_LINK_MSG_FIND_END == value)
+        {
+            char aEvent[64];
+            rt_base_t tLevel;
+            uint16_t usSessionId;
+            char aReason[24];
+
+            tLevel = rt_hw_interrupt_disable();
+            usSessionId = env->find_end_session_id;
+            rt_strncpy(aReason, env->find_end_reason, sizeof(aReason) - 1U);
+            aReason[sizeof(aReason) - 1U] = '\0';
+            env->find_end_pending = 0U;
+            rt_hw_interrupt_enable(tLevel);
+            rt_snprintf(aEvent, sizeof(aEvent), "HWS1|0|FIND|END,%u,%s",
+                        (unsigned int)usSessionId, aReason);
+            ble_link_notify(aEvent);
+        }
+#endif /* MOMO_FIND_ME */
     }
 }
 
@@ -630,6 +732,9 @@ static int ble_link_init(void)
     rt_thread_t tid;
 
     AGENTPETBLE_Init();
+#ifdef MOMO_FIND_ME
+    MOMOFIND_Init();
+#endif /* MOMO_FIND_ME */
 
     env->mb_handle = rt_mb_create("blelink", 8, RT_IPC_FLAG_FIFO);
     RT_ASSERT(env->mb_handle);

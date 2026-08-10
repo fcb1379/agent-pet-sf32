@@ -8,6 +8,11 @@
 #include "watch_protocol.h"
 #include "watch_alarm_service.h"
 #include "watch_settings.h"
+#ifdef MOMO_FIND_ME
+#include "agent_pet_image_transfer.h"
+#include "ble_watch_link.h"
+#include "momo_find_me.h"
+#endif /* MOMO_FIND_ME */
 
 #define LOG_TAG "watch.proto"
 #include "log.h"
@@ -18,6 +23,8 @@
 #define WATCH_PROTOCOL_TIME_MAX 2145916800L
 #define WATCH_PROTOCOL_TZ_MIN (-840)
 #define WATCH_PROTOCOL_TZ_MAX 840
+#define WATCH_PROTOCOL_FIND_DURATION_MS (60000U)
+#define WATCH_PROTOCOL_FIND_COOLDOWN_MS (1000U)
 
 enum watch_protocol_error
 {
@@ -159,7 +166,11 @@ static int watch_protocol_state(char *result, size_t result_size)
     }
     time_value = *time_ptr;
 
+#ifdef MOMO_FIND_ME
+    rt_snprintf(result, result_size, "time=%04d%02d%02dT%02d%02d%02d;tz=%d;img=%d;find=1",
+#else
     rt_snprintf(result, result_size, "time=%04d%02d%02dT%02d%02d%02d;tz=%d;img=%d",
+#endif /* MOMO_FIND_ME */
                 time_value.tm_year + 1900,
                 time_value.tm_mon + 1,
                 time_value.tm_mday,
@@ -170,6 +181,79 @@ static int watch_protocol_state(char *result, size_t result_size)
                 badge.image_available);
     return RT_EOK;
 }
+
+#ifdef MOMO_FIND_ME
+static int watch_protocol_find(const char *pPayload,
+                               uint16_t usRequestId,
+                               char *pResult,
+                               size_t ulResultSize)
+{
+    MOMO_FIND_RESULT eResult;
+    MOMO_FIND_SNAPSHOT tSnapshot;
+    bool bNeedsWake;
+    uint32_t ulNowTick;
+    uint32_t ulRemaining;
+
+    if ((NULL == pPayload) || (NULL == pResult) || (0U == ulResultSize))
+    {
+        return -RT_EINVAL;
+    }
+
+    ulNowTick = (uint32_t)rt_tick_get();
+    if (0 == strcmp(pPayload, "START"))
+    {
+        eResult = MOMOFIND_StartAt(
+            usRequestId,
+            ulNowTick,
+            (uint32_t)rt_tick_from_millisecond(WATCH_PROTOCOL_FIND_DURATION_MS),
+            (uint32_t)rt_tick_from_millisecond(WATCH_PROTOCOL_FIND_COOLDOWN_MS),
+            watch_alarm_is_ringing(),
+            badge_transfer_is_busy() || AGENTPETIMAGE_IsTransferBusy(),
+            &bNeedsWake);
+        if ((MOMO_FIND_RESULT_ACCEPTED == eResult) && bNeedsWake)
+        {
+            if (!ble_link_request_find_wakeup())
+            {
+                MOMOFIND_CancelArming(usRequestId);
+                return -RT_ERROR;
+            }
+            if (!MOMOFIND_ConfirmStart(usRequestId))
+            {
+                return -RT_ERROR;
+            }
+        }
+    }
+    else if (0 == strcmp(pPayload, "STOP"))
+    {
+        eResult = MOMOFIND_StopSessionAt(usRequestId,
+                                         MOMO_FIND_END_PHONE_STOP,
+                                         ulNowTick);
+    }
+    else if (0 == strcmp(pPayload, "STATUS"))
+    {
+        eResult = MOMO_FIND_RESULT_ACCEPTED;
+    }
+    else
+    {
+        return -RT_EINVAL;
+    }
+
+    if (!MOMOFIND_GetSnapshot(&tSnapshot))
+    {
+        return -RT_ERROR;
+    }
+    ulRemaining = MOMOFIND_GetRemainingSeconds(
+        &tSnapshot, ulNowTick, (uint32_t)RT_TICK_PER_SECOND);
+    rt_snprintf(pResult, ulResultSize, "r=%s;s=%s;id=%u;left=%lu;a=0",
+                (0 == strcmp(pPayload, "STATUS")) ? "STATUS" :
+                    MOMOFIND_ResultName(eResult),
+                MOMOFIND_StateName(tSnapshot.eState),
+                (unsigned int)tSnapshot.usSessionId,
+                (unsigned long)ulRemaining);
+
+    return RT_EOK;
+}
+#endif /* MOMO_FIND_ME */
 
 static int watch_protocol_alarm(const char *payload, char *result, size_t result_size)
 {
@@ -276,7 +360,7 @@ int watch_protocol_handle_request(const char *request, char *response, size_t re
     char *saveptr = NULL;
     char *token;
     int count = 0;
-    char result[48];
+    char result[56];
     long request_id;
     const char *error_request_id = "0";
     int ret;
@@ -367,6 +451,24 @@ int watch_protocol_handle_request(const char *request, char *response, size_t re
                                  ret == -RT_EINVAL ? WATCH_PROTOCOL_ERR_INVALID_VALUE : WATCH_PROTOCOL_ERR_RUNTIME);
         }
     }
+#ifdef MOMO_FIND_ME
+    else if ((0 == strcmp(parts[2], "FIND")) && (4 == count))
+    {
+        ret = watch_protocol_find(parts[3], (uint16_t)request_id,
+                                  result, sizeof(result));
+        if (RT_EOK == ret)
+        {
+            watch_protocol_ok(response, response_size, parts[1], result);
+        }
+        else
+        {
+            watch_protocol_error(response, response_size, parts[1],
+                                 (-RT_EINVAL == ret) ?
+                                     WATCH_PROTOCOL_ERR_INVALID_VALUE :
+                                     WATCH_PROTOCOL_ERR_RUNTIME);
+        }
+    }
+#endif /* MOMO_FIND_ME */
     else if ((strcmp(parts[2], "MEDIA") == 0 || strcmp(parts[2], "NOTIFY") == 0 ||
               strcmp(parts[2], "FIND") == 0) && count == 3)
     {

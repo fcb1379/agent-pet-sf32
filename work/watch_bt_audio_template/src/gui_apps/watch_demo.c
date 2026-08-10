@@ -13,6 +13,7 @@
 #include "log.h"
 #include "lv_freetype.h"
 #include "watch_alarm_service.h"
+#include "momo_find_me_ui.h"
 #include <string.h>
 
 #ifdef BSP_USING_PM
@@ -128,6 +129,15 @@ static int32_t default_keypad_handler(lv_key_t key, lv_indev_state_t event)
         if ((LV_INDEV_STATE_PR == event) && (LV_KEY_HOME == key))
         {
             LOG_I("default_keypad_handler %d,%d", key, event);
+            if (MOMOFINDGUI_HandleHomeKey())
+            {
+                if (NULL != home_key_timer)
+                {
+                    lv_timer_del(home_key_timer);
+                    home_key_timer = NULL;
+                }
+                return LV_BLOCK_EVENT;
+            }
             if (home_key_timer)
             {
                 lv_timer_del(home_key_timer);
@@ -535,6 +545,7 @@ void app_watch_entry(void *parameter)
     lv_freetype_open_font(true);                                /* open freetype */
 #endif
     gui_app_init();
+    MOMOFINDGUI_Init();
 
 #ifdef BSP_USING_PM
     button_event_task = lv_timer_create(button_event_task_entry, 30, 0);
@@ -553,6 +564,7 @@ void app_watch_entry(void *parameter)
 
         rt_pm_request(PM_SLEEP_MODE_IDLE);
         ms = lv_timer_handler();
+        MOMOFINDGUI_Poll();
         rt_pm_release(PM_SLEEP_MODE_IDLE);
 
 #ifdef BSP_USING_PM

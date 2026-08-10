@@ -40,6 +40,7 @@ public final class MainActivity extends Activity implements WatchBleClient.Liste
     private TextView transferValue;
     private TextView timeValue;
     private TextView alarmValue;
+    private TextView findMomoValue;
     private TextView progressValue;
     private ProgressBar progress;
     private LinearLayout deviceList;
@@ -50,6 +51,7 @@ public final class MainActivity extends Activity implements WatchBleClient.Liste
     private Button clearButton;
     private Button alarmButton;
     private Button alarmOffButton;
+    private Button findMomoButton;
     private byte[] preparedJpeg;
 
     @Override protected void onCreate(Bundle state) {
@@ -141,6 +143,15 @@ public final class MainActivity extends Activity implements WatchBleClient.Liste
         transferValue = statusRow(root, "传输", "等待连接");
         timeValue = statusRow(root, "时间", "等待同步");
         alarmValue = statusRow(root, "闹钟", "等待连接");
+
+        findMomoValue = statusRow(root, "呼叫 Momo", "等待连接");
+        findMomoButton = button("呼叫 Momo");
+        findMomoButton.setVisibility(View.GONE);
+        findMomoButton.setOnClickListener(view -> {
+            if (watch.isFindMomoActive()) watch.stopFindMomo();
+            else watch.startFindMomo();
+        });
+        root.addView(findMomoButton, params(-1, -2, 8));
 
         LinearLayout alarmActions = new LinearLayout(this);
         alarmActions.setOrientation(LinearLayout.HORIZONTAL);
@@ -259,6 +270,14 @@ public final class MainActivity extends Activity implements WatchBleClient.Liste
     @Override public void onTransfer(String text) { transferValue.setText(text); }
     @Override public void onTime(String text) { timeValue.setText(text); }
     @Override public void onAlarm(String text) { alarmValue.setText(text); }
+    @Override public void onFindMomo(String text, boolean available, boolean active,
+                                     boolean pending, boolean transferActive) {
+        findMomoValue.setText(text);
+        findMomoButton.setVisibility(available ? View.VISIBLE : View.GONE);
+        findMomoButton.setText(active ? "停止呼叫" : "呼叫 Momo");
+        findMomoButton.setEnabled(available && !pending && !transferActive);
+        updateControls();
+    }
     @Override public void onProgress(int percent) {
         progress.setProgress(percent);
         progressValue.setText(percent + "%");
@@ -271,13 +290,20 @@ public final class MainActivity extends Activity implements WatchBleClient.Liste
 
     private void updateControls() {
         boolean connected = watch != null && watch.isReady();
-        if (sendButton != null) sendButton.setEnabled(connected && preparedJpeg != null);
+        if (sendButton != null) sendButton.setEnabled(connected && preparedJpeg != null
+                && !watch.isFindMomoActive() && !watch.isFindMomoPending());
         if (syncButton != null) syncButton.setEnabled(connected);
         if (refreshButton != null) refreshButton.setEnabled(connected);
         if (cancelButton != null) cancelButton.setEnabled(connected);
         if (clearButton != null) clearButton.setEnabled(connected);
         if (alarmButton != null) alarmButton.setEnabled(connected);
         if (alarmOffButton != null) alarmOffButton.setEnabled(connected);
+        if (findMomoButton != null) {
+            boolean available = watch.isFindMomoAvailable();
+            findMomoButton.setVisibility(available ? View.VISIBLE : View.GONE);
+            findMomoButton.setEnabled(connected && available
+                    && !watch.isFindMomoPending() && !watch.isTransferActive());
+        }
     }
 
     private TextView statusRow(LinearLayout root, String label, String value) {

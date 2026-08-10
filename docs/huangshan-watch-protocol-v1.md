@@ -74,15 +74,25 @@ Error codes:
 | --- | --- | --- | --- |
 | `HELLO` | none | `model=HS52;cap=TIME,BADGE,STATE,TIME_REQ` | Capability handshake after connect. |
 | `TIME` | `<unix-seconds>,<utc-offset-minutes>` | `time=YYYYMMDDTHHMMSS;tz=<minutes>` | Set the watch local RTC time. The phone sends UTC Unix seconds and its offset east of UTC. |
-| `STATE` | none | `time=...;tz=...;img=<0|1>` | Read the current local watch time, saved timezone offset, and badge availability. |
+| `STATE` | none | `time=...;tz=...;img=<0|1>;find=<0|1>` | Read current state. A companion must hide Find Momo when `find=1` is absent. |
 | `BADGE` | `STATUS`, `CLEAR`, or `CANCEL` | `i=<0|1>;s=<state>;r=<bytes>;t=<bytes>;e=<error>` for `STATUS`, or `action=<...>` | Control the image-transfer session; image payloads use WFPUSH2. |
 | `MEDIA` | reserved | reserved | Future phone media state/control bridge. |
 | `NOTIFY` | reserved | reserved | Future app notification bridge. |
-| `FIND` | reserved | reserved | Future find-watch alert. |
+| `FIND` | `START`, `STOP`, or `STATUS` | `r=<result>;s=<state>;id=<session>;left=<seconds>;a=0` | Internal visual Find Momo session. `START`/`STOP` reuse the request id as the session id. |
 
 The v1 watch accepts `TIME` from 2020-01-01 through 2038-01-01 and timezone
 offsets from -840 through +840 minutes. It converts UTC plus offset into the
 watch's local RTC value and persists both the offset and source UTC timestamp.
+
+`FIND|START` is idempotent for the same active request id and has a fixed
+60-second monotonic timeout. A different id while active returns `ALREADY`.
+Alarm/timer ringing returns `BUSY_ALARM`; badge or Agent Pet GIF/image ingress
+returns `BUSY_TRANSFER`. `STOP` with a different session id returns `STALE`.
+After the GUI has removed the overlay the watch emits:
+
+```text
+HWS1|0|FIND|END,<session-id>,<USER_STOP|PHONE_STOP|TIMEOUT|PREEMPTED_ALARM>
+```
 
 ## Image Transfer
 
@@ -104,6 +114,9 @@ watch's local RTC value and persists both the offset and source UTC timestamp.
   when those services require it.
 - Future privileged operations must require an authenticated/bonded session and
   allocate a new v2 capability instead of silently changing v1 semantics.
+- `FIND` v1 is therefore an internal, visual-only prototype. It has no sound,
+  changes no media volume/queue, and is not approved for an unauthenticated
+  production release.
 
 ## Contract Tests
 

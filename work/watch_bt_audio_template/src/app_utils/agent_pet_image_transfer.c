@@ -108,6 +108,8 @@ static uint8_t l_aImageQueuePool[
     (RT_ALIGN(sizeof(AGENTPET_IMAGE_PACKET), RT_ALIGN_SIZE) +
      sizeof(void *)) * AGENTPET_IMAGE_QUEUE_DEPTH];
 static bool l_bImageWorkerReady;
+/* 已成功预占队列或正在处理的包数，范围 0..24；用于封闭 BEGIN 入队竞态。 */
+static uint8_t l_ucPendingPacketCount;
 static AGENTPET_IMAGE_ENV l_tImageEnv =
 {
     .lFileDescriptor = -1,
@@ -1146,6 +1148,16 @@ static void Local_ImageWorker(void *pParameter)
         (void)rt_mutex_take(&l_tImageMutex, RT_WAITING_FOREVER);
         eResult = AGENTPETIMAGE_ProcessFrame(tPacket.aData, tPacket.usLength);
         Local_PublishSnapshot();
+        {
+            rt_base_t tLevel;
+
+            tLevel = rt_hw_interrupt_disable();
+            if (0U < l_ucPendingPacketCount)
+            {
+                l_ucPendingPacketCount--;
+            }
+            rt_hw_interrupt_enable(tLevel);
+        }
         (void)rt_mutex_release(&l_tImageMutex);
         if (AGENTPET_IMAGE_ERROR_INVALID_PARAMETER <= eResult)
         {
@@ -1283,6 +1295,8 @@ void AGENTPETIMAGE_Init(void)
 bool AGENTPETIMAGE_QueueFrame(const uint8_t *pFrame, size_t ulLength)
 {
     AGENTPET_IMAGE_PACKET tPacket;
+    rt_base_t tLevel;
+    rt_err_t tResult;
 
     if (
         (!l_bImageWorkerReady) ||
@@ -1298,10 +1312,30 @@ bool AGENTPETIMAGE_QueueFrame(const uint8_t *pFrame, size_t ulLength)
     tPacket.usLength = (uint16_t)ulLength;
     (void)memcpy(tPacket.aData, pFrame, ulLength);
 
-    return (RT_EOK == rt_mq_send(
+    tLevel = rt_hw_interrupt_disable();
+    if (AGENTPET_IMAGE_QUEUE_DEPTH <= l_ucPendingPacketCount)
+    {
+        rt_hw_interrupt_enable(tLevel);
+        return false;
+    }
+    l_ucPendingPacketCount++;
+    rt_hw_interrupt_enable(tLevel);
+
+    tResult = rt_mq_send(
         &l_tImageQueue,
         &tPacket,
-        sizeof(tPacket)));
+        sizeof(tPacket));
+    if (RT_EOK != tResult)
+    {
+        tLevel = rt_hw_interrupt_disable();
+        if (0U < l_ucPendingPacketCount)
+        {
+            l_ucPendingPacketCount--;
+        }
+        rt_hw_interrupt_enable(tLevel);
+    }
+
+    return (RT_EOK == tResult);
 }
 
 /*
@@ -1316,6 +1350,13 @@ void AGENTPETIMAGE_ResetTransfer(void)
     {
         (void)rt_mq_control(&l_tImageQueue, RT_IPC_CMD_RESET, NULL);
         (void)rt_mutex_take(&l_tImageMutex, RT_WAITING_FOREVER);
+        {
+            rt_base_t tLevel;
+
+            tLevel = rt_hw_interrupt_disable();
+            l_ucPendingPacketCount = 0U;
+            rt_hw_interrupt_enable(tLevel);
+        }
     }
     if (AGENTPET_IMAGE_RECEIVING == l_tImageEnv.eState)
     {
@@ -1527,6 +1568,19 @@ bool AGENTPETIMAGE_GetStatus(AGENTPET_IMAGE_STATUS *pStatus)
     rt_hw_interrupt_enable(tLevel);
 
     return true;
+}
+
+bool AGENTPETIMAGE_IsTransferBusy(void)
+{
+    bool bBusy;
+    rt_base_t tLevel;
+
+    tLevel = rt_hw_interrupt_disable();
+    bBusy = (0U < l_ucPendingPacketCount) ||
+            (AGENTPET_IMAGE_RECEIVING == l_tImageStatusSnapshot.eState);
+    rt_hw_interrupt_enable(tLevel);
+
+    return bBusy;
 }
 
 /*

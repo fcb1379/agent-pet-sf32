@@ -1,4 +1,5 @@
 #include <rtthread.h>
+#include <rthw.h>
 #include <string.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -333,6 +334,18 @@ void badge_transfer_get_snapshot(badge_transfer_snapshot_t *snapshot)
     snapshot->last_activity_tick = g_badge.last_activity_tick;
     snapshot->last_error = g_badge.last_error;
     snapshot->image_available = g_badge.image_available || stat(BADGE_IMAGE_PATH, &st) == 0;
+}
+
+bool badge_transfer_is_busy(void)
+{
+    bool bBusy;
+    rt_base_t tLevel;
+
+    tLevel = rt_hw_interrupt_disable();
+    bBusy = (BADGE_TRANSFER_RECEIVING == g_badge.state);
+    rt_hw_interrupt_enable(tLevel);
+
+    return bBusy;
 }
 
 int badge_transfer_clear(void)

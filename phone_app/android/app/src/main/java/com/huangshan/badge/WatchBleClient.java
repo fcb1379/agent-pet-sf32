@@ -40,6 +40,8 @@ final class WatchBleClient {
         void onTransfer(String text);
         void onTime(String text);
         void onAlarm(String text);
+        void onFindMomo(String text, boolean available, boolean active,
+                        boolean pending, boolean transferActive);
         void onProgress(int percent);
         void onError(String text);
     }
@@ -64,6 +66,7 @@ final class WatchBleClient {
     private final Map<Integer, CompletableFuture<String>> controlWaiters = new ConcurrentHashMap<>();
     private final Map<Integer, CompletableFuture<byte[]>> serialWaiters = new ConcurrentHashMap<>();
     private final AtomicInteger nextControlId = new AtomicInteger(1);
+    private final FindMomoState findMomoState = new FindMomoState();
     private final Object writeLock = new Object();
 
     private BluetoothAdapter adapter;
@@ -81,6 +84,7 @@ final class WatchBleClient {
     private boolean reconnectEnabled;
     private boolean timeSyncRequested;
     private volatile boolean ready;
+    private volatile boolean transferActive;
 
     WatchBleClient(Context context, Listener listener) {
         this.context = context.getApplicationContext();
@@ -97,6 +101,11 @@ final class WatchBleClient {
     boolean isReady() {
         return ready && gatt != null && linkCharacteristic != null && serialCharacteristic != null;
     }
+
+    boolean isFindMomoAvailable() { return findMomoState.isAvailable(); }
+    boolean isFindMomoActive() { return findMomoState.isActive(); }
+    boolean isFindMomoPending() { return findMomoState.isPending(); }
+    boolean isTransferActive() { return transferActive; }
 
     void startScan() {
         if (scanning) return;
@@ -155,6 +164,8 @@ final class WatchBleClient {
 
     private void closeGatt() {
         ready = false;
+        findMomoState.applyDeviceState("");
+        postFindMomo();
         serviceDiscoveryRequested = false;
         BluetoothGatt current = gatt;
         gatt = null;
@@ -179,8 +190,43 @@ final class WatchBleClient {
         runWorker(() -> {
             String state = sendControl("STATE", "");
             publishState(state);
+            refreshFindMomoInternal();
             postTransfer(formatBadgeStatus(sendControl("BADGE", "STATUS")));
             publishAlarm(sendControl("ALARM", ""));
+        });
+    }
+
+    void startFindMomo() {
+        int sessionId = allocateControlId();
+        if (transferActive || !findMomoState.beginStart(sessionId)) return;
+        postFindMomo();
+        runWorker(() -> {
+            try {
+                findMomoState.applyFindResponse(
+                        sendControlWithId(sessionId, "FIND", "START"));
+                postFindMomo();
+            } catch (Exception error) {
+                findMomoState.failPending(error.getMessage());
+                postFindMomo();
+                throw error;
+            }
+        });
+    }
+
+    void stopFindMomo() {
+        int sessionId = findMomoState.getSessionId();
+        if (!findMomoState.beginStop()) return;
+        postFindMomo();
+        runWorker(() -> {
+            try {
+                findMomoState.applyFindResponse(
+                        sendControlWithId(sessionId, "FIND", "STOP"));
+                postFindMomo();
+            } catch (Exception error) {
+                findMomoState.failPending(error.getMessage());
+                postFindMomo();
+                throw error;
+            }
         });
     }
 
@@ -201,7 +247,11 @@ final class WatchBleClient {
     }
 
     void uploadImage(byte[] jpeg) {
+        if (transferActive || findMomoState.isActive() || findMomoState.isPending()) return;
+        transferActive = true;
+        postFindMomo();
         runWorker(() -> {
+            try {
             if (!isReady()) throw new IllegalStateException("请先连接手表");
             byte[] upload = WatchProtocol.makeUpload(jpeg);
             postTransfer("建立图片传输");
@@ -226,6 +276,10 @@ final class WatchBleClient {
             requestWatchface(WatchProtocol.watchfaceMessage(8, new byte[0]), 9);
             postProgress(100);
             postTransfer("图片已保存到手表");
+            } finally {
+                transferActive = false;
+                postFindMomo();
+            }
         });
     }
 
@@ -239,7 +293,8 @@ final class WatchBleClient {
             BluetoothDevice device = result.getDevice();
             String name = device.getName();
             if (name == null && result.getScanRecord() != null) name = result.getScanRecord().getDeviceName();
-            if (name == null || !name.startsWith("Huangshan-Watch")) return;
+            if (name == null || (!name.startsWith("Huangshan-Watch")
+                    && !name.startsWith("AgentPet-"))) return;
             synchronized (devices) {
                 devices.put(device.getAddress(), new Device(device, name));
             }
@@ -265,6 +320,8 @@ final class WatchBleClient {
                 return;
             }
             ready = false;
+            findMomoState.applyDeviceState("");
+            postFindMomo();
             if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 gatt = null;
                 callbackGatt.close();
@@ -377,13 +434,30 @@ final class WatchBleClient {
 
     private void refreshStateInternal() throws Exception {
         publishState(sendControl("STATE", ""));
+        refreshFindMomoInternal();
         postTransfer(formatBadgeStatus(sendControl("BADGE", "STATUS")));
         publishAlarm(sendControl("ALARM", ""));
     }
 
+    private void refreshFindMomoInternal() throws Exception {
+        if (!findMomoState.isAvailable()) return;
+        findMomoState.applyFindResponse(sendControl("FIND", "STATUS"));
+        postFindMomo();
+    }
+
     private String sendControl(String operation, String payload) throws Exception {
         if (!isReady()) throw new IllegalStateException("请先连接手表");
-        int requestId = nextControlId.getAndUpdate(value -> value >= 65535 ? 1 : value + 1);
+        int requestId = allocateControlId();
+        return sendControlWithId(requestId, operation, payload);
+    }
+
+    private int allocateControlId() {
+        return nextControlId.getAndUpdate(value -> value >= 65535 ? 1 : value + 1);
+    }
+
+    private String sendControlWithId(int requestId, String operation,
+                                     String payload) throws Exception {
+        if (!isReady()) throw new IllegalStateException("Watch is disconnected");
         CompletableFuture<String> response = new CompletableFuture<>();
         controlWaiters.put(requestId, response);
         String suffix = payload.isEmpty() ? "" : "|" + payload;
@@ -452,6 +526,15 @@ final class WatchBleClient {
                 postAlarm("RING".equals(joinFields(fields, 3)) ? "闹钟响铃" : joinFields(fields, 3));
                 return;
             }
+            if (requestId == 0 && "FIND".equals(fields[2])
+                    && fields.length >= 4 && fields[3].startsWith("END,")) {
+                String[] end = fields[3].split(",", 3);
+                if (end.length == 3
+                        && findMomoState.applyEndEvent(Integer.parseInt(end[1]), end[2])) {
+                    postFindMomo();
+                }
+                return;
+            }
             CompletableFuture<String> waiter = controlWaiters.get(requestId);
             if (waiter == null) return;
             String payload = joinFields(fields, 3);
@@ -487,6 +570,10 @@ final class WatchBleClient {
     }
 
     private void publishState(String payload) {
+        if (payload.contains("img=")) {
+            findMomoState.applyDeviceState(payload);
+            postFindMomo();
+        }
         String[] pieces = payload.split(";");
         for (String piece : pieces) {
             if (piece.startsWith("time=")) {
@@ -560,6 +647,14 @@ final class WatchBleClient {
     private void postTransfer(String text) { main.post(() -> listener.onTransfer(text)); }
     private void postTime(String text) { main.post(() -> listener.onTime(text)); }
     private void postAlarm(String text) { main.post(() -> listener.onAlarm(text)); }
+    private void postFindMomo() {
+        String text = findMomoState.getStatus();
+        boolean available = findMomoState.isAvailable();
+        boolean active = findMomoState.isActive();
+        boolean pending = findMomoState.isPending();
+        boolean uploading = transferActive;
+        main.post(() -> listener.onFindMomo(text, available, active, pending, uploading));
+    }
     private void postProgress(int percent) { main.post(() -> listener.onProgress(percent)); }
     private void reportError(String text) { main.post(() -> listener.onError(text)); }
 

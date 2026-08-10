@@ -38,6 +38,13 @@ config AGENT_PET_USING_TF_CARD
         Enable the Huangshan board SPI1 TF card and PA27 card-detect input.
         The PC simulator never builds the TF driver or file-manager app.
 
+config MOMO_FIND_ME
+    bool "Enable the visual Find Momo companion feature"
+    default y
+    help
+        Enable the bounded HWS1 Find Momo state machine and LVGL overlay.
+        The first release is visual-only and intended for internal validation.
+
 config FRAME_BUFFER_IN_PSRAM
     bool
     depends on BSP_USING_PSRAM
