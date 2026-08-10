@@ -1,0 +1,22 @@
+docs/2026-08-11-momo-find-me-design.md
+  s_b991e4ff93e87f::t_e0062b5b09a2e3 18-25,53-54,126,160,236-237,262,323-324
+  s_b991e4ff93e87f::t_2175c1dac20383 76-84,86-92,94-95,212-214,229-231
+  s_b991e4ff93e87f::t_ef041551fb053f 1-17,26-52,55-75,85,93,96-125,127-159,161-204,207-211,215-228,232-235,238-261,263-322,325-332
+  s_b991e4ff93e87f::t_da354905caaf71 205-206
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "76c6a462e1fd0fbe579538146c85b19a43007e6c",
+  "prompts": {},
+  "sessions": {
+    "s_b991e4ff93e87f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd60c-817e-7cf2-aadd-448c400c6b83",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}
