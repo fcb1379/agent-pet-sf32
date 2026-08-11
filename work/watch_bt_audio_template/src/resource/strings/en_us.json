@@ -54,6 +54,7 @@
     "alarm_app":"Alarm",
     "pet":"Momo",
     "noise":"Noise",
+    "recorder":"Recorder",
     "file_manager":"TF Files",
     "lvgl_demos":"LVGL demos"
 }

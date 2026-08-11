@@ -697,7 +697,7 @@ uint32_t app_mem_get_ft_cache_size(void)
 }
 
 
-#if PKG_USING_FFMPEG
+#if defined(PKG_USING_FFMPEG)
 typedef struct _ffmpeg_mem_header
 {
     uint32_t magic;
@@ -710,7 +710,7 @@ typedef struct _ffmpeg_mem_header
 #define FFMPEG_MEM_MAGIC  0xFF3E63E3
 #ifndef MIN
     #define MIN(x,y) (((x)<(y))?(x):(y))
-#endif
+#endif /* MIN */
 
 void *ffmpeg_alloc(size_t nbytes)
 {
@@ -773,7 +773,7 @@ void *ffmpeg_realloc(void *p, size_t new_size)
 
     return new_p;
 }
-#endif
+#endif /* PKG_USING_FFMPEG */
 
 #ifdef LV_USING_FREETYPE_ENGINE
 #if (defined (FREETYPE_CACHE_IN_SRAM_STANDALONE) || defined (FREETYPE_CACHE_IN_PSRAM))

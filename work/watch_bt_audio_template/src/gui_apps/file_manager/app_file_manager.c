@@ -4,17 +4,14 @@
 #include <sys/stat.h>
 #include <string.h>
 
-#include "dfs_fs.h"
 #include "dfs_posix.h"
 #include "littlevgl2rtt.h"
 #include "lv_ext_resource_manager.h"
 #include "gui_app_fwk.h"
-#include "bf0_hal.h"
-#include "drv_gpio.h"
+#include "tf_card_service.h"
 
 #define APP_ID                         "file_manager"
-#define FILE_MANAGER_DEVICE_NAME       "sd0"
-#define FILE_MANAGER_ROOT_PATH         "/sdcard"
+#define FILE_MANAGER_ROOT_PATH         TF_CARD_ROOT_PATH
 #define FILE_MANAGER_LVGL_PREFIX       "/:"
 #define FILE_MANAGER_PATH_SIZE         (256U)
 #define FILE_MANAGER_IMAGE_PATH_SIZE   (FILE_MANAGER_PATH_SIZE + 3U)
@@ -23,8 +20,6 @@
 #define FILE_MANAGER_ROW_HEIGHT        (54)
 #define FILE_MANAGER_HEADER_HEIGHT     (72)
 #define FILE_MANAGER_STATUS_HEIGHT     (30)
-#define FILE_MANAGER_TF_DETECT_PIN     GET_PIN(1, 27)
-#define FILE_MANAGER_TF_DEBOUNCE_MS    (20U)
 
 typedef enum
 {
@@ -57,35 +52,7 @@ typedef struct _FILE_MANAGER_UI
 /* UI state is valid only between ONSTART and ONSTOP. */
 static FILE_MANAGER_UI l_tFileManagerUi;
 
-/* The card remains mounted while switching between applications. */
-static bool l_bTfMounted;
-
-#ifdef RT_USING_SPI_MSD
-extern int rt_spi_msd_init(void);
-#endif /* RT_USING_SPI_MSD */
-
 static void FileManager_Refresh(void);
-
-/***************************
- * FileManager_IsTfInserted: read the Huangshan board PA27 card-detect switch.
- * The socket pulls SD_DET low when a card is fully inserted.
- * Parameters: none.
- * Return: true only after two stable low samples.
- ***************************/
-static bool FileManager_IsTfInserted(void)
-{
-    HAL_PIN_Set(PAD_PA27, GPIO_A27, PIN_PULLUP, 1);
-    rt_pin_mode(FILE_MANAGER_TF_DETECT_PIN, PIN_MODE_INPUT_PULLUP);
-
-    if (PIN_LOW != rt_pin_read(FILE_MANAGER_TF_DETECT_PIN))
-    {
-        return false;
-    }
-
-    rt_thread_mdelay(FILE_MANAGER_TF_DEBOUNCE_MS);
-
-    return (PIN_LOW == rt_pin_read(FILE_MANAGER_TF_DETECT_PIN));
-}
 
 /***************************
  * FileManager_SetStatus: update the status line.
@@ -203,66 +170,7 @@ static bool FileManager_BuildPath(char *pOutput,
  ***************************/
 static bool FileManager_MountTf(void)
 {
-#if defined(BSP_USING_PC_SIMULATOR) || !defined(RT_USING_SPI_MSD)
-    rt_kprintf("[TF] SPI card is not supported on this board\n");
-    (void)l_bTfMounted;
-    return false;
-#else
-    rt_device_t pDevice;
-    int lResult;
-
-    if (!FileManager_IsTfInserted())
-    {
-        if (l_bTfMounted)
-        {
-            (void)dfs_unmount(FILE_MANAGER_ROOT_PATH);
-            l_bTfMounted = false;
-        }
-        rt_kprintf("[TF] no card detected on PA27\n");
-        return false;
-    }
-
-    if (l_bTfMounted)
-    {
-        return true;
-    }
-
-    pDevice = rt_device_find(FILE_MANAGER_DEVICE_NAME);
-    if (RT_NULL == pDevice)
-    {
-        lResult = rt_spi_msd_init();
-        if (RT_EOK != lResult)
-        {
-            rt_kprintf("[TF] SPI card initialization failed: %d\n", lResult);
-            return false;
-        }
-
-        pDevice = rt_device_find(FILE_MANAGER_DEVICE_NAME);
-        if (RT_NULL == pDevice)
-        {
-            rt_kprintf("[TF] sd0 was not registered\n");
-            return false;
-        }
-    }
-
-    (void)mkdir(FILE_MANAGER_ROOT_PATH, 0);
-    lResult = dfs_mount(FILE_MANAGER_DEVICE_NAME,
-                        FILE_MANAGER_ROOT_PATH,
-                        "elm",
-                        0,
-                        RT_NULL);
-    if (0 != lResult)
-    {
-        rt_kprintf("[TF] mount failed: %d errno=%d\n", lResult, rt_get_errno());
-        return false;
-    }
-
-    l_bTfMounted = true;
-    rt_kprintf("[TF] mounted %s on %s\n",
-               FILE_MANAGER_DEVICE_NAME,
-               FILE_MANAGER_ROOT_PATH);
-    return true;
-#endif /* BSP_USING_PC_SIMULATOR || !RT_USING_SPI_MSD */
+    return (RT_EOK == TF_CARD_EnsureMounted());
 }
 
 /***************************

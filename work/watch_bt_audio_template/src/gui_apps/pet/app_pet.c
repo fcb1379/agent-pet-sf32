@@ -25,6 +25,7 @@ LV_IMG_DECLARE(agent_pet_merit_plus_one);
 
 #define APP_ID "pet"
 #define PET_STATUS_REFRESH_MS (100U)
+#define PET_IMAGE_PROGRESS_STALE_MS (3000U)
 #define PET_MAX_REMOTE_HITS_PER_REFRESH (4U)
 #define PET_MASCOT_SIZE (192)
 #define PET_MASCOT_X ((LV_HOR_RES_MAX - PET_MASCOT_SIZE) / 2)
@@ -169,6 +170,7 @@ typedef struct
     uint32_t ulRenderedAnimationGeneration;
     uint32_t ulRenderedMeritGeneration;
     uint32_t ulLastHitTick;
+    uint32_t ulImageProgressTick;
     uint32_t ulMeritCount;
     uint8_t ucRenderedState;
     uint8_t ucRenderedImageProgress;
@@ -739,6 +741,7 @@ static bool PET_PublishCustomGifFrame(void)
  */
 static void PET_AdvanceCustomGif(lv_timer_t *pTimer)
 {
+    int lInitialResult;
     int lResult;
 
     if ((NULL == pTimer) ||
@@ -750,15 +753,18 @@ static void PET_AdvanceCustomGif(lv_timer_t *pTimer)
         return;
     }
 
-    lResult = gd_get_frame(g_pet_ui.pCustomGifDecoder);
-    if (0 == lResult)
+    lInitialResult = gd_get_frame(g_pet_ui.pCustomGifDecoder);
+    lResult = lInitialResult;
+    if (0 >= lResult)
     {
-        if (1U == g_pet_ui.pCustomGifDecoder->loop_count)
+        if ((0 == lResult) &&
+            (1U == g_pet_ui.pCustomGifDecoder->loop_count))
         {
             lv_timer_pause(pTimer);
             return;
         }
-        if (1U < g_pet_ui.pCustomGifDecoder->loop_count)
+        if ((0 == lResult) &&
+            (1U < g_pet_ui.pCustomGifDecoder->loop_count))
         {
             g_pet_ui.pCustomGifDecoder->loop_count--;
         }
@@ -767,6 +773,10 @@ static void PET_AdvanceCustomGif(lv_timer_t *pTimer)
         if (1 == lResult)
         {
             PET_ResetCustomGifCanvas();
+        }
+        if ((0 > lInitialResult) && (1 == lResult))
+        {
+            rt_kprintf("agent pet: custom GIF decoder recovered by rewind\n");
         }
     }
     if (1 != lResult)
@@ -1284,23 +1294,23 @@ static void PET_RefreshMascotImage(const AGENTPET_IMAGE_STATUS *pStatus)
  */
 static void PET_RefreshImageProgress(const AGENTPET_IMAGE_STATUS *pStatus)
 {
+    uint32_t ulNow;
     uint8_t ucProgress;
 
     if ((NULL == pStatus) || (NULL == g_pet_ui.image_progress_panel))
     {
         return;
     }
+    ulNow = rt_tick_get_millisecond();
 
     if (AGENTPET_IMAGE_RECEIVING != pStatus->eState)
     {
-        if (AGENTPET_IMAGE_RECEIVING == g_pet_ui.eRenderedImageState)
-        {
-            lv_obj_add_flag(
-                g_pet_ui.image_progress_panel,
-                LV_OBJ_FLAG_HIDDEN);
-        }
+        lv_obj_add_flag(
+            g_pet_ui.image_progress_panel,
+            LV_OBJ_FLAG_HIDDEN);
         g_pet_ui.eRenderedImageState = pStatus->eState;
         g_pet_ui.ucRenderedImageProgress = 0xFFU;
+        g_pet_ui.ulImageProgressTick = ulNow;
         return;
     }
 
@@ -1318,12 +1328,20 @@ static void PET_RefreshImageProgress(const AGENTPET_IMAGE_STATUS *pStatus)
     if ((AGENTPET_IMAGE_RECEIVING != g_pet_ui.eRenderedImageState) ||
         (ucProgress != g_pet_ui.ucRenderedImageProgress))
     {
+        g_pet_ui.ulImageProgressTick = ulNow;
         lv_label_set_text_fmt(
             g_pet_ui.image_progress_label,
             "Receiving image  %u%%",
             ucProgress);
         lv_bar_set_value(g_pet_ui.image_progress_bar, ucProgress, LV_ANIM_OFF);
         lv_obj_clear_flag(
+            g_pet_ui.image_progress_panel,
+            LV_OBJ_FLAG_HIDDEN);
+    }
+    else if (PET_IMAGE_PROGRESS_STALE_MS <=
+             (uint32_t)(ulNow - g_pet_ui.ulImageProgressTick))
+    {
+        lv_obj_add_flag(
             g_pet_ui.image_progress_panel,
             LV_OBJ_FLAG_HIDDEN);
     }
@@ -2732,6 +2750,7 @@ static void pet_on_start(void)
     g_pet_ui.ulRenderedGeneration = 0xFFFFFFFFUL;
     g_pet_ui.ulRenderedImageGeneration = 0xFFFFFFFFUL;
     g_pet_ui.ulRenderedAnimationGeneration = 0U;
+    g_pet_ui.ulImageProgressTick = rt_tick_get_millisecond();
     g_pet_ui.ucRenderedImageProgress = 0xFFU;
     g_pet_ui.ucRenderedImageSlot = 0xFFU;
     g_pet_ui.ucRequestedImageSlot = AGENTPET_IMAGE_BASE_SLOT;

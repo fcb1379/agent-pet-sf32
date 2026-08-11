@@ -457,6 +457,9 @@ static uint8_t Local_GattWriteCallback(
         return 0U;
     }
 
+    eResult = AGENTPET_RESULT_FRAME_ACCEPTED;
+    bQueued = false;
+
     if (AGENTPET_ATT_STATUS_VALUE == pParameter->idx)
     {
         rt_enter_critical();
@@ -497,6 +500,12 @@ static uint8_t Local_GattWriteCallback(
                 LOG_E("Time sync worker is unavailable");
             }
         }
+        if (AGENTPET_RESULT_ANIMATION_PUBLISHED == eResult)
+        {
+            LOG_I("Expression animation accepted action=%u slot=%u",
+                  pParameter->value[9],
+                  pParameter->value[10]);
+        }
     }
     else if (AGENTPET_ATT_IMAGE_VALUE == pParameter->idx)
     {
@@ -523,12 +532,6 @@ static uint8_t Local_GattWriteCallback(
                 bQueued = AGENTPETIMAGE_SelectDigestSlot(pParameter->value[4]);
             }
         }
-        if (AGENTPET_RESULT_ANIMATION_PUBLISHED == eResult)
-        {
-            LOG_I("Expression animation accepted action=%u slot=%u",
-                  pParameter->value[9],
-                  pParameter->value[10]);
-        }
         else
         {
             bQueued = AGENTPETIMAGE_QueueFrame(
@@ -547,6 +550,7 @@ static uint8_t Local_GattWriteCallback(
         rt_exit_critical();
         if (!bQueued)
         {
+            AGENTPETIMAGE_AbortTransfer(AGENTPET_IMAGE_ERROR_QUEUE);
             LOG_E("Custom mascot frame queue full or invalid");
             return 1U;
         }

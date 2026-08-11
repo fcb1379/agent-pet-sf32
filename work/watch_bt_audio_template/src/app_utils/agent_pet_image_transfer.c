@@ -37,6 +37,8 @@
 #define AGENTPET_IMAGE_MD5_READ_SIZE       (512U)
 #define AGENTPET_IMAGE_CRC32_INIT         (0xFFFFFFFFUL)
 #define AGENTPET_IMAGE_QUEUE_DEPTH        (24U)
+#define AGENTPET_IMAGE_QUEUE_RETRY_COUNT  (100U)
+#define AGENTPET_IMAGE_QUEUE_RETRY_MS     (2U)
 #define AGENTPET_IMAGE_THREAD_STACK_SIZE (2048U)
 #define AGENTPET_IMAGE_THREAD_TIME_SLICE (10U)
 
@@ -1274,15 +1276,19 @@ void AGENTPETIMAGE_Init(void)
 
 /*
  * AGENTPETIMAGE_QueueFrame
- * Function: copy one variable-length packet into the bounded worker queue without blocking the GATT callback.
+ * Function: copy one variable-length packet into the bounded worker queue with
+ *           a short, bounded retry that yields CPU time to the Flash worker.
  * Parameters:
  *   - pFrame: read-only image packet, 9..244 bytes.
  *   - ulLength: actual packet length, 9..244 bytes.
- * Return: true when queued; false for invalid input, unavailable worker, or queue exhaustion.
+ * Return: true when queued; false for invalid input, unavailable worker, or a
+ *         queue that remains full for 200 ms.
  */
 bool AGENTPETIMAGE_QueueFrame(const uint8_t *pFrame, size_t ulLength)
 {
     AGENTPET_IMAGE_PACKET tPacket;
+    rt_err_t tResult;
+    uint16_t usAttempt;
 
     if (
         (!l_bImageWorkerReady) ||
@@ -1298,10 +1304,67 @@ bool AGENTPETIMAGE_QueueFrame(const uint8_t *pFrame, size_t ulLength)
     tPacket.usLength = (uint16_t)ulLength;
     (void)memcpy(tPacket.aData, pFrame, ulLength);
 
-    return (RT_EOK == rt_mq_send(
-        &l_tImageQueue,
-        &tPacket,
-        sizeof(tPacket)));
+    for (usAttempt = 0U;
+         usAttempt < AGENTPET_IMAGE_QUEUE_RETRY_COUNT;
+         usAttempt++)
+    {
+        tResult = rt_mq_send(
+            &l_tImageQueue,
+            &tPacket,
+            sizeof(tPacket));
+        if (RT_EOK == tResult)
+        {
+            return true;
+        }
+        if ((0U != rt_interrupt_get_nest()) ||
+            ((AGENTPET_IMAGE_QUEUE_RETRY_COUNT - 1U) == usAttempt))
+        {
+            break;
+        }
+        rt_thread_mdelay(AGENTPET_IMAGE_QUEUE_RETRY_MS);
+    }
+    LOG_E("Custom mascot queue timeout len=%u entries=%u result=%d",
+          (unsigned int)ulLength,
+          (unsigned int)l_tImageQueue.entry,
+          tResult);
+
+    return false;
+}
+
+/*
+ * AGENTPETIMAGE_AbortTransfer
+ * Function: discard queued/incomplete image data and publish an explicit error
+ *           state so BLE readers and LVGL cannot remain in RECEIVING forever.
+ * Parameters:
+ *   - eResult: bounded transfer error; non-error values map to STATE error.
+ * Return: none.
+ */
+void AGENTPETIMAGE_AbortTransfer(AGENTPET_IMAGE_RESULT eResult)
+{
+    if (AGENTPET_IMAGE_ERROR_INVALID_PARAMETER > eResult)
+    {
+        eResult = AGENTPET_IMAGE_ERROR_STATE;
+    }
+    if (l_bImageWorkerReady)
+    {
+        (void)rt_mq_control(&l_tImageQueue, RT_IPC_CMD_RESET, NULL);
+        (void)rt_mutex_take(&l_tImageMutex, RT_WAITING_FOREVER);
+    }
+    if (AGENTPET_IMAGE_RECEIVING == l_tImageEnv.eState)
+    {
+        Local_FailTransfer(eResult);
+    }
+    else
+    {
+        l_tImageEnv.eLastResult = eResult;
+    }
+    Local_PublishSnapshot();
+    if (l_bImageWorkerReady)
+    {
+        (void)rt_mutex_release(&l_tImageMutex);
+    }
+
+    return;
 }
 
 /*

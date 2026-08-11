@@ -2,6 +2,7 @@ Import('RTT_ROOT')
 Import('rtconfig')
 from building import *
 import os
+import hashlib
 
 cwd = GetCurrentDir()
 src = ['main.c', 'noise_monitor.c', 'agent_pet_merit.c']
@@ -12,6 +13,9 @@ if GetDepend('BSP_USING_PC_SIMULATOR'):
     src += ['pc_simulator_services.c']
 else:
     src += ['audio_diagnostics.c']
+
+    if GetDepend('AGENT_PET_USING_TF_CARD'):
+        src += ['tf_card_service.c', 'recorder_service.c']
 
     if GetDepend('AGENT_PET_USING_IMU'):
         src += ['pet_imu.c']
@@ -46,6 +50,14 @@ else:
 CPPPATH = [cwd, os.path.normpath(os.path.join(RTT_ROOT, '..', '..', 'external', 'mbedtls', 'include'))]
 LINKFLAGS = []
 
+if GetDepend('AGENT_PET_USING_TF_CARD') and GetDepend('PKG_USING_FFMPEG'):
+    recorder_linker_script = os.path.join(cwd, 'recorder_psram.lds')
+    recorder_linker_script = os.path.abspath(recorder_linker_script).replace('\\', '/')
+    with open(recorder_linker_script, 'rb') as recorder_linker_file:
+        recorder_linker_hash = hashlib.sha256(recorder_linker_file.read()).hexdigest()[:8]
+    LINKFLAGS += ['-Wl,-T,' + recorder_linker_script]
+    LINKFLAGS += ['-Wl,--defsym=RECORDER_LINKER_REVISION=0x' + recorder_linker_hash]
+
 if GetDepend('PKG_USING_CMBACKTRACE'):
     # CmBacktrace uses conventional GNU stack symbols while the SF32LB52
     # linker script exports CMSIS names. Provide aliases without patching SDK.
@@ -54,5 +66,53 @@ if GetDepend('PKG_USING_CMBACKTRACE'):
 
 group = DefineGroup('App_utils', src, depend = [''], CPPPATH = CPPPATH,
                     LINKFLAGS = LINKFLAGS)
+
+if GetDepend('AGENT_PET_USING_TF_CARD') and GetDepend('PKG_USING_FFMPEG'):
+    sdk_root = os.path.normpath(os.path.join(RTT_ROOT, '..', '..'))
+    ffmpeg_root = os.path.join(sdk_root, 'external', 'ffmpeg')
+    recorder_codec_src = [
+        os.path.join(ffmpeg_root, 'libavcodec', 'aacenc.c'),
+        os.path.join(ffmpeg_root, 'libavcodec', 'aaccoder.c'),
+        os.path.join(ffmpeg_root, 'libavcodec', 'aacenctab.c'),
+        os.path.join(ffmpeg_root, 'libavcodec', 'aacpsy.c'),
+        os.path.join(ffmpeg_root, 'libavcodec', 'aacenc_is.c'),
+        os.path.join(ffmpeg_root, 'libavcodec', 'aacenc_tns.c'),
+        os.path.join(ffmpeg_root, 'libavcodec', 'aacenc_ltp.c'),
+        os.path.join(ffmpeg_root, 'libavcodec', 'aacenc_pred.c'),
+        os.path.join(ffmpeg_root, 'libavcodec', 'psymodel.c'),
+        os.path.join(ffmpeg_root, 'libavcodec', 'audio_frame_queue.c'),
+        os.path.join(ffmpeg_root, 'libavcodec', 'iirfilter.c'),
+        os.path.join(ffmpeg_root, 'libavcodec', 'lpc.c'),
+        os.path.join(ffmpeg_root, 'libavcodec', 'libopus.c'),
+        os.path.join(ffmpeg_root, 'libavcodec', 'libopusdec.c'),
+    ]
+    recorder_codec_flags = ' -Wno-switch -Wno-unused-value -Wno-pointer-sign'
+    recorder_codec_flags += ' -Wno-implicit-int-float-conversion'
+    recorder_codec_flags += ' -Wno-macro-redefined -Wno-string-plus-int'
+    recorder_codec_flags += ' -Wno-shift-op-parentheses -Wno-parentheses'
+    recorder_codec_flags += ' -Wno-parentheses-equality -Wno-constant-conversion'
+    recorder_codec_flags += ' -Wno-implicit-function-declaration'
+    recorder_codec_flags += ' -Wno-deprecated-declarations'
+    recorder_codec_flags += ' -Wno-incompatible-pointer-types-discards-qualifiers'
+    recorder_codec_flags += ' -Wno-incompatible-pointer-types -Wno-int-conversion'
+    recorder_codec_build_dir = os.path.join(Env['BUILD_DIR_FULL_PATH'],
+                                            'recorder_codecs')
+    Env.VariantDir(recorder_codec_build_dir, ffmpeg_root, duplicate = 0)
+    recorder_codec_variant_src = []
+    for recorder_codec_source in recorder_codec_src:
+        recorder_codec_variant_src.append(
+            os.path.join(recorder_codec_build_dir,
+                         os.path.relpath(recorder_codec_source, ffmpeg_root)))
+    recorder_codec_group = DefineGroup(
+        'Recorder_codecs',
+        recorder_codec_variant_src,
+        depend = ['PKG_USING_FFMPEG', 'PKG_LIB_OPUS'],
+        CPPPATH = [ffmpeg_root,
+                   os.path.join(ffmpeg_root, 'compat'),
+                   os.path.join(sdk_root, 'external', 'opus-1.4', 'include')],
+        CPPDEFINES = ['HAVE_AV_CONFIG_H', 'CONFIG_HARDCODED_TABLES',
+                      'CONFIG_NO_DOUBLE', 'CONFIG_MINI_H264CODE'],
+        LOCAL_CCFLAGS = recorder_codec_flags)
+    group += recorder_codec_group
 
 Return('group')
