@@ -1,0 +1,53 @@
+build-flash-utils.ps1
+  s_1c9082d61ed890::t_673c3b9c8a7139 72,86,89-92
+tests/agent_pet_audio_protocol_host_test.c
+  s_1c9082d61ed890::t_e14939270cd739 1-144
+tests/build-flash-utils.test.ps1
+  s_1c9082d61ed890::t_f433e95bf3dca5 68-70
+tests/run_agent_pet_audio_protocol_host_test.ps1
+  s_1c9082d61ed890::t_0a20b6c18eda56 1-30
+work/watch_bt_audio_template/src/app_utils/SConscript
+  s_1c9082d61ed890::t_f910d5eb9d67f9 41-42
+work/watch_bt_audio_template/src/app_utils/agent_pet_audio_protocol.c
+  s_1c9082d61ed890::t_042280ee4baafc 1-134
+work/watch_bt_audio_template/src/app_utils/agent_pet_audio_protocol.h
+  s_1c9082d61ed890::t_326f0df04a4651 1-62
+work/watch_bt_audio_template/src/app_utils/agent_pet_audio_upload.c
+  s_1c9082d61ed890::t_c3c40ad0fdb965 1-668
+work/watch_bt_audio_template/src/app_utils/agent_pet_audio_upload.h
+  s_1c9082d61ed890::t_2d9ae75fe4a372 1-10
+work/watch_bt_audio_template/src/app_utils/agent_pet_ble_service.c
+  s_1c9082d61ed890::t_48dee3e9a6144c 11-12,20-21,62-68,82-84,103-108,180-198,490,633-661,679,682-684,750-751,753,758-777,817-887
+work/watch_bt_audio_template/src/app_utils/agent_pet_ble_service.h
+  s_1c9082d61ed890::t_c9d59895479f4f 36,39-41
+work/watch_bt_audio_template/src/app_utils/agent_pet_image_transfer.c
+  s_1c9082d61ed890::t_4e907b1152eca8 13,18-19,112-115,130-147,151-154,160-163,169-172,178-181,184-215,966,970-976,980-982,995-997,1150-1153,1218-1239,1246-1254,1277,1330,1381-1382,1387,1392,1409-1413,1415,1418-1420,1422
+work/watch_bt_audio_template/src/app_utils/agent_pet_image_transfer.h
+  s_1c9082d61ed890::t_01a29328d8764d 15-16,18
+work/watch_bt_audio_template/src/app_utils/ble_watch_link.c
+  s_1c9082d61ed890::t_620dae591da469 583
+work/watch_bt_audio_template/src/app_utils/recorder_psram.lds
+  s_1c9082d61ed890::t_3267bb6e65d1ec 14
+work/watch_bt_audio_template/src/app_utils/recorder_service.c
+  s_1c9082d61ed890::t_4967cde6fb1008 19-20,26,41-42,45,64,213-250,645-646,771-772,776-780,790-794,796-812,818-845,1004-1007,1139-1140,1142-1152,1185-1190,1194-1203,1206-1207,1248-1249,1319-1327,1349,1352,1354-1375,1380-1381,1724-1725,1729,1731,1736-1737,1743-1747,1752-1755,1769,1771-1772,1775-1792,1796,1798,1800,1803,1819-1820,1826-1845,1885,1887-1890,1892-1896,1905-1924,2365,2367,2463-2521
+work/watch_bt_audio_template/src/app_utils/recorder_service.h
+  s_1c9082d61ed890::t_931a7e5412894c 12-17,72-81,87-88
+work/watch_bt_audio_template/src/app_utils/tf_card_service.c
+  s_1c9082d61ed890::t_5c0efd356ffbab 193
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "a2805abeb72f02a726dce5dc49857280ba9cdc78",
+  "prompts": {},
+  "sessions": {
+    "s_1c9082d61ed890": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019feba0-d594-7cc0-a2fe-989283798907",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}
