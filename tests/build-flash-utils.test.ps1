@@ -65,7 +65,9 @@ Write-Host "== Test 3: Invoke-FirmwareFlash throws when sftool exits non-zero ==
 Set-Content (Join-Path $tempDir "bootloader\bootloader.bin") "x" -Encoding ASCII
 Set-Content (Join-Path $tempDir "main.bin") "x" -Encoding ASCII
 Set-Content (Join-Path $tempDir "ftab\ftab.bin") "x" -Encoding ASCII
-Set-Content (Join-Path $tempDir "fs_root.bin") "x" -Encoding ASCII
+$flashHelperSource = Get-Content (Join-Path $repoRoot "build-flash-utils.ps1") -Raw
+Assert-Equal $false ($flashHelperSource.Contains("fs_root.bin@0x129A0000")) `
+    "normal firmware flash must exclude the fs_root partition"
 Assert-Throws { Invoke-FirmwareFlash -SftoolPath $fakeSftool -Port 1 -BuildOutputDir $tempDir } "sftool 非零退出应抛错" "Flash failed with exit code 7"
 
 # --- 测试 4: 非交互无效端口 → 抛错 ---

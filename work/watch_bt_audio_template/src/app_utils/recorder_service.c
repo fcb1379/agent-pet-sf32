@@ -16,14 +16,14 @@
 #include "shine_mp3.h"
 #include "tf_card_service.h"
 
-#define RECORDER_SAMPLE_RATE_HZ             (16000U)
-#define RECORDER_CHANNEL_COUNT              (1U)
+#define RECORDER_SAMPLE_RATE_HZ             RECORDER_OPUS_SAMPLE_RATE_HZ
+#define RECORDER_CHANNEL_COUNT              RECORDER_OPUS_CHANNEL_COUNT
 #define RECORDER_BITS_PER_SAMPLE            (16U)
 #define RECORDER_AUDIO_CACHE_BYTES          (4096U)
 #define RECORDER_PCM_RING_BYTES             (32760U)
 #define RECORDER_RINGBUFFER_MAX_BYTES       (32767U)
 #define RECORDER_WORKER_STACK_BYTES         (220000U)
-#define RECORDER_WORKER_PRIORITY            (20U)
+#define RECORDER_WORKER_PRIORITY            (18U)
 #define RECORDER_WORKER_TICK                 (10U)
 #define RECORDER_PCM_FRAMES_PER_SLICE        (2U)
 #define RECORDER_AUDIO_STOP_SETTLE_MS        (20U)
@@ -38,13 +38,11 @@
 #define RECORDER_MP3_BITRATE_KBPS            (64U)
 #define RECORDER_MP3_ENCODER_BYTES           (131072U)
 #define RECORDER_AAC_BITRATE_BPS             (32000U)
-#define RECORDER_OPUS_BITRATE_BPS            (24000U)
-#define RECORDER_OPUS_FRAME_SAMPLES           (320U)
-#define RECORDER_OPUS_GRANULE_SAMPLES         (960U)
-#define RECORDER_OPUS_PRE_SKIP                (312U)
-#define RECORDER_OPUS_MAX_PACKET_BYTES        (1275U)
+#define RECORDER_OPUS_GRANULE_SAMPLES         \
+    ((RECORDER_OPUS_FRAME_SAMPLES * 48000U) / RECORDER_SAMPLE_RATE_HZ)
 #define RECORDER_OPUS_ENCODER_BYTES           (65536U)
 #define RECORDER_OPUS_SCRATCH_BYTES           (120000U)
+#define RECORDER_OPUS_DIAGNOSTIC_PACKET_INTERVAL (100U)
 #define RECORDER_AUDIO_RING_BYTES             (32064U)
 #define RECORDER_PCM_FRAME_MAX_SAMPLES        (2304U)
 #define RECORDER_AAC_FRAME_SAMPLES            (1024U)
@@ -63,6 +61,7 @@ typedef struct _RECORDER_CONTEXT
     volatile RECORDER_RECORD_STATE eRecordState;
     volatile RECORDER_PLAYBACK_STATE ePlaybackState;
     RECORDER_FORMAT eRecordFormat;
+    bool bStreamOnly;
     int lFileDescriptor;
     audio_client_t pAudioClient;
     shine_t pMp3Encoder;
@@ -210,6 +209,44 @@ static void *l_pOpusUploadContext;
 static bool l_bRecorderServiceReady;
 /* l_bFfmpegComponentsRegistered: 应用补充的 Ogg 格式与音频编解码器注册标志，避免重复注册。 */
 static bool l_bFfmpegComponentsRegistered;
+
+/***************************
+ * Recorder_NotifyOpusUploader: 将 Opus 会话事件非阻塞地发布给已注册上传器。
+ * 参数：
+ *   - eEvent: 会话开始、编码包、正常结束或异常结束。
+ *   - pPacket: 编码包地址；非数据事件允许为 NULL。
+ *   - usPacketLength: 编码包长度；非数据事件为 0。
+ *   - ulSequence: 数据包序号，结束事件中表示会话总包数。
+ *   - ulTimestampMs: 数据包或会话结束时间戳，单位毫秒。
+ * 返回值：未注册上传器或上传器接受事件返回 0，否则返回上传器错误码。
+ ***************************/
+static int Recorder_NotifyOpusUploader(
+    RECORDER_OPUS_UPLOAD_EVENT eEvent,
+    const uint8_t *pPacket,
+    uint16_t usPacketLength,
+    uint32_t ulSequence,
+    uint32_t ulTimestampMs)
+{
+    RECORDER_OPUS_UPLOAD_CALLBACK pUploadCallback;
+    void *pUploadContext;
+    rt_base_t tLevel;
+
+    tLevel = rt_hw_interrupt_disable();
+    pUploadCallback = l_pOpusUploadCallback;
+    pUploadContext = l_pOpusUploadContext;
+    rt_hw_interrupt_enable(tLevel);
+    if (!l_tRecorderContext.bStreamOnly || (NULL == pUploadCallback))
+    {
+        return 0;
+    }
+
+    return pUploadCallback(eEvent,
+                           pPacket,
+                           usPacketLength,
+                           ulSequence,
+                           ulTimestampMs,
+                           pUploadContext);
+}
 
 /***************************
  * Recorder_GetErrnoResult: 将 RT-Thread DFS 的 errno 统一为服务使用的负错误码。
@@ -605,7 +642,8 @@ static rt_err_t Recorder_InitOpusEncoder(void)
     l_tRecorderContext.ulOpusPacketSequence = 0U;
     l_tRecorderContext.udOpusGranulePosition = RECORDER_OPUS_PRE_SKIP;
 
-    return Recorder_WriteOpusHeaders();
+    return l_tRecorderContext.bStreamOnly ?
+        RT_EOK : Recorder_WriteOpusHeaders();
 }
 
 /***************************
@@ -729,13 +767,17 @@ static rt_err_t Recorder_EncodeAacFrame(void)
  ***************************/
 static rt_err_t Recorder_EncodeOpusFrame(void)
 {
-    RECORDER_OPUS_UPLOAD_CALLBACK pUploadCallback;
-    void *pUploadContext;
-    rt_base_t tLevel;
     uint32_t ulTimestampMs;
+    bool bFirstPacket;
+    rt_err_t tWriteResult;
     int lEncodedLength;
     int lUploadResult;
 
+    bFirstPacket = (0U == l_tRecorderContext.ulOpusPacketSequence);
+    if (bFirstPacket)
+    {
+        rt_kprintf("[REC] opus first frame encode begin\n");
+    }
     lEncodedLength = opus_encode(l_tRecorderContext.pOpusEncoder,
                                  l_aPcmFrame,
                                  RECORDER_OPUS_FRAME_SAMPLES,
@@ -745,34 +787,62 @@ static rt_err_t Recorder_EncodeOpusFrame(void)
     {
         return -RT_ERROR;
     }
-
-    tLevel = rt_hw_interrupt_disable();
-    pUploadCallback = l_pOpusUploadCallback;
-    pUploadContext = l_pOpusUploadContext;
-    rt_hw_interrupt_enable(tLevel);
-    if (NULL != pUploadCallback)
+    if (bFirstPacket)
     {
-        ulTimestampMs = (l_tRecorderContext.ulOpusPacketSequence *
-                         RECORDER_OPUS_FRAME_SAMPLES * 1000U) /
-                        RECORDER_SAMPLE_RATE_HZ;
-        lUploadResult = pUploadCallback(l_aOpusPacket,
-                                        (uint16_t)lEncodedLength,
-                                        l_tRecorderContext.ulOpusPacketSequence,
-                                        ulTimestampMs,
-                                        pUploadContext);
-        if (0 != lUploadResult)
-        {
-            l_tRecorderContext.ulUploadDroppedPackets++;
-        }
+        rt_kprintf("[REC] opus first frame encoded bytes=%d\n",
+                   lEncodedLength);
+    }
+
+    ulTimestampMs = (l_tRecorderContext.ulOpusPacketSequence *
+                     RECORDER_OPUS_FRAME_SAMPLES * 1000U) /
+                    RECORDER_SAMPLE_RATE_HZ;
+    lUploadResult = Recorder_NotifyOpusUploader(
+        RECORDER_OPUS_UPLOAD_PACKET,
+        l_aOpusPacket,
+        (uint16_t)lEncodedLength,
+        l_tRecorderContext.ulOpusPacketSequence,
+        ulTimestampMs);
+    if (0 != lUploadResult)
+    {
+        l_tRecorderContext.ulUploadDroppedPackets++;
+    }
+    if (bFirstPacket)
+    {
+        rt_kprintf("[REC] opus first frame upload result=%d\n",
+                   lUploadResult);
     }
     l_tRecorderContext.ulOpusPacketSequence++;
     l_tRecorderContext.udOpusGranulePosition +=
         RECORDER_OPUS_GRANULE_SAMPLES;
 
-    return Recorder_WriteOggPage(l_aOpusPacket,
-                                 (uint16_t)lEncodedLength,
-                                 0U,
-                                 l_tRecorderContext.udOpusGranulePosition);
+    if (l_tRecorderContext.bStreamOnly)
+    {
+        tWriteResult = RT_EOK;
+    }
+    else
+    {
+        tWriteResult = Recorder_WriteOggPage(
+            l_aOpusPacket,
+            (uint16_t)lEncodedLength,
+            0U,
+            l_tRecorderContext.udOpusGranulePosition);
+    }
+    if (bFirstPacket)
+    {
+        rt_kprintf("[REC] opus first frame stored result=%d\n",
+                   (int)tWriteResult);
+    }
+    else if ((RT_EOK == tWriteResult) &&
+             (0U == (l_tRecorderContext.ulOpusPacketSequence %
+                     RECORDER_OPUS_DIAGNOSTIC_PACKET_INTERVAL)))
+    {
+        rt_kprintf("[REC] opus heartbeat packets=%lu upload_drop=%lu pcm_drop=%lu\n",
+                   (unsigned long)l_tRecorderContext.ulOpusPacketSequence,
+                   (unsigned long)l_tRecorderContext.ulUploadDroppedPackets,
+                   (unsigned long)l_tRecorderContext.ulDroppedPcmBytes);
+    }
+
+    return tWriteResult;
 }
 
 /***************************
@@ -931,6 +1001,10 @@ static rt_err_t Recorder_FlushEncoder(void)
     }
     else
     {
+        if (l_tRecorderContext.bStreamOnly)
+        {
+            return RT_EOK;
+        }
         tResult = Recorder_WriteOggPage(NULL,
                                         0U,
                                         0x04U,
@@ -1062,16 +1136,20 @@ static rt_err_t Recorder_OpenSession(void)
 {
     rt_err_t tResult;
 
-    l_tRecorderContext.lFileDescriptor = open(
-        l_tRecorderContext.aRecordPath,
-        O_WRONLY | O_CREAT | O_TRUNC | O_BINARY,
-        0666);
-    if (0 > l_tRecorderContext.lFileDescriptor)
+    l_tRecorderContext.lFileDescriptor = -1;
+    if (!l_tRecorderContext.bStreamOnly)
     {
-        rt_kprintf("[REC] open file failed path=%s errno=%d\n",
-                   l_tRecorderContext.aRecordPath,
-                   rt_get_errno());
-        return Recorder_GetErrnoResult();
+        l_tRecorderContext.lFileDescriptor = open(
+            l_tRecorderContext.aRecordPath,
+            O_WRONLY | O_CREAT | O_TRUNC | O_BINARY,
+            0666);
+        if (0 > l_tRecorderContext.lFileDescriptor)
+        {
+            rt_kprintf("[REC] open file failed path=%s errno=%d\n",
+                       l_tRecorderContext.aRecordPath,
+                       rt_get_errno());
+            return Recorder_GetErrnoResult();
+        }
     }
 
     if (RECORDER_FORMAT_MP3 == l_tRecorderContext.eRecordFormat)
@@ -1104,15 +1182,29 @@ static rt_err_t Recorder_OpenSession(void)
     if (RT_EOK != tResult)
     {
         Recorder_CloseEncoders();
-        (void)close(l_tRecorderContext.lFileDescriptor);
-        l_tRecorderContext.lFileDescriptor = -1;
-        (void)unlink(l_tRecorderContext.aRecordPath);
+        if (0 <= l_tRecorderContext.lFileDescriptor)
+        {
+            (void)close(l_tRecorderContext.lFileDescriptor);
+            l_tRecorderContext.lFileDescriptor = -1;
+            (void)unlink(l_tRecorderContext.aRecordPath);
+        }
     }
     else
     {
+        if ((RECORDER_FORMAT_OPUS == l_tRecorderContext.eRecordFormat) &&
+            (0 != Recorder_NotifyOpusUploader(
+                RECORDER_OPUS_UPLOAD_STARTED,
+                NULL,
+                0U,
+                0U,
+                0U)))
+        {
+            l_tRecorderContext.ulUploadDroppedPackets++;
+        }
         rt_kprintf("[REC] recording active format=%u path=%s\n",
                    (unsigned int)l_tRecorderContext.eRecordFormat,
-                   l_tRecorderContext.aRecordPath);
+                   l_tRecorderContext.bStreamOnly ?
+                       "<stream>" : l_tRecorderContext.aRecordPath);
     }
 
     return tResult;
@@ -1153,7 +1245,8 @@ static rt_err_t Recorder_CloseSession(void)
         }
     }
     tCloseResult = RT_EOK;
-    if (0 <= l_tRecorderContext.lFileDescriptor)
+    if ((0 <= l_tRecorderContext.lFileDescriptor) ||
+        l_tRecorderContext.bStreamOnly)
     {
         rt_kprintf("[REC] encoder flush begin pcm=%u\n",
                    (unsigned int)rt_ringbuffer_data_len(
@@ -1223,6 +1316,15 @@ static void Recorder_WorkerEntry(void *pParameter)
                 l_tRecorderContext.lLastError = tResult;
                 l_tRecorderContext.eRecordState = RECORDER_RECORD_STATE_ERROR;
                 rt_kprintf("[REC] start failed result=%d\n", (int)tResult);
+                if (l_tRecorderContext.bStreamOnly)
+                {
+                    (void)Recorder_NotifyOpusUploader(
+                        RECORDER_OPUS_UPLOAD_ERROR,
+                        NULL,
+                        0U,
+                        0U,
+                        0U);
+                }
             }
         }
         if ((0U != (ulEvents & RECORDER_EVENT_PCM)) &&
@@ -1244,14 +1346,39 @@ static void Recorder_WorkerEntry(void *pParameter)
         if (0U != (ulEvents & RECORDER_EVENT_STOP))
         {
             rt_err_t tRefreshResult;
+            rt_err_t tSessionError;
 
             rt_kprintf("[REC] worker received stop\n");
+            tSessionError = (rt_err_t)l_tRecorderContext.lLastError;
             tResult = Recorder_CloseSession();
+            if ((RT_EOK == tResult) && (RT_EOK != tSessionError))
+            {
+                tResult = tSessionError;
+            }
+            if (RECORDER_FORMAT_OPUS == l_tRecorderContext.eRecordFormat)
+            {
+                uint32_t ulDurationMs;
+
+                ulDurationMs = (l_tRecorderContext.ulOpusPacketSequence *
+                                RECORDER_OPUS_FRAME_SAMPLES * 1000U) /
+                               RECORDER_SAMPLE_RATE_HZ;
+                if (0 != Recorder_NotifyOpusUploader(
+                    (RT_EOK == tResult) ? RECORDER_OPUS_UPLOAD_STOPPED :
+                                         RECORDER_OPUS_UPLOAD_ERROR,
+                    NULL,
+                    0U,
+                    l_tRecorderContext.ulOpusPacketSequence,
+                    ulDurationMs))
+                {
+                    l_tRecorderContext.ulUploadDroppedPackets++;
+                }
+            }
             l_tRecorderContext.lLastError = tResult;
             l_tRecorderContext.eRecordState = (RT_EOK == tResult) ?
                 RECORDER_RECORD_STATE_STOPPED :
                 RECORDER_RECORD_STATE_ERROR;
-            tRefreshResult = RECORDER_RefreshFiles();
+            tRefreshResult = l_tRecorderContext.bStreamOnly ?
+                RT_EOK : RECORDER_RefreshFiles();
             if ((RT_EOK == tResult) && (RT_EOK != tRefreshResult))
             {
                 l_tRecorderContext.lLastError = tRefreshResult;
@@ -1594,35 +1721,38 @@ static rt_err_t Recorder_BuildRecordPath(RECORDER_FORMAT eFormat,
  *   - eFormat: MP3、AAC 或 Opus。
  * 返回值：请求成功返回 RT_EOK，否则返回负错误码。
  ***************************/
-rt_err_t RECORDER_Start(RECORDER_FORMAT eFormat)
+static rt_err_t Recorder_StartInternal(RECORDER_FORMAT eFormat,
+                                       bool bStreamOnly)
 {
     rt_err_t tResult;
 
-    rt_kprintf("[REC] start request format=%u ready=%u rec=%u play=%u\n",
+    rt_kprintf("[REC] start request format=%u stream=%u ready=%u rec=%u play=%u\n",
                (unsigned int)eFormat,
+               (unsigned int)bStreamOnly,
                (unsigned int)l_bRecorderServiceReady,
                (unsigned int)l_tRecorderContext.eRecordState,
                (unsigned int)l_tRecorderContext.ePlaybackState);
     if ((false == l_bRecorderServiceReady) ||
-            (RECORDER_FORMAT_COUNT <= eFormat))
+        (RECORDER_FORMAT_COUNT <= eFormat) ||
+        (bStreamOnly && (RECORDER_FORMAT_OPUS != eFormat)))
     {
         rt_kprintf("[REC] start rejected invalid state\n");
         return -RT_EINVAL;
     }
     if ((RECORDER_PLAYBACK_STATE_IDLE !=
-            l_tRecorderContext.ePlaybackState) &&
-            (RECORDER_PLAYBACK_STATE_ENDED !=
-             l_tRecorderContext.ePlaybackState) &&
-            (RECORDER_PLAYBACK_STATE_ERROR !=
-             l_tRecorderContext.ePlaybackState))
+         l_tRecorderContext.ePlaybackState) &&
+        (RECORDER_PLAYBACK_STATE_ENDED !=
+         l_tRecorderContext.ePlaybackState) &&
+        (RECORDER_PLAYBACK_STATE_ERROR !=
+         l_tRecorderContext.ePlaybackState))
     {
         return -RT_EBUSY;
     }
     if ((RECORDER_RECORD_STATE_IDLE != l_tRecorderContext.eRecordState) &&
-            (RECORDER_RECORD_STATE_STOPPED !=
-             l_tRecorderContext.eRecordState) &&
-            (RECORDER_RECORD_STATE_ERROR !=
-             l_tRecorderContext.eRecordState))
+        (RECORDER_RECORD_STATE_STOPPED !=
+         l_tRecorderContext.eRecordState) &&
+        (RECORDER_RECORD_STATE_ERROR !=
+         l_tRecorderContext.eRecordState))
     {
         return -RT_EBUSY;
     }
@@ -1636,32 +1766,41 @@ rt_err_t RECORDER_Start(RECORDER_FORMAT eFormat)
         return tResult;
     }
 
-    tResult = TF_CARD_EnsureMounted();
-    if (RT_EOK != tResult)
+    if (!bStreamOnly)
     {
-        l_tRecorderContext.lLastError = tResult;
-        rt_kprintf("[REC] TF mount failed result=%d\n", (int)tResult);
-        return tResult;
-    }
-    if (0 != mkdir(RECORDER_DIRECTORY_PATH, 0777))
-    {
-        tResult = Recorder_GetErrnoResult();
-        if (-EEXIST != tResult)
+        tResult = TF_CARD_EnsureMounted();
+        if (RT_EOK != tResult)
         {
             l_tRecorderContext.lLastError = tResult;
+            rt_kprintf("[REC] TF mount failed result=%d\n", (int)tResult);
+            return tResult;
+        }
+        if (0 != mkdir(RECORDER_DIRECTORY_PATH, 0777))
+        {
+            tResult = Recorder_GetErrnoResult();
+            if (-EEXIST != tResult)
+            {
+                l_tRecorderContext.lLastError = tResult;
+                return tResult;
+            }
+        }
+        tResult = Recorder_BuildRecordPath(
+            eFormat,
+            l_tRecorderContext.aRecordPath,
+            sizeof(l_tRecorderContext.aRecordPath));
+        if (RT_EOK != tResult)
+        {
             return tResult;
         }
     }
-
-    tResult = Recorder_BuildRecordPath(eFormat,
-                                       l_tRecorderContext.aRecordPath,
-                                       sizeof(l_tRecorderContext.aRecordPath));
-    if (RT_EOK != tResult)
+    else
     {
-        return tResult;
+        l_tRecorderContext.aRecordPath[0] = '\0';
     }
+
     rt_ringbuffer_reset(&l_tPcmRingBuffer);
     l_tRecorderContext.eRecordFormat = eFormat;
+    l_tRecorderContext.bStreamOnly = bStreamOnly;
     l_tRecorderContext.ulRecordSamples = 0U;
     l_tRecorderContext.ulFileSizeBytes = 0U;
     l_tRecorderContext.ulDroppedPcmBytes = 0U;
@@ -1677,10 +1816,31 @@ rt_err_t RECORDER_Start(RECORDER_FORMAT eFormat)
     else
     {
         rt_kprintf("[REC] start queued path=%s\n",
-                   l_tRecorderContext.aRecordPath);
+                   bStreamOnly ? "<stream>" :
+                       l_tRecorderContext.aRecordPath);
     }
 
     return tResult;
+}
+
+/***************************
+ * RECORDER_Start: start one device-local recording file.
+ * Parameters: eFormat selects MP3, AAC, or Opus storage.
+ * Return: RT_EOK when queued, otherwise a negative error code.
+ ***************************/
+rt_err_t RECORDER_Start(RECORDER_FORMAT eFormat)
+{
+    return Recorder_StartInternal(eFormat, false);
+}
+
+/***************************
+ * RECORDER_StartOpusStream: start an uploader-only Opus capture.
+ * Parameters: none.
+ * Return: RT_EOK when queued, -RT_EBUSY when another recorder owns the mic.
+ ***************************/
+rt_err_t RECORDER_StartOpusStream(void)
+{
+    return Recorder_StartInternal(RECORDER_FORMAT_OPUS, true);
 }
 
 /***************************
@@ -1722,20 +1882,44 @@ rt_err_t RECORDER_Resume(void)
  * 参数：无。
  * 返回值：成功返回 RT_EOK，状态不允许返回 -RT_EINVAL。
  ***************************/
-rt_err_t RECORDER_Stop(void)
+static rt_err_t Recorder_StopInternal(bool bStreamOnly)
 {
+    if (bStreamOnly != l_tRecorderContext.bStreamOnly)
+    {
+        return -RT_EBUSY;
+    }
     if ((RECORDER_RECORD_STATE_RECORDING !=
-            l_tRecorderContext.eRecordState) &&
-            (RECORDER_RECORD_STATE_PAUSED !=
-             l_tRecorderContext.eRecordState) &&
-            (RECORDER_RECORD_STATE_STARTING !=
-             l_tRecorderContext.eRecordState))
+         l_tRecorderContext.eRecordState) &&
+        (RECORDER_RECORD_STATE_PAUSED !=
+         l_tRecorderContext.eRecordState) &&
+        (RECORDER_RECORD_STATE_STARTING !=
+         l_tRecorderContext.eRecordState))
     {
         return -RT_EINVAL;
     }
     l_tRecorderContext.eRecordState = RECORDER_RECORD_STATE_STOPPING;
 
     return rt_event_send(&l_tRecorderEvent, RECORDER_EVENT_STOP);
+}
+
+/***************************
+ * RECORDER_Stop: stop only a device-local recording.
+ * Parameters: none.
+ * Return: RT_EOK when queued, -RT_EBUSY when streaming owns the mic.
+ ***************************/
+rt_err_t RECORDER_Stop(void)
+{
+    return Recorder_StopInternal(false);
+}
+
+/***************************
+ * RECORDER_StopOpusStream: stop only uploader-owned Opus capture.
+ * Parameters: none.
+ * Return: RT_EOK when queued, -RT_EBUSY when local recording owns the mic.
+ ***************************/
+rt_err_t RECORDER_StopOpusStream(void)
+{
+    return Recorder_StopInternal(true);
 }
 
 /***************************
@@ -2178,9 +2362,9 @@ rt_err_t RECORDER_PlaybackStop(void)
 }
 
 /***************************
- * RECORDER_RegisterOpusUploader: 注册未来上位机实时上传的非阻塞 Opus 包接收接口。
+ * RECORDER_RegisterOpusUploader: 注册上位机实时上传的非阻塞 Opus 会话接口。
  * 参数：
- *   - pCallback: 每个 Opus 编码包的回调；传 NULL 可注销。
+ *   - pCallback: Opus 会话和编码包回调；传 NULL 可注销。
  *   - pContext: 原样回传给回调的上下文。
  * 返回值：成功返回 RT_EOK。
  ***************************/
@@ -2276,4 +2460,63 @@ static int Recorder_Init(void)
 
     return RT_EOK;
 }
+
+/***************************
+ * Recorder_DiagnosticCommand: expose bounded Opus recording diagnostics to MSH.
+ * Parameters:
+ *   - lArgumentCount: command argument count.
+ *   - pArguments: start, stop, or status command arguments.
+ * Return: none.
+ ***************************/
+static void Recorder_DiagnosticCommand(int lArgumentCount, char **pArguments)
+{
+    RECORDER_SNAPSHOT tSnapshot;
+    rt_err_t tResult;
+
+    if ((NULL == pArguments) || (2 != lArgumentCount))
+    {
+        rt_kprintf("usage: recdiag start | stop | status\n");
+        return;
+    }
+
+    if (0 == rt_strcmp(pArguments[1], "start"))
+    {
+        tResult = RECORDER_Start(RECORDER_FORMAT_OPUS);
+        rt_kprintf("[REC_DIAG] start result=%d\n", (int)tResult);
+    }
+    else if (0 == rt_strcmp(pArguments[1], "stop"))
+    {
+        tResult = RECORDER_Stop();
+        rt_kprintf("[REC_DIAG] stop result=%d\n", (int)tResult);
+    }
+    else if (0 == rt_strcmp(pArguments[1], "status"))
+    {
+        tResult = RECORDER_GetSnapshot(&tSnapshot);
+        if (RT_EOK == tResult)
+        {
+            rt_kprintf(
+                "[REC_DIAG] state=%u seconds=%lu upload_drop=%lu "
+                "pcm_drop=%lu error=%ld\n",
+                (unsigned int)tSnapshot.eRecordState,
+                (unsigned long)tSnapshot.ulRecordSeconds,
+                (unsigned long)tSnapshot.ulUploadDroppedPackets,
+                (unsigned long)tSnapshot.ulDroppedPcmBytes,
+                (long)tSnapshot.lLastError);
+        }
+        else
+        {
+            rt_kprintf("[REC_DIAG] status result=%d\n", (int)tResult);
+        }
+    }
+    else
+    {
+        rt_kprintf("usage: recdiag start | stop | status\n");
+    }
+
+    return;
+}
+
+MSH_CMD_EXPORT_ALIAS(Recorder_DiagnosticCommand,
+                     recdiag,
+                     recorder Opus diagnostic command);
 INIT_APP_EXPORT(Recorder_Init);

@@ -10,12 +10,13 @@
 #include "agent_pet_protocol.h"
 #include "dfs_posix.h"
 #include "mbedtls/md5.h"
+#include "tf_card_service.h"
 
 #define LOG_TAG "agent_pet_img"
 #include "log.h"
 
-#define AGENTPET_IMAGE_TEMP_PATH        "/pet.tmp"
-#define AGENTPET_IMAGE_BACKUP_PATH      "/pet.bak"
+#define AGENTPET_IMAGE_TEMP_PATH        "/sdcard/AgentPet/pet.tmp"
+#define AGENTPET_IMAGE_BACKUP_PATH      "/sdcard/AgentPet/pet.bak"
 #define AGENTPET_IMAGE_MAGIC_FIRST      (0x41U)
 #define AGENTPET_IMAGE_MAGIC_SECOND     (0x49U)
 #define AGENTPET_IMAGE_PROTOCOL_VERSION (1U)
@@ -37,8 +38,6 @@
 #define AGENTPET_IMAGE_MD5_READ_SIZE       (512U)
 #define AGENTPET_IMAGE_CRC32_INIT         (0xFFFFFFFFUL)
 #define AGENTPET_IMAGE_QUEUE_DEPTH        (24U)
-#define AGENTPET_IMAGE_QUEUE_RETRY_COUNT  (100U)
-#define AGENTPET_IMAGE_QUEUE_RETRY_MS     (2U)
 #define AGENTPET_IMAGE_THREAD_STACK_SIZE (2048U)
 #define AGENTPET_IMAGE_THREAD_TIME_SLICE (10U)
 
@@ -110,6 +109,10 @@ static uint8_t l_aImageQueuePool[
     (RT_ALIGN(sizeof(AGENTPET_IMAGE_PACKET), RT_ALIGN_SIZE) +
      sizeof(void *)) * AGENTPET_IMAGE_QUEUE_DEPTH];
 static bool l_bImageWorkerReady;
+/* Image queue overflow latch. The GATT callback only sets this flag inside a
+ * short interrupt-safe section; the image worker owns queue reset, file close,
+ * status publication, and error logging so BLE event dispatch never blocks. */
+static bool l_bImageQueueOverflow;
 static AGENTPET_IMAGE_ENV l_tImageEnv =
 {
     .lFileDescriptor = -1,
@@ -124,42 +127,92 @@ static AGENTPET_IMAGE_SLOT l_aImageSlots[AGENTPET_IMAGE_SLOT_COUNT];
 /* Slot selected by the host before reading the digest characteristic. */
 static uint8_t l_ucDigestSlot;
 
+/***************************
+ * Local_TakeImageQueueOverflow: atomically consume the queue-overflow latch.
+ * Parameters: none.
+ * Return: true once for every observed overflow episode, otherwise false.
+ ***************************/
+static bool Local_TakeImageQueueOverflow(void)
+{
+    rt_base_t tLevel;
+    bool bOverflow;
+
+    tLevel = rt_hw_interrupt_disable();
+    bOverflow = l_bImageQueueOverflow;
+    l_bImageQueueOverflow = false;
+    rt_hw_interrupt_enable(tLevel);
+
+    return bOverflow;
+}
+
 static const char *l_aImagePaths[AGENTPET_IMAGE_SLOT_COUNT] =
 {
     AGENTPET_IMAGE_PATH,
-    "/pet1.gif",
-    "/pet2.gif",
-    "/pet3.gif",
-    "/pet4.gif"
+    "/sdcard/AgentPet/pet1.gif",
+    "/sdcard/AgentPet/pet2.gif",
+    "/sdcard/AgentPet/pet3.gif",
+    "/sdcard/AgentPet/pet4.gif"
 };
 
 static const char *l_aImageLvglPaths[AGENTPET_IMAGE_SLOT_COUNT] =
 {
     AGENTPET_IMAGE_LVGL_PATH,
-    "/:/pet1.gif",
-    "/:/pet2.gif",
-    "/:/pet3.gif",
-    "/:/pet4.gif"
+    "/:/sdcard/AgentPet/pet1.gif",
+    "/:/sdcard/AgentPet/pet2.gif",
+    "/:/sdcard/AgentPet/pet3.gif",
+    "/:/sdcard/AgentPet/pet4.gif"
 };
 
 static const char *l_aImageTempPaths[AGENTPET_IMAGE_SLOT_COUNT] =
 {
     AGENTPET_IMAGE_TEMP_PATH,
-    "/pet1.tmp",
-    "/pet2.tmp",
-    "/pet3.tmp",
-    "/pet4.tmp"
+    "/sdcard/AgentPet/pet1.tmp",
+    "/sdcard/AgentPet/pet2.tmp",
+    "/sdcard/AgentPet/pet3.tmp",
+    "/sdcard/AgentPet/pet4.tmp"
 };
 
 static const char *l_aImageBackupPaths[AGENTPET_IMAGE_SLOT_COUNT] =
 {
     AGENTPET_IMAGE_BACKUP_PATH,
-    "/pet1.bak",
-    "/pet2.bak",
-    "/pet3.bak",
-    "/pet4.bak"
+    "/sdcard/AgentPet/pet1.bak",
+    "/sdcard/AgentPet/pet2.bak",
+    "/sdcard/AgentPet/pet3.bak",
+    "/sdcard/AgentPet/pet4.bak"
 };
 
+
+/***************************
+ * Local_EnsureStorage: mount the TF card and create the persistent image directory.
+ * Parameters: none.
+ * Return: true when the directory is available, otherwise false.
+ ***************************/
+static bool Local_EnsureStorage(void)
+{
+    struct stat tStatus;
+    rt_err_t tResult;
+
+    tResult = TF_CARD_EnsureMounted();
+    if (RT_EOK != tResult)
+    {
+        LOG_E("Custom mascot TF mount failed result=%d", tResult);
+        return false;
+    }
+    if (0 == mkdir(AGENTPET_IMAGE_DIRECTORY, 0777))
+    {
+        return true;
+    }
+    if ((0 != stat(AGENTPET_IMAGE_DIRECTORY, &tStatus)) ||
+        !S_ISDIR(tStatus.st_mode))
+    {
+        LOG_E("Custom mascot directory unavailable path=%s errno=%d",
+              AGENTPET_IMAGE_DIRECTORY,
+              rt_get_errno());
+        return false;
+    }
+
+    return true;
+}
 static uint8_t Local_DetectImageFormat(const char *pPath);
 
 /*
@@ -910,13 +963,23 @@ static AGENTPET_IMAGE_RESULT Local_BeginTransfer(
     {
         return AGENTPET_IMAGE_ERROR_SIZE;
     }
-    if (0 != dfs_statfs("/", &tFileSystem))
+    if (!Local_EnsureStorage())
     {
+        return AGENTPET_IMAGE_ERROR_STORAGE;
+    }
+    if (0 != dfs_statfs(AGENTPET_IMAGE_DIRECTORY, &tFileSystem))
+    {
+        LOG_E("Custom mascot statfs failed path=%s errno=%d",
+              AGENTPET_IMAGE_DIRECTORY,
+              rt_get_errno());
         return AGENTPET_IMAGE_ERROR_STORAGE;
     }
     udAvailableBytes = (uint64_t)tFileSystem.f_bsize * tFileSystem.f_bfree;
     if ((uint64_t)ulTotal > udAvailableBytes)
     {
+        LOG_E("Custom mascot storage full required=%lu available=%lu",
+              (unsigned long)ulTotal,
+              (unsigned long)udAvailableBytes);
         return AGENTPET_IMAGE_ERROR_STORAGE;
     }
 
@@ -929,6 +992,9 @@ static AGENTPET_IMAGE_RESULT Local_BeginTransfer(
         0);
     if (0 > l_tImageEnv.lFileDescriptor)
     {
+        LOG_E("Custom mascot temp open failed path=%s errno=%d",
+              l_aImageTempPaths[ucSlot],
+              rt_get_errno());
         return AGENTPET_IMAGE_ERROR_STORAGE;
     }
 
@@ -1081,6 +1147,10 @@ static AGENTPET_IMAGE_RESULT Local_ResetImage(uint8_t ucSlot)
     {
         return AGENTPET_IMAGE_ERROR_SIZE;
     }
+    if (!Local_EnsureStorage())
+    {
+        return AGENTPET_IMAGE_ERROR_STORAGE;
+    }
     Local_CloseTemporaryFile();
     Local_LoadSlotIntoEnvironment(ucSlot);
     lResult = 0;
@@ -1145,13 +1215,43 @@ static void Local_ImageWorker(void *pParameter)
             continue;
         }
 
+        if (Local_TakeImageQueueOverflow())
+        {
+            uint16_t usDiscardedPackets;
+
+            usDiscardedPackets = (uint16_t)l_tImageQueue.entry;
+            (void)rt_mq_control(&l_tImageQueue, RT_IPC_CMD_RESET, NULL);
+            (void)rt_mutex_take(&l_tImageMutex, RT_WAITING_FOREVER);
+            if (AGENTPET_IMAGE_RECEIVING == l_tImageEnv.eState)
+            {
+                Local_FailTransfer(AGENTPET_IMAGE_ERROR_QUEUE);
+            }
+            else
+            {
+                l_tImageEnv.eLastResult = AGENTPET_IMAGE_ERROR_QUEUE;
+            }
+            Local_PublishSnapshot();
+            (void)rt_mutex_release(&l_tImageMutex);
+            LOG_E("Custom mascot queue overflow aborted transfer discarded=%u",
+                  (unsigned int)usDiscardedPackets);
+            continue;
+        }
+
         (void)rt_mutex_take(&l_tImageMutex, RT_WAITING_FOREVER);
         eResult = AGENTPETIMAGE_ProcessFrame(tPacket.aData, tPacket.usLength);
         Local_PublishSnapshot();
         (void)rt_mutex_release(&l_tImageMutex);
         if (AGENTPET_IMAGE_ERROR_INVALID_PARAMETER <= eResult)
         {
-            LOG_E("Custom mascot worker rejected packet result=%d", eResult);
+            uint16_t usDiscardedPackets;
+
+            (void)Local_TakeImageQueueOverflow();
+            usDiscardedPackets = (uint16_t)l_tImageQueue.entry;
+            (void)rt_mq_control(&l_tImageQueue, RT_IPC_CMD_RESET, NULL);
+            LOG_E("Custom mascot transfer aborted result=%d command=%u discarded=%u",
+                  eResult,
+                  (unsigned int)tPacket.aData[3],
+                  (unsigned int)usDiscardedPackets);
         }
     }
 
@@ -1174,6 +1274,7 @@ void AGENTPETIMAGE_Init(void)
         return;
     }
 
+    (void)Local_EnsureStorage();
     Local_CloseTemporaryFile();
     if ((0 != stat(AGENTPET_IMAGE_PATH, &tStatus)) &&
         (0 == stat(AGENTPET_IMAGE_LEGACY_PATH, &tStatus)))
@@ -1226,6 +1327,7 @@ void AGENTPETIMAGE_Init(void)
     l_tImageEnv.eState = l_tImageEnv.bImageAvailable ?
         AGENTPET_IMAGE_READY : AGENTPET_IMAGE_IDLE;
     l_tImageEnv.eLastResult = AGENTPET_IMAGE_RESULT_ACCEPTED;
+    l_bImageQueueOverflow = false;
     Local_PublishSnapshot();
 
     tResult = rt_mutex_init(&l_tImageMutex, "pet_img", RT_IPC_FLAG_PRIO);
@@ -1276,19 +1378,19 @@ void AGENTPETIMAGE_Init(void)
 
 /*
  * AGENTPETIMAGE_QueueFrame
- * Function: copy one variable-length packet into the bounded worker queue with
- *           a short, bounded retry that yields CPU time to the Flash worker.
+ * Function: copy one variable-length packet into the bounded worker queue
+ *           without blocking the BLE event callback; latch overflow for the worker.
  * Parameters:
  *   - pFrame: read-only image packet, 9..244 bytes.
  *   - ulLength: actual packet length, 9..244 bytes.
  * Return: true when queued; false for invalid input, unavailable worker, or a
- *         queue that remains full for 200 ms.
+ *         full queue. Queue/file recovery is deferred to the worker.
  */
 bool AGENTPETIMAGE_QueueFrame(const uint8_t *pFrame, size_t ulLength)
 {
     AGENTPET_IMAGE_PACKET tPacket;
+    rt_base_t tLevel;
     rt_err_t tResult;
-    uint16_t usAttempt;
 
     if (
         (!l_bImageWorkerReady) ||
@@ -1304,67 +1406,20 @@ bool AGENTPETIMAGE_QueueFrame(const uint8_t *pFrame, size_t ulLength)
     tPacket.usLength = (uint16_t)ulLength;
     (void)memcpy(tPacket.aData, pFrame, ulLength);
 
-    for (usAttempt = 0U;
-         usAttempt < AGENTPET_IMAGE_QUEUE_RETRY_COUNT;
-         usAttempt++)
+    tResult = rt_mq_send(
+        &l_tImageQueue,
+        &tPacket,
+        sizeof(tPacket));
+    if (RT_EOK == tResult)
     {
-        tResult = rt_mq_send(
-            &l_tImageQueue,
-            &tPacket,
-            sizeof(tPacket));
-        if (RT_EOK == tResult)
-        {
-            return true;
-        }
-        if ((0U != rt_interrupt_get_nest()) ||
-            ((AGENTPET_IMAGE_QUEUE_RETRY_COUNT - 1U) == usAttempt))
-        {
-            break;
-        }
-        rt_thread_mdelay(AGENTPET_IMAGE_QUEUE_RETRY_MS);
+        return true;
     }
-    LOG_E("Custom mascot queue timeout len=%u entries=%u result=%d",
-          (unsigned int)ulLength,
-          (unsigned int)l_tImageQueue.entry,
-          tResult);
+
+    tLevel = rt_hw_interrupt_disable();
+    l_bImageQueueOverflow = true;
+    rt_hw_interrupt_enable(tLevel);
 
     return false;
-}
-
-/*
- * AGENTPETIMAGE_AbortTransfer
- * Function: discard queued/incomplete image data and publish an explicit error
- *           state so BLE readers and LVGL cannot remain in RECEIVING forever.
- * Parameters:
- *   - eResult: bounded transfer error; non-error values map to STATE error.
- * Return: none.
- */
-void AGENTPETIMAGE_AbortTransfer(AGENTPET_IMAGE_RESULT eResult)
-{
-    if (AGENTPET_IMAGE_ERROR_INVALID_PARAMETER > eResult)
-    {
-        eResult = AGENTPET_IMAGE_ERROR_STATE;
-    }
-    if (l_bImageWorkerReady)
-    {
-        (void)rt_mq_control(&l_tImageQueue, RT_IPC_CMD_RESET, NULL);
-        (void)rt_mutex_take(&l_tImageMutex, RT_WAITING_FOREVER);
-    }
-    if (AGENTPET_IMAGE_RECEIVING == l_tImageEnv.eState)
-    {
-        Local_FailTransfer(eResult);
-    }
-    else
-    {
-        l_tImageEnv.eLastResult = eResult;
-    }
-    Local_PublishSnapshot();
-    if (l_bImageWorkerReady)
-    {
-        (void)rt_mutex_release(&l_tImageMutex);
-    }
-
-    return;
 }
 
 /*

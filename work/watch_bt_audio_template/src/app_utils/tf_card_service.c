@@ -190,4 +190,4 @@ static int TfCard_Init(void)
 
     return tResult;
 }
-INIT_APP_EXPORT(TfCard_Init);
+INIT_COMPONENT_EXPORT(TfCard_Init);

@@ -12,9 +12,10 @@
 #define AGENTPET_IMAGE_MAX_FILE_SIZE      (512U * 1024U)
 #define AGENTPET_IMAGE_SLOT_COUNT         (5U)
 #define AGENTPET_IMAGE_BASE_SLOT          (0U)
-#define AGENTPET_IMAGE_PATH               "/pet.img"
+#define AGENTPET_IMAGE_DIRECTORY          "/sdcard/AgentPet"
+#define AGENTPET_IMAGE_PATH               "/sdcard/AgentPet/pet.img"
 #define AGENTPET_IMAGE_LEGACY_PATH        "/pet.jpg"
-#define AGENTPET_IMAGE_LVGL_PATH          "/:/pet.img"
+#define AGENTPET_IMAGE_LVGL_PATH          "/:/sdcard/AgentPet/pet.img"
 #define AGENTPET_IMAGE_FORMAT_NONE        (0U)
 #define AGENTPET_IMAGE_FORMAT_JPEG        (1U)
 #define AGENTPET_IMAGE_FORMAT_GIF         (2U)
@@ -57,7 +58,6 @@ typedef struct _AGENTPET_IMAGE_STATUS
 
 void AGENTPETIMAGE_Init(void);
 void AGENTPETIMAGE_ResetTransfer(void);
-void AGENTPETIMAGE_AbortTransfer(AGENTPET_IMAGE_RESULT eResult);
 bool AGENTPETIMAGE_QueueFrame(const uint8_t *pFrame, size_t ulLength);
 AGENTPET_IMAGE_RESULT AGENTPETIMAGE_ProcessFrame(
     const uint8_t *pFrame,

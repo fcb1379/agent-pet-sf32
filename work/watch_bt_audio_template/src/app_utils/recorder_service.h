@@ -9,6 +9,12 @@
 #define RECORDER_FILE_NAME_LENGTH   (96U)
 #define RECORDER_FILE_MAX           (32U)
 #define RECORDER_DIRECTORY_PATH     "/sdcard/recordings"
+#define RECORDER_OPUS_SAMPLE_RATE_HZ       (16000U)
+#define RECORDER_OPUS_CHANNEL_COUNT        (1U)
+#define RECORDER_OPUS_BITRATE_BPS          (24000U)
+#define RECORDER_OPUS_FRAME_SAMPLES        (320U)
+#define RECORDER_OPUS_PRE_SKIP             (312U)
+#define RECORDER_OPUS_MAX_PACKET_BYTES     (1275U)
 
 typedef enum _RECORDER_FORMAT
 {
@@ -63,12 +69,23 @@ typedef struct _RECORDER_SNAPSHOT
     int32_t lLastError;
 } RECORDER_SNAPSHOT;
 
-typedef int (*RECORDER_OPUS_UPLOAD_CALLBACK)(const uint8_t *pPacket,
+typedef enum _RECORDER_OPUS_UPLOAD_EVENT
+{
+    RECORDER_OPUS_UPLOAD_STARTED = 0,
+    RECORDER_OPUS_UPLOAD_PACKET,
+    RECORDER_OPUS_UPLOAD_STOPPED,
+    RECORDER_OPUS_UPLOAD_ERROR,
+} RECORDER_OPUS_UPLOAD_EVENT;
+
+typedef int (*RECORDER_OPUS_UPLOAD_CALLBACK)(RECORDER_OPUS_UPLOAD_EVENT eEvent,
+                                              const uint8_t *pPacket,
                                               uint16_t usPacketLength,
                                               uint32_t ulSequence,
                                               uint32_t ulTimestampMs,
                                               void *pContext);
 
+rt_err_t RECORDER_StartOpusStream(void);
+rt_err_t RECORDER_StopOpusStream(void);
 rt_err_t RECORDER_Start(RECORDER_FORMAT eFormat);
 rt_err_t RECORDER_Pause(void);
 rt_err_t RECORDER_Resume(void);

@@ -580,6 +580,7 @@ static int ble_link_event_handler(uint16_t event_id, uint8_t *data, uint16_t len
     {
         sibles_mtu_exchange_ind_t *ind = (sibles_mtu_exchange_ind_t *)data;
         env->mtu = ind->mtu;
+        AGENTPETBLE_SetMtu(ind->mtu);
         LOG_I("BLE MTU=%d", env->mtu);
         break;
     }

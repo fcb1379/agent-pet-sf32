@@ -8,6 +8,8 @@
 #include "bf0_sibles_internal.h"
 #include "watch_settings.h"
 #include "agent_pet_merit.h"
+#include "agent_pet_audio_upload.h"
+#include "agent_pet_audio_protocol.h"
 
 #define LOG_TAG "agent_pet_ble"
 #include "log.h"
@@ -15,6 +17,8 @@
 #define AGENTPET_TIME_THREAD_STACK_SIZE (2048U)
 #define AGENTPET_TIME_THREAD_TIME_SLICE (10U)
 #define AGENTPET_TIME_MAILBOX_DEPTH     (1U)
+#define AGENTPET_DEFAULT_ATT_MTU        (23U)
+#define AGENTPET_ATT_NOTIFY_OVERHEAD    (3U)
 
 #define AGENTPET_UUID_16_LE(x) \
     { ((uint8_t)((x) & 0xFFU)), ((uint8_t)((x) >> 8U)) }
@@ -55,6 +59,13 @@
     0x5CU, 0x4FU, 0x5FU, 0x6BU, \
     0x05U, 0x00U, 0x1EU, 0x7AU \
 }
+#define AGENTPET_AUDIO_UUID_BYTES \
+{ \
+    0x00U, 0x10U, 0x0BU, 0x1AU, \
+    0x2FU, 0x3EU, 0x9DU, 0x8CU, \
+    0x5CU, 0x4FU, 0x5FU, 0x6BU, \
+    0x06U, 0x00U, 0x1EU, 0x7AU \
+}
 
 enum AGENTPET_ATT_INDEX
 {
@@ -68,6 +79,9 @@ enum AGENTPET_ATT_INDEX
     AGENTPET_ATT_MERIT_CHAR,
     AGENTPET_ATT_MERIT_VALUE,
     AGENTPET_ATT_MERIT_CCCD,
+    AGENTPET_ATT_AUDIO_CHAR,
+    AGENTPET_ATT_AUDIO_VALUE,
+    AGENTPET_ATT_AUDIO_CCCD,
     AGENTPET_ATT_COUNT
 };
 
@@ -86,6 +100,12 @@ static uint8_t l_aMeritResponse[AGENTPET_MERIT_FRAME_SIZE];
 static bool l_bMeritNotifyEnabled;
 /* Connection index that most recently configured the merit CCCD. */
 static uint8_t l_ucMeritConnectionIndex;
+/* Audio notification subscription state, valid only for the active BLE link. */
+static bool l_bAudioNotifyEnabled;
+/* Connection index that configured the audio CCCD. */
+static uint8_t l_ucAudioConnectionIndex;
+/* Negotiated ATT MTU, range 23..1024; defaults to the BLE minimum. */
+static uint16_t l_usAgentPetAttMtu;
 /* Static mailbox used only as a non-blocking wake signal; time data stays in the protocol state. */
 static struct rt_mailbox l_tTimeSyncMailbox;
 /* One-entry mailbox pool; additional updates coalesce into the latest protocol generation. */
@@ -152,6 +172,25 @@ BLE_GATT_SERVICE_DEFINE_128(l_tAgentPetAttributeDatabase)
         AGENTPET_MERIT_FRAME_SIZE),
     BLE_GATT_DESCRIPTOR_DECLARE(
         AGENTPET_ATT_MERIT_CCCD,
+        AGENTPET_UUID_16_LE(0x2902U),
+        BLE_GATT_PERM_READ_ENABLE |
+        BLE_GATT_PERM_WRITE_REQ_ENABLE,
+        BLE_GATT_VALUE_PERM_RI_ENABLE,
+        2U),
+    BLE_GATT_CHAR_DECLARE(
+        AGENTPET_ATT_AUDIO_CHAR,
+        AGENTPET_UUID_16_LE(0x2803U),
+        BLE_GATT_PERM_READ_ENABLE),
+    BLE_GATT_CHAR_VALUE_DECLARE(
+        AGENTPET_ATT_AUDIO_VALUE,
+        AGENTPET_AUDIO_UUID_BYTES,
+        BLE_GATT_PERM_NOTIFY_ENABLE |
+        BLE_GATT_PERM_WRITE_REQ_ENABLE,
+        BLE_GATT_VALUE_PERM_UUID_128 |
+        BLE_GATT_VALUE_PERM_RI_ENABLE,
+        AGENTPET_AUDIO_FRAME_MAX_SIZE),
+    BLE_GATT_DESCRIPTOR_DECLARE(
+        AGENTPET_ATT_AUDIO_CCCD,
         AGENTPET_UUID_16_LE(0x2902U),
         BLE_GATT_PERM_READ_ENABLE |
         BLE_GATT_PERM_WRITE_REQ_ENABLE,
@@ -448,6 +487,7 @@ static uint8_t Local_GattWriteCallback(
     sibles_set_cbk_t *pParameter)
 {
     AGENTPET_RESULT eResult;
+    AGENTPET_AUDIO_CONTROL_COMMAND eAudioCommand;
     bool bQueued;
     rt_err_t eMailboxResult;
     uint8_t ucIndex;
@@ -550,8 +590,6 @@ static uint8_t Local_GattWriteCallback(
         rt_exit_critical();
         if (!bQueued)
         {
-            AGENTPETIMAGE_AbortTransfer(AGENTPET_IMAGE_ERROR_QUEUE);
-            LOG_E("Custom mascot frame queue full or invalid");
             return 1U;
         }
     }
@@ -592,6 +630,35 @@ static uint8_t Local_GattWriteCallback(
         LOG_I("Daily merit notification %s",
               l_bMeritNotifyEnabled ? "enabled" : "disabled");
     }
+    else if (AGENTPET_ATT_AUDIO_VALUE == pParameter->idx)
+    {
+        bQueued = AGENTPETAUDIOPROTO_ParseControl(
+            pParameter->value,
+            pParameter->len,
+            &eAudioCommand) &&
+            AGENTPETAUDIO_RequestStream(
+                AGENTPET_AUDIO_CONTROL_START == eAudioCommand);
+        if (!bQueued)
+        {
+            LOG_W("Audio control frame rejected length=%u",
+                  (unsigned int)pParameter->len);
+            return 1U;
+        }
+        LOG_I("Audio control queued command=%u",
+              (unsigned int)eAudioCommand);
+    }
+    else if (AGENTPET_ATT_AUDIO_CCCD == pParameter->idx)
+    {
+        bQueued = (2U <= pParameter->len) &&
+            (0U != (pParameter->value[0] & 0x01U));
+        rt_enter_critical();
+        l_bAudioNotifyEnabled = bQueued;
+        l_ucAudioConnectionIndex = ucConnectionIndex;
+        rt_exit_critical();
+        AGENTPETAUDIO_SetSubscribed(bQueued);
+        LOG_I("Audio notification %s",
+              bQueued ? "enabled" : "disabled");
+    }
 
     return 0U;
 }
@@ -609,8 +676,12 @@ void AGENTPETBLE_Init(void)
     rt_exit_critical();
     AGENTPETIMAGE_Init();
     AGENTPETMERIT_Init();
+    AGENTPETAUDIO_Init();
     l_bMeritNotifyEnabled = false;
     l_ucMeritConnectionIndex = 0U;
+    l_bAudioNotifyEnabled = false;
+    l_ucAudioConnectionIndex = 0U;
+    l_usAgentPetAttMtu = AGENTPET_DEFAULT_ATT_MTU;
     (void)Local_InitTimeSyncWorker();
     l_tAgentPetServiceHandle = 0U;
 
@@ -676,11 +747,34 @@ void AGENTPETBLE_SetConnected(bool bConnected)
         AGENTPETIMAGE_ResetTransfer();
         rt_enter_critical();
         l_bMeritNotifyEnabled = false;
+        l_bAudioNotifyEnabled = false;
+        l_usAgentPetAttMtu = AGENTPET_DEFAULT_ATT_MTU;
         rt_exit_critical();
+        AGENTPETAUDIO_SetSubscribed(false);
     }
 
     return;
 }
+/*
+ * AGENTPETBLE_SetMtu
+ * Function: store the negotiated ATT MTU used to bound notifications.
+ * Parameters: usMtu is the negotiated value, range 23..1024.
+ * Return: none.
+ */
+void AGENTPETBLE_SetMtu(uint16_t usMtu)
+{
+    if (AGENTPET_DEFAULT_ATT_MTU > usMtu)
+    {
+        return;
+    }
+
+    rt_enter_critical();
+    l_usAgentPetAttMtu = usMtu;
+    rt_exit_critical();
+
+    return;
+}
+
 
 /*
  * AGENTPETBLE_NotifyMerit
@@ -720,6 +814,77 @@ void AGENTPETBLE_NotifyMerit(void)
 
     return;
 }
+/*
+ * AGENTPETBLE_GetAudioFrameLimit
+ * Function: return the current maximum notification value length.
+ * Parameters: none.
+ * Return: 20..244 bytes for a valid BLE link configuration.
+ */
+uint16_t AGENTPETBLE_GetAudioFrameLimit(void)
+{
+    uint16_t usMtu;
+    uint16_t usFrameLimit;
+
+    rt_enter_critical();
+    usMtu = l_usAgentPetAttMtu;
+    rt_exit_critical();
+    usFrameLimit = (AGENTPET_ATT_NOTIFY_OVERHEAD < usMtu) ?
+        (usMtu - AGENTPET_ATT_NOTIFY_OVERHEAD) : 0U;
+    if (AGENTPET_AUDIO_FRAME_MAX_SIZE < usFrameLimit)
+    {
+        usFrameLimit = AGENTPET_AUDIO_FRAME_MAX_SIZE;
+    }
+
+    return usFrameLimit;
+}
+
+/*
+ * AGENTPETBLE_SendAudioNotification
+ * Function: copy one audio frame into an available Sibles notification slot.
+ * Parameters:
+ *   - pFrame: validated protocol frame.
+ *   - usFrameLength: frame length within the negotiated ATT value limit.
+ * Return: copied byte count, zero when TX slots are busy, or a negative error.
+ */
+int32_t AGENTPETBLE_SendAudioNotification(const uint8_t *pFrame,
+                                          uint16_t usFrameLength)
+{
+    sibles_value_t tValue;
+    sibles_hdl tServiceHandle;
+    uint16_t usFrameLimit;
+    uint8_t ucConnectionIndex;
+    bool bCanNotify;
+
+    rt_enter_critical();
+    usFrameLimit = (AGENTPET_ATT_NOTIFY_OVERHEAD < l_usAgentPetAttMtu) ?
+        (l_usAgentPetAttMtu - AGENTPET_ATT_NOTIFY_OVERHEAD) : 0U;
+    if (AGENTPET_AUDIO_FRAME_MAX_SIZE < usFrameLimit)
+    {
+        usFrameLimit = AGENTPET_AUDIO_FRAME_MAX_SIZE;
+    }
+    bCanNotify = l_tAgentPetBleStatus.bConnected &&
+        l_bAudioNotifyEnabled && (0U != l_tAgentPetServiceHandle);
+    tServiceHandle = l_tAgentPetServiceHandle;
+    ucConnectionIndex = l_ucAudioConnectionIndex;
+    rt_exit_critical();
+    if ((NULL == pFrame) || (0U == usFrameLength) ||
+        (usFrameLimit < usFrameLength))
+    {
+        return -RT_EINVAL;
+    }
+    if (!bCanNotify)
+    {
+        return -RT_EBUSY;
+    }
+
+    tValue.hdl = tServiceHandle;
+    tValue.idx = AGENTPET_ATT_AUDIO_VALUE;
+    tValue.len = usFrameLength;
+    tValue.value = (uint8_t *)(void *)pFrame;
+
+    return sibles_write_value(ucConnectionIndex, &tValue);
+}
+
 
 /*
  * AGENTPETBLE_GetStatus

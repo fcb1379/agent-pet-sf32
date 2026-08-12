@@ -33,7 +33,11 @@ typedef struct _AGENTPET_BLE_STATUS
 void AGENTPETBLE_Init(void);
 bool AGENTPETBLE_RegisterService(void);
 void AGENTPETBLE_SetConnected(bool bConnected);
+void AGENTPETBLE_SetMtu(uint16_t usMtu);
 bool AGENTPETBLE_GetStatus(AGENTPET_BLE_STATUS *pStatus);
 void AGENTPETBLE_NotifyMerit(void);
+uint16_t AGENTPETBLE_GetAudioFrameLimit(void);
+int32_t AGENTPETBLE_SendAudioNotification(const uint8_t *pFrame,
+                                           uint16_t usFrameLength);
 
 #endif /* AGENT_PET_BLE_SERVICE_H */

@@ -69,8 +69,7 @@ function Invoke-FirmwareFlash {
     $requiredFiles = @(
         "bootloader\bootloader.bin",
         "main.bin",
-        "ftab\ftab.bin",
-        "fs_root.bin"
+        "ftab\ftab.bin"
     )
     foreach ($file in $requiredFiles) {
         if (-not (Test-Path (Join-Path $BuildOutputDir $file))) {
@@ -84,10 +83,13 @@ function Invoke-FirmwareFlash {
         "write_flash",
         "bootloader\bootloader.bin@0x12010000",
         "main.bin@0x12020000",
-        "ftab\ftab.bin@0x12000000",
-        "fs_root.bin@0x129A0000"
+        "ftab\ftab.bin@0x12000000"
     )
 
+
+    # Normal updates never program fs_root at 0x129A0000.
+    # Factory and legacy assets in fs_root therefore survive normal updates.
+    # Custom mascot files live on the TF card, outside every flash target above.
     Write-Host "Flashing firmware to COM$Port ..."
     Push-Location $BuildOutputDir
     try {

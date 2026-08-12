@@ -11,6 +11,7 @@ SECTIONS
         . = ALIGN(8);
         __recorder_psram_bss_start__ = .;
         *recorder_service.o(.bss .bss.* COMMON)
+        *agent_pet_audio_upload.o(.bss .bss.* COMMON)
         *media_player_server.o(
             .bss.ffmpeg_read_thread_stack
             .bss.ffmpeg_read_thread_control)
