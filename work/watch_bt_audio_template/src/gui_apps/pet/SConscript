@@ -3,6 +3,9 @@ import os
 
 cwd = GetCurrentDir()
 src = Glob('*.c')
+if not GetDepend('AGENT_PET_USING_STROKE'):
+    src = [source for source in src
+           if os.path.basename(str(source)) != 'momo_stroking.c']
 app_utils = os.path.join(cwd, '..', '..', 'app_utils')
 local_ccflags = ''
 

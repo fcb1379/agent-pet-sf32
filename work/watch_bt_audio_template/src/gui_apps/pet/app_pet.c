@@ -1,4 +1,5 @@
 #include <rtthread.h>
+#include <limits.h>
 #include <time.h>
 
 #include <string.h>
@@ -13,6 +14,9 @@
 #include "pet_state_assets.h"
 #if defined(AGENT_PET_USING_MEMORY_CALENDAR)
     #include "momo_memory_calendar.h"
+#endif
+#if defined(AGENT_PET_USING_STROKE)
+    #include "momo_stroking.h"
 #endif
 #if !defined(BSP_USING_PC_SIMULATOR) || !defined(AGENT_PET_STANDALONE_PREVIEW)
     #include "lv_ext_resource_manager.h"
@@ -84,6 +88,23 @@ LV_IMG_DECLARE(agent_pet_merit_plus_one);
 #define PET_MOTION_SWITCH_Y (8)
 #define PET_MOTION_SWITCH_WIDTH (52)
 #define PET_MOTION_SWITCH_HEIGHT (26)
+#define PET_STROKE_LABEL_X (8)
+#define PET_STROKE_LABEL_Y (110)
+#define PET_STROKE_LABEL_WIDTH (64)
+#define PET_STROKE_SWITCH_X (76)
+#define PET_STROKE_SWITCH_Y (104)
+#define PET_STROKE_SWITCH_WIDTH (52)
+#define PET_STROKE_SWITCH_HEIGHT (26)
+#define PET_STROKE_HALO_WIDTH (210)
+#define PET_STROKE_HALO_HEIGHT (118)
+#define PET_STROKE_HALO_X ((LV_HOR_RES_MAX - PET_STROKE_HALO_WIDTH) / 2)
+#define PET_STROKE_HALO_Y (PET_MASCOT_Y - 2)
+#define PET_STROKE_LABEL_TEXT_WIDTH (150)
+#define PET_STROKE_LABEL_TEXT_X ((LV_HOR_RES_MAX - PET_STROKE_LABEL_TEXT_WIDTH) / 2)
+#define PET_STROKE_LABEL_TEXT_Y (PET_MASCOT_Y - 24)
+#define PET_STROKE_ANIMATION_MS (420U)
+#define PET_STROKE_ZOOM_MIN (252)
+#define PET_STROKE_ZOOM_MAX (260)
 #define PET_QUEST_GARDEN_ENABLED (1U)
 #define PET_QUEST_GARDEN_WIDTH (76)
 #ifdef AGENT_PET_BEHAVIOR_ENGINE
@@ -129,6 +150,10 @@ LV_IMG_DECLARE(agent_pet_merit_plus_one);
     #define PET_BEHAVIOR_PREF_AROUSAL_KEY "b_arousal"
     #define PET_BEHAVIOR_PREF_INTERACTION_KEY "b_last"
     #define PET_BEHAVIOR_PREF_RANDOM_KEY "b_rng"
+#endif
+#if defined(AGENT_PET_USING_STROKE)
+    #define PET_STROKE_PREF_NAME "agent_pet_stroke_pref_v1"
+    #define PET_STROKE_PREF_ENABLED_KEY "enabled"
 #endif
 #endif
 
@@ -212,6 +237,12 @@ typedef struct
     lv_timer_t *motion_timer;
     lv_obj_t *motion_label;
     lv_obj_t *motion_switch;
+#if defined(AGENT_PET_USING_STROKE)
+    lv_obj_t *stroke_label;
+    lv_obj_t *stroke_switch;
+    lv_obj_t *stroke_halo;
+    lv_obj_t *stroke_hint;
+#endif
 #ifndef BSP_USING_PC_SIMULATOR
     share_prefs_t *pQuestPrefs;
 #ifdef AGENT_PET_BEHAVIOR_ENGINE
@@ -219,6 +250,9 @@ typedef struct
 #endif
 #if defined(AGENT_PET_USING_MEMORY_CALENDAR)
     share_prefs_t *pMemoryPrefs;
+#endif
+#if defined(AGENT_PET_USING_STROKE)
+    share_prefs_t *pStrokePrefs;
 #endif
 #endif
     QUEST_GARDEN tQuestGarden;
@@ -271,6 +305,14 @@ typedef struct
     bool bMemoryClearConfirm;
     bool bMemoryUiUnavailable;
 #endif
+#if defined(AGENT_PET_USING_STROKE)
+    MOMO_STROKE_CONFIG tStrokeConfig;
+    MOMO_STROKE_CONTEXT tStrokeContext;
+    bool bStrokeEnabled;
+    bool bStrokeAllowed;
+    bool bStrokeVisualActive;
+    bool bStrokeInputEnabled;
+#endif
 #if defined(AGENT_PET_USING_IMU) && !defined(BSP_USING_PC_SIMULATOR)
     PET_MOTION_DETECTOR tMotionDetector;
     uint8_t ucMotionReadErrors;
@@ -299,6 +341,10 @@ static bool PET_MemoryStatusBlocksPanel(
     const AGENTPET_BLE_STATUS *pStatus);
 static void PET_ArbitrateMemoryPanel(const AGENTPET_BLE_STATUS *pStatus);
 static bool PET_CreateMemoryPanel(void);
+#endif
+#if defined(AGENT_PET_USING_STROKE)
+static void PET_StrokeInputEvent(lv_event_t *pEvent);
+static void PET_CancelStroke(void);
 #endif
 
 #if defined(AGENT_PET_USING_IMU) && !defined(BSP_USING_PC_SIMULATOR)
@@ -676,6 +722,449 @@ static void PET_CreateMotionSwitch(void)
 
     return;
 }
+
+#if defined(AGENT_PET_USING_STROKE)
+static void PET_SetStrokeZoom(void *pObject, int32_t lZoom)
+{
+    if (NULL != pObject)
+    {
+        lv_obj_set_style_transform_zoom(
+            (lv_obj_t *)pObject,
+            (lv_coord_t)lZoom,
+            LV_STATE_USER_1);
+    }
+
+    return;
+}
+
+static void PET_EndStrokeVisual(void)
+{
+    if (!g_pet_ui.bStrokeVisualActive)
+    {
+        return;
+    }
+    if (NULL != g_pet_ui.stage)
+    {
+        lv_anim_del(g_pet_ui.stage, PET_SetStrokeZoom);
+        lv_obj_clear_state(g_pet_ui.stage, LV_STATE_USER_1);
+    }
+    if (NULL != g_pet_ui.stroke_halo)
+    {
+        lv_anim_del(g_pet_ui.stroke_halo, NULL);
+        lv_obj_add_flag(g_pet_ui.stroke_halo, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (NULL != g_pet_ui.stroke_hint)
+    {
+        lv_obj_add_flag(g_pet_ui.stroke_hint, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (g_pet_ui.bStrokeVisualActive)
+    {
+        g_pet_ui.ucRenderedState = 0xFFU;
+    }
+    g_pet_ui.bStrokeVisualActive = false;
+
+    return;
+}
+
+static void PET_StartStrokeVisual(void)
+{
+    lv_anim_t tAnimation;
+
+    if (g_pet_ui.bStrokeVisualActive || !g_pet_ui.bStrokeAllowed ||
+        !g_pet_ui.bStrokeEnabled || (NULL == g_pet_ui.stage) ||
+        (NULL == g_pet_ui.stroke_halo) || (NULL == g_pet_ui.stroke_hint))
+    {
+        return;
+    }
+
+    lv_obj_add_state(g_pet_ui.stage, LV_STATE_USER_1);
+    lv_obj_set_style_transform_zoom(
+        g_pet_ui.stage,
+        PET_STROKE_ZOOM_MIN,
+        LV_STATE_USER_1);
+    lv_obj_clear_flag(g_pet_ui.stroke_halo, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(g_pet_ui.stroke_hint, LV_OBJ_FLAG_HIDDEN);
+
+    lv_anim_init(&tAnimation);
+    lv_anim_set_var(&tAnimation, g_pet_ui.stage);
+    lv_anim_set_values(
+        &tAnimation,
+        PET_STROKE_ZOOM_MIN,
+        PET_STROKE_ZOOM_MAX);
+    lv_anim_set_exec_cb(&tAnimation, PET_SetStrokeZoom);
+    lv_anim_set_time(&tAnimation, PET_STROKE_ANIMATION_MS);
+    lv_anim_set_playback_time(&tAnimation, PET_STROKE_ANIMATION_MS);
+    lv_anim_set_repeat_count(&tAnimation, LV_ANIM_REPEAT_INFINITE);
+    lv_anim_start(&tAnimation);
+    g_pet_ui.bStrokeVisualActive = true;
+
+    return;
+}
+
+static void PET_HandleStrokeEvent(MOMO_STROKE_EVENT eEvent)
+{
+    if (MOMO_STROKE_EVENT_STARTED == eEvent)
+    {
+        if (g_pet_ui.bStrokeAllowed)
+        {
+            PET_StartStrokeVisual();
+        }
+        else
+        {
+            (void)MOMOSTROKE_Preempt(&g_pet_ui.tStrokeContext);
+            PET_EndStrokeVisual();
+        }
+    }
+    else if ((MOMO_STROKE_EVENT_ENDED == eEvent) ||
+             ((MOMO_STROKE_EVENT_CANCELLED == eEvent) &&
+              g_pet_ui.bStrokeVisualActive))
+    {
+        PET_EndStrokeVisual();
+    }
+
+    return;
+}
+
+/*
+ * PET_CancelStroke
+ * 功能：抢占当前连续抚摸序列并同步收起视觉反馈。
+ * 参数：无。
+ * 返回值：无。
+ */
+static void PET_CancelStroke(void)
+{
+    PET_HandleStrokeEvent(
+        MOMOSTROKE_Preempt(&g_pet_ui.tStrokeContext));
+    PET_EndStrokeVisual();
+
+    return;
+}
+
+static bool PET_GetStrokePoint(int16_t *pX, int16_t *pY)
+{
+    lv_indev_t *pInput;
+    lv_point_t tPoint;
+    lv_area_t tStageArea;
+    int32_t lLocalX;
+    int32_t lLocalY;
+
+    if ((NULL == pX) || (NULL == pY) || (NULL == g_pet_ui.stage))
+    {
+        return false;
+    }
+    pInput = lv_indev_get_act();
+    if (NULL == pInput)
+    {
+        return false;
+    }
+    lv_indev_get_point(pInput, &tPoint);
+    lv_obj_get_coords(g_pet_ui.stage, &tStageArea);
+    lLocalX = (int32_t)tPoint.x - tStageArea.x1;
+    lLocalY = (int32_t)tPoint.y - tStageArea.y1;
+    if ((INT16_MIN > lLocalX) || (INT16_MAX < lLocalX) ||
+        (INT16_MIN > lLocalY) || (INT16_MAX < lLocalY))
+    {
+        return false;
+    }
+    *pX = (int16_t)lLocalX;
+    *pY = (int16_t)lLocalY;
+
+    return true;
+}
+
+static void PET_StrokeInputEvent(lv_event_t *pEvent)
+{
+    lv_event_code_t eCode;
+    lv_indev_t *pInput;
+    MOMO_STROKE_EVENT eStrokeEvent;
+    int16_t sX;
+    int16_t sY;
+    uint32_t ulNow;
+
+    if ((NULL == pEvent) || !g_pet_ui.bStrokeInputEnabled)
+    {
+        return;
+    }
+    eCode = lv_event_get_code(pEvent);
+    ulNow = lv_tick_get();
+    eStrokeEvent = MOMO_STROKE_EVENT_NONE;
+    if (LV_EVENT_PRESSED == eCode)
+    {
+        MOMOSTROKE_Init(&g_pet_ui.tStrokeContext);
+        if (g_pet_ui.bStrokeAllowed && g_pet_ui.bStrokeEnabled &&
+            PET_GetStrokePoint(&sX, &sY))
+        {
+            (void)MOMOSTROKE_Press(
+                &g_pet_ui.tStrokeContext,
+                &g_pet_ui.tStrokeConfig,
+                sX,
+                sY,
+                ulNow);
+        }
+    }
+    else if (LV_EVENT_PRESSING == eCode)
+    {
+        pInput = lv_indev_get_act();
+        if ((MOMO_STROKE_STATE_CANDIDATE ==
+             MOMOSTROKE_GetState(&g_pet_ui.tStrokeContext)) &&
+            (NULL != pInput))
+        {
+            lv_indev_reset_long_press(pInput);
+        }
+        if (PET_GetStrokePoint(&sX, &sY))
+        {
+            eStrokeEvent = MOMOSTROKE_Sample(
+                &g_pet_ui.tStrokeContext,
+                &g_pet_ui.tStrokeConfig,
+                sX,
+                sY,
+                ulNow);
+        }
+        else
+        {
+            eStrokeEvent = MOMOSTROKE_Cancel(&g_pet_ui.tStrokeContext);
+        }
+    }
+    else if (LV_EVENT_RELEASED == eCode)
+    {
+        eStrokeEvent = MOMOSTROKE_Release(
+            &g_pet_ui.tStrokeContext,
+            ulNow);
+    }
+    else if (LV_EVENT_PRESS_LOST == eCode)
+    {
+        eStrokeEvent = MOMOSTROKE_Cancel(&g_pet_ui.tStrokeContext);
+    }
+    else if ((LV_EVENT_SHORT_CLICKED == eCode) ||
+             (LV_EVENT_LONG_PRESSED == eCode) ||
+             (LV_EVENT_LONG_PRESSED_REPEAT == eCode))
+    {
+        if (MOMOSTROKE_IsConsumed(&g_pet_ui.tStrokeContext))
+        {
+            lv_event_stop_processing(pEvent);
+        }
+    }
+    PET_HandleStrokeEvent(eStrokeEvent);
+
+    return;
+}
+
+static void PET_SaveStrokeSetting(void)
+{
+#ifndef BSP_USING_PC_SIMULATOR
+    rt_err_t tResult;
+
+    if (NULL == g_pet_ui.pStrokePrefs)
+    {
+        return;
+    }
+    tResult = share_prefs_set_int(
+        g_pet_ui.pStrokePrefs,
+        PET_STROKE_PREF_ENABLED_KEY,
+        g_pet_ui.bStrokeEnabled ? 1 : 0);
+    if (RT_EOK != tResult)
+    {
+        rt_kprintf("agent pet: save stroke setting failed %d\n", tResult);
+    }
+#endif
+
+    return;
+}
+
+static void PET_StrokeSwitchChanged(lv_event_t *pEvent)
+{
+    MOMO_STROKE_EVENT eEvent;
+
+    if ((NULL == pEvent) || (NULL == g_pet_ui.stroke_switch))
+    {
+        return;
+    }
+    g_pet_ui.bStrokeEnabled = lv_obj_has_state(
+        g_pet_ui.stroke_switch,
+        LV_STATE_CHECKED);
+    if (NULL != g_pet_ui.stroke_label)
+    {
+        lv_label_set_text(
+            g_pet_ui.stroke_label,
+            g_pet_ui.bStrokeEnabled ? "Stroke On" : "Stroke Off");
+    }
+    if (!g_pet_ui.bStrokeEnabled)
+    {
+        eEvent = MOMOSTROKE_Preempt(&g_pet_ui.tStrokeContext);
+        PET_HandleStrokeEvent(eEvent);
+    }
+    PET_SaveStrokeSetting();
+
+    return;
+}
+
+static bool PET_StrokeCanShow(const AGENTPET_BLE_STATUS *pStatus)
+{
+    if ((NULL == pStatus) || !g_pet_ui.bStrokeEnabled ||
+        !g_pet_ui.bStrokeInputEnabled ||
+        (NULL == g_pet_ui.stroke_switch) ||
+        (NULL == g_pet_ui.stroke_halo) || (NULL == g_pet_ui.stroke_hint) ||
+        (AGENTPET_IMAGE_RECEIVING == pStatus->tImageStatus.eState) ||
+        g_pet_ui.bTypingActive || g_pet_ui.bExpressionOverride ||
+        (AGENTPET_IMAGE_BASE_SLOT != g_pet_ui.ucRequestedImageSlot))
+    {
+        return false;
+    }
+    if (pStatus->bHasSnapshot &&
+        (AGENTPET_STATE_IDLE != pStatus->tSnapshot.ucAggregateState))
+    {
+        return false;
+    }
+    if ((NULL != g_pet_ui.wooden_fish) &&
+        !lv_obj_has_flag(g_pet_ui.wooden_fish, LV_OBJ_FLAG_HIDDEN))
+    {
+        return false;
+    }
+#if defined(AGENT_PET_USING_MEMORY_CALENDAR)
+    if (g_pet_ui.bMemoryPanelOpen)
+    {
+        return false;
+    }
+#endif
+
+    return true;
+}
+
+static void PET_CreateStrokeUi(void)
+{
+    int32_t lPersistedEnabled;
+
+    MOMOSTROKE_GetDefaultConfig(&g_pet_ui.tStrokeConfig);
+    MOMOSTROKE_Init(&g_pet_ui.tStrokeContext);
+    g_pet_ui.bStrokeEnabled = true;
+#ifndef BSP_USING_PC_SIMULATOR
+    g_pet_ui.pStrokePrefs = share_prefs_open(
+        PET_STROKE_PREF_NAME,
+        SHAREPREFS_MODE_PRIVATE);
+    if (NULL != g_pet_ui.pStrokePrefs)
+    {
+        lPersistedEnabled = share_prefs_get_int(
+            g_pet_ui.pStrokePrefs,
+            PET_STROKE_PREF_ENABLED_KEY,
+            1);
+        g_pet_ui.bStrokeEnabled = (1 == lPersistedEnabled);
+    }
+#else
+    lPersistedEnabled = 1;
+#endif
+    (void)lPersistedEnabled;
+
+    g_pet_ui.stroke_label = lv_label_create(g_pet_ui.root);
+    if (NULL != g_pet_ui.stroke_label)
+    {
+        lv_obj_set_pos(
+            g_pet_ui.stroke_label,
+            PET_STROKE_LABEL_X,
+            PET_STROKE_LABEL_Y);
+        lv_obj_set_width(g_pet_ui.stroke_label, PET_STROKE_LABEL_WIDTH);
+        lv_label_set_text(
+            g_pet_ui.stroke_label,
+            g_pet_ui.bStrokeEnabled ? "Stroke On" : "Stroke Off");
+        lv_obj_set_style_text_color(
+            g_pet_ui.stroke_label,
+            lv_color_hex(0xA7B0B5U),
+            0);
+    }
+
+    g_pet_ui.stroke_switch = lv_switch_create(g_pet_ui.root);
+    if (NULL != g_pet_ui.stroke_switch)
+    {
+        lv_obj_set_size(
+            g_pet_ui.stroke_switch,
+            PET_STROKE_SWITCH_WIDTH,
+            PET_STROKE_SWITCH_HEIGHT);
+        lv_obj_set_pos(
+            g_pet_ui.stroke_switch,
+            PET_STROKE_SWITCH_X,
+            PET_STROKE_SWITCH_Y);
+        if (g_pet_ui.bStrokeEnabled)
+        {
+            lv_obj_add_state(g_pet_ui.stroke_switch, LV_STATE_CHECKED);
+        }
+        lv_obj_add_event_cb(
+            g_pet_ui.stroke_switch,
+            PET_StrokeSwitchChanged,
+            LV_EVENT_VALUE_CHANGED,
+            NULL);
+    }
+
+    g_pet_ui.stroke_halo = lv_obj_create(g_pet_ui.root);
+    if (NULL != g_pet_ui.stroke_halo)
+    {
+        lv_obj_set_pos(
+            g_pet_ui.stroke_halo,
+            PET_STROKE_HALO_X,
+            PET_STROKE_HALO_Y);
+        lv_obj_set_size(
+            g_pet_ui.stroke_halo,
+            PET_STROKE_HALO_WIDTH,
+            PET_STROKE_HALO_HEIGHT);
+        lv_obj_set_style_radius(g_pet_ui.stroke_halo, LV_RADIUS_CIRCLE, 0);
+        lv_obj_set_style_bg_color(
+            g_pet_ui.stroke_halo,
+            lv_color_hex(0xFFB65CU),
+            0);
+        lv_obj_set_style_bg_opa(g_pet_ui.stroke_halo, LV_OPA_30, 0);
+        lv_obj_set_style_border_width(g_pet_ui.stroke_halo, 2, 0);
+        lv_obj_set_style_border_color(
+            g_pet_ui.stroke_halo,
+            lv_color_hex(0xFFE3A1U),
+            0);
+        lv_obj_clear_flag(g_pet_ui.stroke_halo, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_clear_flag(g_pet_ui.stroke_halo, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_add_flag(g_pet_ui.stroke_halo, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    g_pet_ui.stroke_hint = lv_label_create(g_pet_ui.root);
+    if (NULL != g_pet_ui.stroke_hint)
+    {
+        lv_obj_set_width(g_pet_ui.stroke_hint, PET_STROKE_LABEL_TEXT_WIDTH);
+        lv_obj_set_pos(
+            g_pet_ui.stroke_hint,
+            PET_STROKE_LABEL_TEXT_X,
+            PET_STROKE_LABEL_TEXT_Y);
+        lv_label_set_text(g_pet_ui.stroke_hint, "Momo likes that");
+        lv_obj_set_style_text_align(
+            g_pet_ui.stroke_hint,
+            LV_TEXT_ALIGN_CENTER,
+            0);
+        lv_obj_set_style_text_color(
+            g_pet_ui.stroke_hint,
+            lv_color_hex(0xFFE3A1U),
+            0);
+        lv_obj_clear_flag(g_pet_ui.stroke_hint, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_add_flag(g_pet_ui.stroke_hint, LV_OBJ_FLAG_HIDDEN);
+    }
+    if ((NULL == g_pet_ui.stroke_label) ||
+        (NULL == g_pet_ui.stroke_switch) ||
+        (NULL == g_pet_ui.stroke_halo) ||
+        (NULL == g_pet_ui.stroke_hint))
+    {
+        g_pet_ui.bStrokeEnabled = false;
+        if (NULL != g_pet_ui.stroke_label)
+        {
+            lv_label_set_text(g_pet_ui.stroke_label, "Stroke N/A");
+        }
+        if (NULL != g_pet_ui.stroke_switch)
+        {
+            lv_obj_clear_state(g_pet_ui.stroke_switch, LV_STATE_CHECKED);
+            lv_obj_add_state(g_pet_ui.stroke_switch, LV_STATE_DISABLED);
+        }
+        rt_kprintf("agent pet: stroke UI allocation failed\n");
+    }
+    else
+    {
+        g_pet_ui.bStrokeInputEnabled = true;
+    }
+
+    return;
+}
+#endif /* AGENT_PET_USING_STROKE */
 
 /*
  * PET_CreateAttentionCue
@@ -1117,6 +1606,13 @@ static bool PET_LoadCustomGif(
     lv_obj_set_style_border_width(g_pet_ui.mascot_gif, 0, 0);
     lv_obj_set_style_pad_all(g_pet_ui.mascot_gif, 0, 0);
     lv_obj_add_flag(g_pet_ui.mascot_gif, LV_OBJ_FLAG_CLICKABLE);
+#if defined(AGENT_PET_USING_STROKE)
+    lv_obj_add_event_cb(
+        g_pet_ui.mascot_gif,
+        PET_StrokeInputEvent,
+        LV_EVENT_ALL,
+        NULL);
+#endif
     lv_obj_add_event_cb(
         g_pet_ui.mascot_gif,
 #ifdef AGENT_PET_BEHAVIOR_ENGINE
@@ -1668,6 +2164,9 @@ static void PET_UpdateBehavior(uint8_t ucAgentState,
 #if defined(AGENT_PET_USING_MEMORY_CALENDAR)
     bVisualBlocked = g_pet_ui.bMemoryPanelOpen;
 #endif
+#if defined(AGENT_PET_USING_STROKE)
+    bVisualBlocked = bVisualBlocked || g_pet_ui.bStrokeVisualActive;
+#endif
     if (!bVisualBlocked &&
         (g_pet_ui.ucRenderedBehaviorState !=
          (uint8_t)tSnapshot.eVisualState) &&
@@ -2087,6 +2586,10 @@ static void PET_RefreshStatus(lv_timer_t *pTimer)
 #endif
     if (!AGENTPETBLE_GetStatus(&tStatus))
     {
+#if defined(AGENT_PET_USING_STROKE)
+        g_pet_ui.bStrokeAllowed = false;
+        PET_CancelStroke();
+#endif
 #ifdef AGENT_PET_BEHAVIOR_ENGINE
         PET_UpdateBehavior(AGENTPET_STATE_IDLE, NULL);
 #endif
@@ -2098,6 +2601,20 @@ static void PET_RefreshStatus(lv_timer_t *pTimer)
         tStatus.tSnapshot.ucAggregateState : AGENTPET_STATE_IDLE;
 #if defined(AGENT_PET_USING_MEMORY_CALENDAR)
     PET_ArbitrateMemoryPanel(&tStatus);
+#endif
+#if defined(AGENT_PET_USING_STROKE)
+    g_pet_ui.bStrokeAllowed = PET_StrokeCanShow(&tStatus);
+    if (!g_pet_ui.bStrokeAllowed)
+    {
+        PET_CancelStroke();
+    }
+    else
+    {
+        PET_HandleStrokeEvent(MOMOSTROKE_Poll(
+            &g_pet_ui.tStrokeContext,
+            &g_pet_ui.tStrokeConfig,
+            lv_tick_get()));
+    }
 #endif
 #ifdef AGENT_PET_BEHAVIOR_ENGINE
     PET_UpdateBehavior(ucAgentState, &tStatus.tImageStatus);
@@ -2117,6 +2634,10 @@ static void PET_RefreshStatus(lv_timer_t *pTimer)
     }
     if (tStatus.bHasWoodenFishEvent)
     {
+#if defined(AGENT_PET_USING_STROKE)
+        g_pet_ui.bStrokeAllowed = false;
+        PET_CancelStroke();
+#endif
         ulPendingHitCount = tStatus.ulWoodenFishGeneration -
             g_pet_ui.ulRenderedWoodenFishGeneration;
         if (PET_MAX_REMOTE_HITS_PER_REFRESH < ulPendingHitCount)
@@ -2271,6 +2792,12 @@ static void PET_ApplyStateAnimation(
 
 #if defined(AGENT_PET_USING_MEMORY_CALENDAR)
     if (g_pet_ui.bMemoryPanelOpen)
+    {
+        return;
+    }
+#endif
+#if defined(AGENT_PET_USING_STROKE)
+    if (g_pet_ui.bStrokeVisualActive)
     {
         return;
     }
@@ -3035,6 +3562,10 @@ static void PET_MemoryEntryClicked(lv_event_t *pEvent)
         rt_kprintf("agent pet: memory panel allocation failed\n");
         return;
     }
+#if defined(AGENT_PET_USING_STROKE)
+    g_pet_ui.bStrokeAllowed = false;
+    PET_CancelStroke();
+#endif
     g_pet_ui.bMemoryPanelOpen = true;
     g_pet_ui.bMemoryClearConfirm = false;
     PET_UpdateMemoryCalendar();
@@ -4069,6 +4600,13 @@ static void pet_on_start(void)
     lv_img_set_antialias(g_pet_ui.mascot, false);
     lv_obj_center(g_pet_ui.mascot);
     lv_obj_add_flag(g_pet_ui.mascot, LV_OBJ_FLAG_CLICKABLE);
+#if defined(AGENT_PET_USING_STROKE)
+    lv_obj_add_event_cb(
+        g_pet_ui.mascot,
+        PET_StrokeInputEvent,
+        LV_EVENT_ALL,
+        NULL);
+#endif
     lv_obj_add_event_cb(
         g_pet_ui.mascot,
 #ifdef AGENT_PET_BEHAVIOR_ENGINE
@@ -4291,6 +4829,9 @@ static void pet_on_start(void)
         g_pet_ui.image_progress_bar, LV_RADIUS_CIRCLE, LV_PART_INDICATOR);
 
     PET_CreateMotionSwitch();
+#if defined(AGENT_PET_USING_STROKE)
+    PET_CreateStrokeUi();
+#endif
 
     PET_LoadMerit();
     PET_LoadQuestGarden();
@@ -4348,6 +4889,11 @@ static void pet_on_start(void)
 
 static void pet_on_stop(void)
 {
+#if defined(AGENT_PET_USING_STROKE)
+    g_pet_ui.bStrokeInputEnabled = false;
+    g_pet_ui.bStrokeAllowed = false;
+    PET_CancelStroke();
+#endif
 #if defined(AGENT_PET_USING_IMU) && !defined(BSP_USING_PC_SIMULATOR)
     PET_StopMotionDetection();
 #endif
@@ -4424,6 +4970,21 @@ static void pet_on_stop(void)
                 tMemoryCloseResult);
         }
         g_pet_ui.pMemoryPrefs = NULL;
+    }
+#endif
+#if defined(AGENT_PET_USING_STROKE)
+    if (NULL != g_pet_ui.pStrokePrefs)
+    {
+        rt_err_t tStrokeCloseResult;
+
+        tStrokeCloseResult = share_prefs_close(g_pet_ui.pStrokePrefs);
+        if (RT_EOK != tStrokeCloseResult)
+        {
+            rt_kprintf(
+                "agent pet: close stroke setting failed %d\n",
+                tStrokeCloseResult);
+        }
+        g_pet_ui.pStrokePrefs = NULL;
     }
 #endif
 #endif
