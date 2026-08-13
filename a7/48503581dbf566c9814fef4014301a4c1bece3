@@ -1,0 +1,50 @@
+work/watch_bt_audio_template/src/gui_apps/pet/app_pet.c
+  s_b991e4ff93e87f::t_4aa9ee0aacbf65 609,623-624,629-630,633-662,668-674,678-696,698-701,704-760,762-795,797-800,805-852,859-860,862-871,873-910,912-918,934-935,937,955-957,983-984,1021-1025
+  s_b991e4ff93e87f::t_299efa6e0f1de0 99-100,610-622,631-632,663-667,675-677,697,861
+  s_b991e4ff93e87f::t_421f51a7410a41 10-12,84-98,112-115,188-193,196-198,227-233,246-247
+  s_b991e4ff93e87f::t_0aabcd92a67405 761
+  s_b991e4ff93e87f::t_d5b728eab10f4d 625-628,702-703
+  s_b991e4ff93e87f::t_8caf3ba7ff221d 1950
+  s_b991e4ff93e87f::t_ff411c5972f1e2 2,248,1466-1472,1945-1949,1951-1960,2998-3004,3222-3224,3266-3284
+  s_b991e4ff93e87f::t_aee43ab9f79840 853-858,872,919-933,936,938-954,958-982,985-1020
+  s_b991e4ff93e87f::t_918877fed66140 796,801-804
+  s_b991e4ff93e87f::t_84683ebdf033ee 911
+tests/run_momo_stroking_host_test.ps1
+  s_b991e4ff93e87f::t_5714e39057142a 29-31
+  s_b991e4ff93e87f::t_6399e45b93bc3c 1-28,32-33
+work/watch_bt_audio_template/src/gui_apps/pet/SConscript
+  s_b991e4ff93e87f::t_421f51a7410a41 6-8
+docs/2026-08-14-momo-stroking-test-record.md
+  s_b991e4ff93e87f::t_5363900fedb010 1-85
+work/watch_bt_audio_template/project/Kconfig.proj
+  s_b991e4ff93e87f::t_421f51a7410a41 31-38
+  s_b991e4ff93e87f::t_c48c354ae3a9b5 39
+work/watch_bt_audio_template/src/gui_apps/pet/momo_stroking.c
+  s_b991e4ff93e87f::t_5f519ebbf2bf3d 360-370
+  s_b991e4ff93e87f::t_57837c4849788e 298-299
+  s_b991e4ff93e87f::t_6399e45b93bc3c 1-297,300-359,371-379
+work/watch_bt_audio_template/src/gui_apps/pet/momo_stroking.h
+  s_b991e4ff93e87f::t_6399e45b93bc3c 1-105,107-110
+  s_b991e4ff93e87f::t_5f519ebbf2bf3d 106
+tests/momo_stroking_host_test.c
+  s_b991e4ff93e87f::t_7c91574208d5bd 59-61
+  s_b991e4ff93e87f::t_6399e45b93bc3c 1-58,62-103,222-269,273-277
+  s_b991e4ff93e87f::t_d6889668e0dee5 104-172,174-190,197-221,270-272
+  s_b991e4ff93e87f::t_5f519ebbf2bf3d 173,191-196
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "a748503581dbf566c9814fef4014301a4c1bece3",
+  "prompts": {},
+  "sessions": {
+    "s_b991e4ff93e87f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd60c-817e-7cf2-aadd-448c400c6b83",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}
