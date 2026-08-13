@@ -1,0 +1,19 @@
+docs/2026-08-14-momo-stroking-design.md
+  s_b991e4ff93e87f::t_15c6d8ebdbf6a5 1-260
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "f1c7644d9fb800e57f74074766e611d52ed59999",
+  "prompts": {},
+  "sessions": {
+    "s_b991e4ff93e87f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd60c-817e-7cf2-aadd-448c400c6b83",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}
