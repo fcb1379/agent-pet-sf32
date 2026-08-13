@@ -1,0 +1,22 @@
+docs/2026-08-14-lvgl-pet-watch-idea-scan.md
+  s_b991e4ff93e87f::t_c024dae97b0921 1-85
+docs/2026-08-14-momo-stroking-prd.md
+  s_b991e4ff93e87f::t_0b953f7fd71489 14,26,147
+  s_b991e4ff93e87f::t_c024dae97b0921 1-13,15-25,27-146,148-185
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "34be90107b63bbd3c9524844d0449c922274c105",
+  "prompts": {},
+  "sessions": {
+    "s_b991e4ff93e87f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd60c-817e-7cf2-aadd-448c400c6b83",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}
