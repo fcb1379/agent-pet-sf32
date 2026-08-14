@@ -7,6 +7,9 @@
 #include "bf0_sibles_watchface.h"
 #include "dfs_posix.h"
 #include "badge_transfer.h"
+#ifdef LV_USING_FILE_RESOURCE
+#include "resource_update.h"
+#endif
 
 #define LOG_TAG "badge_xfer"
 #include "log.h"
@@ -29,6 +32,7 @@ typedef struct
     int16_t last_error;
     uint8_t state;
     uint8_t image_available;
+    uint8_t session_type;
 } badge_transfer_env_t;
 
 static badge_transfer_env_t g_badge = {
@@ -246,6 +250,24 @@ static int badge_commit_file(void)
 static watchface_event_ack_t badge_watchface_event(uint16_t event, uint16_t length, void *param)
 {
     int result = BLE_WATCHFACE_STATUS_OK;
+
+#ifdef LV_USING_FILE_RESOURCE
+    if (event == WATCHFACE_APP_START)
+    {
+        ble_watchface_start_ind_t *info = param;
+
+        if (info && info->type == WATCHFACE_FILE_TYPE_CUSTOMIZED)
+        {
+            g_badge.session_type = WATCHFACE_FILE_TYPE_CUSTOMIZED;
+            return RESUPDATE_HandleWatchfaceEvent(event, length, param);
+        }
+        g_badge.session_type = WATCHFACE_FILE_TYPE_BACKGROUND_PIC;
+    }
+    else if (g_badge.session_type == WATCHFACE_FILE_TYPE_CUSTOMIZED)
+    {
+        return RESUPDATE_HandleWatchfaceEvent(event, length, param);
+    }
+#endif
 
     (void)length;
     switch (event)

@@ -15,6 +15,7 @@ final class WatchProtocol {
 
     static final int SERIAL_CATEGORY_WATCHFACE = 0x04;
     static final int BACKGROUND_FILE_TYPE = 2;
+    static final int CUSTOMIZED_FILE_TYPE = 3;
     static final int PHONE_TYPE_ANDROID = 2;
     static final int CHUNK_SIZE = 180;
     static final int MAX_JPEG_SIZE = 2 * 1024 * 1024 - 4;
@@ -69,6 +70,10 @@ final class WatchProtocol {
         int padding = (4 - jpeg.length % 4) % 4;
         byte[] padded = join(jpeg, new byte[padding]);
         return join(padded, u32be(crc32Mpeg2(padded)));
+    }
+
+    static byte[] makeExactUpload(byte[] payload) {
+        return join(payload, u32be(crc32Mpeg2(payload)));
     }
 
     static long crc32Mpeg2(byte[] bytes) {

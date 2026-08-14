@@ -1,0 +1,716 @@
+{
+  "format": 1,
+  "version": "1",
+  "files": [
+    {
+      "path": "font/tiny55_full.ttf",
+      "size": 1087660,
+      "sha256": "fedbf6b05778912bc09dae482110c3bc16a31eb4b697a64d2cfd4b14033461ee"
+    },
+    {
+      "path": "resource/agent_pet_mascot.bin",
+      "size": 64849,
+      "sha256": "56cc8089113a5f685d6d0cade6ab6f515cda6a3abf758559356e80c17cbbf5a7"
+    },
+    {
+      "path": "resource/agent_pet_merit_plus_one.bin",
+      "size": 38884,
+      "sha256": "a388ce4ca23439e1ef8857022b53675663fb6f7a48b38ce0543417fa79cd97ab"
+    },
+    {
+      "path": "resource/agent_pet_wooden_fish.bin",
+      "size": 14031,
+      "sha256": "4ee9c26b8a2ad864797a336e83663a438098eb08be16ac80917303f01d698c63"
+    },
+    {
+      "path": "resource/agent_pet_wooden_fish_mallet.bin",
+      "size": 52504,
+      "sha256": "e6bd69f485739ba6170c50305a69377b1ee9af12008ff9bf13da95f2bfa13235"
+    },
+    {
+      "path": "resource/alarm_bg_edit_row.bin",
+      "size": 2011,
+      "sha256": "3686b4dae333ffc1a1b96b5d1e21d4bf4aa772fe3bd0ec755df68c3cecde9b12"
+    },
+    {
+      "path": "resource/alarm_bg_main.bin",
+      "size": 41518,
+      "sha256": "4f52980d8e83d90a8433821e14e33745547bd4a33a3f9a920498e5be64b2f1b3"
+    },
+    {
+      "path": "resource/alarm_button_delete.bin",
+      "size": 2384,
+      "sha256": "7546a8c7ec79eea3f83150e1dd29e78c2ce4cebc8da66150ced60c17bea472af"
+    },
+    {
+      "path": "resource/alarm_button_delete_pressed.bin",
+      "size": 2628,
+      "sha256": "dbf75bdc0c57dc9cf999456e74b16ca8a0d60f08b9eeb72537ba28f3bf97fd9f"
+    },
+    {
+      "path": "resource/alarm_button_snooze.bin",
+      "size": 2312,
+      "sha256": "4aad84464c0d2c2fc3667e8209b1b0ad9b0dfefa673c734abe8ff01f7e1b9244"
+    },
+    {
+      "path": "resource/alarm_button_snooze_pressed.bin",
+      "size": 2586,
+      "sha256": "5067f249999612e296649ee9209b24ac0848ac769903c6aace8d6c2abd0dae19"
+    },
+    {
+      "path": "resource/alarm_button_stop.bin",
+      "size": 2161,
+      "sha256": "31302c58c43584c9a516eb55044fcc62d64145bb37281181e14a37bf139de34d"
+    },
+    {
+      "path": "resource/alarm_button_stop_pressed.bin",
+      "size": 2183,
+      "sha256": "9130c6a1506d8ee4cf1c4cd26fb2f18b74f8ad6ce11205287033fad946bed51e"
+    },
+    {
+      "path": "resource/alarm_dial.bin",
+      "size": 11609,
+      "sha256": "7f939eb7a9798346baa9af57f738ef79aec44dda414169ee6e24cc626d97bfa7"
+    },
+    {
+      "path": "resource/alarm_icon_back.bin",
+      "size": 1592,
+      "sha256": "8ac6d81cbdc680c6d6da85d39491711ff99bf9ea1c060debdd2edf803e8b94b8"
+    },
+    {
+      "path": "resource/alarm_icon_cancel.bin",
+      "size": 2491,
+      "sha256": "81d8593ab9af71c9d1f3aeb50b75c6e760a3c485b901cd49df088008dbac5020"
+    },
+    {
+      "path": "resource/alarm_icon_close.bin",
+      "size": 1395,
+      "sha256": "6a1a874dfbcaf2fe4034b48a3c249b4c2ca1b3b646c9ee181b707249c4afdba5"
+    },
+    {
+      "path": "resource/alarm_icon_confirm.bin",
+      "size": 2485,
+      "sha256": "32d3da61b6167483d75e7ed6d5a733bf718ac01d3ea04f3b730104b78fb63110"
+    },
+    {
+      "path": "resource/alarm_icon_edit.bin",
+      "size": 2269,
+      "sha256": "9d903197742ca2d7fb233ef48cce8e1c8c2614da014809955641c0b8c03e2c3b"
+    },
+    {
+      "path": "resource/alarm_repeat_check.bin",
+      "size": 760,
+      "sha256": "931b93290cff83b54ef0100e432faaa0353453201cf9beac83ed8764fc11d329"
+    },
+    {
+      "path": "resource/alarm_toggle_off.bin",
+      "size": 1108,
+      "sha256": "abb7012fafde381762b08191d8c83934afbc5de15838c18bc3787791ce93d151"
+    },
+    {
+      "path": "resource/alarm_toggle_on.bin",
+      "size": 965,
+      "sha256": "fe37cc5714cb4656092dc628e30562394fdbb34ffea15cb28b53cf20aa3de063"
+    },
+    {
+      "path": "resource/alarm_wakeup_banner.bin",
+      "size": 2147,
+      "sha256": "8e25ab013206d9d626093caeb38fd983ebacd5076e86abdb1ab9c2d655eb80ba"
+    },
+    {
+      "path": "resource/clock_80.bin",
+      "size": 7832,
+      "sha256": "c099ff8c51f2b3f2e1788e95a877154671112594266068fd8fbe092ac0d3e0b3"
+    },
+    {
+      "path": "resource/clock_dial_point_h.bin",
+      "size": 12919,
+      "sha256": "74feac44f3cac16a66346e2ab3fa233a8cc071063e40c9218e885fca22710b65"
+    },
+    {
+      "path": "resource/clock_dial_point_m.bin",
+      "size": 19684,
+      "sha256": "1bff0d46cbe9f84df7e7c87b9456417e65f6aadbccc813443cbe4a56f13a9a4a"
+    },
+    {
+      "path": "resource/clock_dial_point_s.bin",
+      "size": 5892,
+      "sha256": "3f723263fdee453aefd6638d872b1c19805d8a3b33acca431f2f8cd5b62650c8"
+    },
+    {
+      "path": "resource/clock_rotate_bg_bg_tiny.bin",
+      "size": 45004,
+      "sha256": "4d4f1948eeede0623adb8bfbe1035573405055700d3c59affec86732ada285c0"
+    },
+    {
+      "path": "resource/clock_rotate_bg_hour_hand.bin",
+      "size": 16564,
+      "sha256": "ed45366d066ebc478a56ab1daa492e811515723604e336329bee3c01a7fa2877"
+    },
+    {
+      "path": "resource/clock_rotate_bg_minute_hand.bin",
+      "size": 16564,
+      "sha256": "0d6e17feff861d1fbc5e779534a28d54e3e76ea3e17d6172b589bf5508e3556b"
+    },
+    {
+      "path": "resource/clock_simple_bg.bin",
+      "size": 72588,
+      "sha256": "4a17f68ac61d4b43f7be743dbc913d97529e27227d18d69d20dc28fd8f9c9bbd"
+    },
+    {
+      "path": "resource/clock_simple_hour_hand.bin",
+      "size": 8194,
+      "sha256": "a6959cbbf10c74110403fd289418951c34683e475e46d7613bc9d8b9dbc73a27"
+    },
+    {
+      "path": "resource/clock_simple_minute_hand.bin",
+      "size": 9499,
+      "sha256": "3f928ca5360f6cae7fedc30f30ea5ed492e1f043ee119d57debf3a417e46957d"
+    },
+    {
+      "path": "resource/clock_simple_second_hand.bin",
+      "size": 13108,
+      "sha256": "0d3a0670ac07c153f977f9da058decaec33b191a22c09678305fd396e3ca464c"
+    },
+    {
+      "path": "resource/d3d_rotate.bin",
+      "size": 364804,
+      "sha256": "4eed35868bc163731bd7d230659d609d6a9a64c38e31265b90a0ab66cff974a9"
+    },
+    {
+      "path": "resource/eco.bin",
+      "size": 3955,
+      "sha256": "9a8a0a765cde2b758e272aa23393cb936a6a07a40f982384f69c5c76010d6bc9"
+    },
+    {
+      "path": "resource/house.bin",
+      "size": 2414,
+      "sha256": "e1fedba4582ac54434007bf563e981547a446c5f2ebc64390e0ce2f5082528a8"
+    },
+    {
+      "path": "resource/human1.bin",
+      "size": 12887,
+      "sha256": "c97bec0de8b807aa594257c452d22fe5959ebb4801c912ccff2cccc67fb49aa5"
+    },
+    {
+      "path": "resource/human2.bin",
+      "size": 11990,
+      "sha256": "d3f3c28bbbf01bb994557764c648e598b7c55659443f570311a78972af3e66d1"
+    },
+    {
+      "path": "resource/img_activity.bin",
+      "size": 6917,
+      "sha256": "8a4c6ad6d87fbd0ad6aa0e28949e28e2e86df304745fbcbbf14964ef8af4eb84"
+    },
+    {
+      "path": "resource/img_alarm.bin",
+      "size": 3258,
+      "sha256": "e57473c5a6a12d14a6b7dcc35671a490d035a84afffa21b54466fcd1443b7584"
+    },
+    {
+      "path": "resource/img_alarm_2.bin",
+      "size": 4247,
+      "sha256": "cf05b6791be745227d4f99e3ea158b3ca95ece2d2b9eee02aa4a73724c157eb1"
+    },
+    {
+      "path": "resource/img_calculator.bin",
+      "size": 2708,
+      "sha256": "a4024323955a888e12414e77dfdbf5c51f6edc0f2835ed03a57f7c912d83571c"
+    },
+    {
+      "path": "resource/img_calendar.bin",
+      "size": 1020,
+      "sha256": "a9de7913876e56dc01211a65b0e7b1d723ca398a2aa8f399214896a3ccdef4f7"
+    },
+    {
+      "path": "resource/img_camera.bin",
+      "size": 1815,
+      "sha256": "1070b4ee1484bcd8d19972d1ac49fb5fd0336b2b3852e44a0ce724572dccb0d9"
+    },
+    {
+      "path": "resource/img_clock.bin",
+      "size": 2449,
+      "sha256": "ef8f215edcceb09c5c595d5ea0f698083feca266c8d2f5f1ba548516aadc66b8"
+    },
+    {
+      "path": "resource/img_dial_bg.bin",
+      "size": 189561,
+      "sha256": "df93d6765b65d929e16738a81f0fa2bf8301a6680c9b85442152af36d577c46d"
+    },
+    {
+      "path": "resource/img_file_manager.bin",
+      "size": 7017,
+      "sha256": "bb5173586078513da88c9befac8bd87ceba3c50f58e50def34d3cf225e477766"
+    },
+    {
+      "path": "resource/img_group.bin",
+      "size": 3467,
+      "sha256": "2eb9aa253fe59e473ce6994211524240db621d031c1221c8b9c9d228d1a441b0"
+    },
+    {
+      "path": "resource/img_itunes.bin",
+      "size": 3426,
+      "sha256": "05dc5536620f1ce3e71da082f15461cf9ac51686bb8ecc13f614aa5f0d74e5bf"
+    },
+    {
+      "path": "resource/img_mail.bin",
+      "size": 3344,
+      "sha256": "9963f68146f6963709ed07f2cbd081203e2680510e83f14c0ab8ca3a95a43fc4"
+    },
+    {
+      "path": "resource/img_maps.bin",
+      "size": 1258,
+      "sha256": "e4009f995d2aecc9b6a8ab8f8336f6d7a08390498552b822cbca769a7ce6d107"
+    },
+    {
+      "path": "resource/img_messages.bin",
+      "size": 3480,
+      "sha256": "967d8213e13ab14b6c4e5318a13e6bbcf6c7d14c0e990b6183e678600fac8307"
+    },
+    {
+      "path": "resource/img_passbook.bin",
+      "size": 3899,
+      "sha256": "d85d5a7b26aba3d5e07e3dfe502e22ea31bc48c420f30bd329abd8ec54932357"
+    },
+    {
+      "path": "resource/img_pet.bin",
+      "size": 2370,
+      "sha256": "2c7b8f0911d63e8ba3a740fd8526abbd2c2a8f972b7af77f6e3fe8dfabf128b7"
+    },
+    {
+      "path": "resource/img_phone.bin",
+      "size": 1352,
+      "sha256": "75574baa17a62fe263fb7e3f70cf050b3d2f3105721cfb69eb310ea9b1d3bfca"
+    },
+    {
+      "path": "resource/img_photo_album.bin",
+      "size": 10317,
+      "sha256": "2ca948bd22cdaa32f983f0db51c9aa83886d08c502bd70a540edc63d046a3a65"
+    },
+    {
+      "path": "resource/img_photos.bin",
+      "size": 365,
+      "sha256": "5ccb741810a96988d75b1e55f8fc83a274df5b2f626f6e2bf25126b35b728f86"
+    },
+    {
+      "path": "resource/img_recorder.bin",
+      "size": 6580,
+      "sha256": "67afeefce644f6a2deb8a9bbc14179ed754aba22854e01758774fcdb6a0fe13f"
+    },
+    {
+      "path": "resource/img_remote.bin",
+      "size": 593,
+      "sha256": "21371c95ee8dd61990e0c4e483d54b6bfc9fd9b91f5f0d0103e70a4f55e182e1"
+    },
+    {
+      "path": "resource/img_settings.bin",
+      "size": 5426,
+      "sha256": "58eba4cf4e040a2769c4a5c740ba82df66db55e6c5986c6ec441fcb80796741d"
+    },
+    {
+      "path": "resource/img_stocks.bin",
+      "size": 476,
+      "sha256": "6ae0c754c9214409fac6892e0b9b0d028b6f52fe6fa80c148c0227935223853a"
+    },
+    {
+      "path": "resource/img_stopwatch.bin",
+      "size": 3805,
+      "sha256": "bbc95b270b916c5444a6209aa4296999fb4cd4bb752600326ecc572b6cbe083e"
+    },
+    {
+      "path": "resource/img_timer.bin",
+      "size": 3753,
+      "sha256": "198ed2241c53e8f09ce4b6118ee0f7b213644d027808fd0fbb86edc77a0b01a4"
+    },
+    {
+      "path": "resource/img_workout.bin",
+      "size": 3769,
+      "sha256": "0c7d3d5c268b86ad5730e574a8b42a969219b9abe6cb0361f9a40ebff9b4c4a4"
+    },
+    {
+      "path": "resource/img_world_clock.bin",
+      "size": 494,
+      "sha256": "9bd92bdfec9401579aa2ab8ffc9543c677ca6901e26119cb2d23e078872197fb"
+    },
+    {
+      "path": "resource/music_bg_blur_full.bin",
+      "size": 153454,
+      "sha256": "8e67f86b6449bcfd248fad5d9933d019a6bb546c099119db05841ee1d37fae51"
+    },
+    {
+      "path": "resource/music_bg_now_listening.bin",
+      "size": 3133,
+      "sha256": "b23f0c015c4a7dcb803684ae352aa221126d02de70691f9212c967804648dad5"
+    },
+    {
+      "path": "resource/music_bg_row_dark.bin",
+      "size": 2156,
+      "sha256": "075efefac083c9553e6d8bfd04aaed45d048bfbfb41679d66cee865f106a6f6b"
+    },
+    {
+      "path": "resource/music_icon_album.bin",
+      "size": 773,
+      "sha256": "f59c0ebbdae86994aea06c9eb39a0d86f7f9a7e88ab489410478e712d7fd28b3"
+    },
+    {
+      "path": "resource/music_icon_album_default.bin",
+      "size": 1019,
+      "sha256": "a9dd55bf8affabfd6b182eb89c4ca8a0866089a9c451e40f52f72a692811802e"
+    },
+    {
+      "path": "resource/music_icon_artist.bin",
+      "size": 943,
+      "sha256": "f3d1ddeff887b2f19ee01e1cd32f790bb3a61362c50643a4c56516c7601341a6"
+    },
+    {
+      "path": "resource/music_icon_artist_empty.bin",
+      "size": 2350,
+      "sha256": "197a28d7d25d294355ad0344b70f080253286c5854da8f53c06831df86cc893a"
+    },
+    {
+      "path": "resource/music_icon_back.bin",
+      "size": 1598,
+      "sha256": "a46bca2af3a364bbbe828fbd9cdf61528863d1056a5af6f59a257f68a8c4660a"
+    },
+    {
+      "path": "resource/music_icon_cancel.bin",
+      "size": 1395,
+      "sha256": "6a1a874dfbcaf2fe4034b48a3c249b4c2ca1b3b646c9ee181b707249c4afdba5"
+    },
+    {
+      "path": "resource/music_icon_go_album.bin",
+      "size": 689,
+      "sha256": "404167151f53aacb2d03c98604901892919c00596c27069412c0e7b7e4fd0a1f"
+    },
+    {
+      "path": "resource/music_icon_go_artist.bin",
+      "size": 956,
+      "sha256": "96a4827626293f67dc60869e178d43a020a1f45abdcbe21cd4c0224bb1d66bed"
+    },
+    {
+      "path": "resource/music_icon_library.bin",
+      "size": 1032,
+      "sha256": "21926524d0016b8eb00d23a086de63f0c782d7d8b271e1c6719c37aa1fabce9d"
+    },
+    {
+      "path": "resource/music_icon_list_play.bin",
+      "size": 493,
+      "sha256": "fc20af0c4934f1fba4ce31e0b507a0ae555adfdd17c241cdcb1c197ea80f995c"
+    },
+    {
+      "path": "resource/music_icon_more.bin",
+      "size": 1243,
+      "sha256": "9a4848bf3625c5254966efe0da612750f119395f4f8f832bf697e5caa2fa06fb"
+    },
+    {
+      "path": "resource/music_icon_next.bin",
+      "size": 1459,
+      "sha256": "b2fe40912d7c979d7126eb1513d18c0bcebde9f5652e709ca70968681805ed26"
+    },
+    {
+      "path": "resource/music_icon_not_playing.bin",
+      "size": 2713,
+      "sha256": "4356e14152cf69f517c7f4f8af39920954ac173ecc1db8adb9dd55244e65f2ff"
+    },
+    {
+      "path": "resource/music_icon_now_listening.bin",
+      "size": 1046,
+      "sha256": "f84d2a94ca82ef062c67801f7d0c9bbaa5ae70a379cf75e38cffff59a9c2898c"
+    },
+    {
+      "path": "resource/music_icon_pause.bin",
+      "size": 2234,
+      "sha256": "c60a6a5287df2960e16f977ba27914b9c48b58cf12dcf48f5ecc334855c23d7b"
+    },
+    {
+      "path": "resource/music_icon_phone_music.bin",
+      "size": 602,
+      "sha256": "8569ece7c4a92a72ecf5011a8b6528a5041e70d1576981a93c2122f43f77b2d9"
+    },
+    {
+      "path": "resource/music_icon_phone_play.bin",
+      "size": 1270,
+      "sha256": "99fc6d87d3d4360929da970ea00abf312c991fb8dffef5ebe68eb4ddcd42f7f6"
+    },
+    {
+      "path": "resource/music_icon_play.bin",
+      "size": 2387,
+      "sha256": "c2f83ecef4cb5cb78ae1a63f743db2a85ba669fa9aeaffc3b3aa24b4bb440826"
+    },
+    {
+      "path": "resource/music_icon_playing.bin",
+      "size": 2852,
+      "sha256": "fcb7852296c8915d046a4e9298a047b86eb014d447fa0060bcb89567ec490d2b"
+    },
+    {
+      "path": "resource/music_icon_playlist.bin",
+      "size": 852,
+      "sha256": "47c733f75f1ae6c400cf4e69830b44de907d8a9f8379d646276981c52e29dceb"
+    },
+    {
+      "path": "resource/music_icon_playlist_empty.bin",
+      "size": 2562,
+      "sha256": "006cd2504df334878112a0a620d533468495e108f78752def0d9b3f13e8f07e6"
+    },
+    {
+      "path": "resource/music_icon_previous.bin",
+      "size": 1462,
+      "sha256": "92e9690fe3fc5048f807131017d23d646942e73c44918c6ed9daabe821f3c67e"
+    },
+    {
+      "path": "resource/music_icon_remove.bin",
+      "size": 946,
+      "sha256": "3e3bbe05bc13dd8ec236a97f118e8c0b49e1ae87ca32bdc28c864017409d02c3"
+    },
+    {
+      "path": "resource/music_icon_repeat.bin",
+      "size": 807,
+      "sha256": "272b16a6fc34c69a9902cb32e456b2a2b3029fb38c7c04cc2b33c1d578a8c2bd"
+    },
+    {
+      "path": "resource/music_icon_repeat_one.bin",
+      "size": 874,
+      "sha256": "43bfb74ca748d558f7b89b3be1fe126b68b61fa1799ffe38e4707179eb9af4ae"
+    },
+    {
+      "path": "resource/music_icon_shuffle.bin",
+      "size": 893,
+      "sha256": "69f4c9cc9b1f7901c353c949f7fcb7771f4582d613d64da1b7268c92f04cd17e"
+    },
+    {
+      "path": "resource/music_icon_song.bin",
+      "size": 658,
+      "sha256": "cbf97e83f820a597451e7fb1ad097973eb6f24d5a6d1c0c80e48081402a33d61"
+    },
+    {
+      "path": "resource/music_icon_song_empty.bin",
+      "size": 1482,
+      "sha256": "7665097ccb5d60e7fff09be511030b7fc204ec2d1f18ed1570e50dea2c5ebc15"
+    },
+    {
+      "path": "resource/music_icon_volume_down.bin",
+      "size": 711,
+      "sha256": "250c69ce185617cfd3bb841b4c658512038f69ebe375b83f7c30d06729a4b642"
+    },
+    {
+      "path": "resource/music_icon_volume_up.bin",
+      "size": 1037,
+      "sha256": "5aed28cd10f25b91446bdf2287d18f8ab67299fb85719ae5ddb5579a439fc812"
+    },
+    {
+      "path": "resource/music_icon_watch_play.bin",
+      "size": 1357,
+      "sha256": "8e162f2becc190b64bc24239dad955d0f436cbd352b3c21e8af5a45fb202d41c"
+    },
+    {
+      "path": "resource/music_progress_track.bin",
+      "size": 192,
+      "sha256": "0be5818b1d04144c73278132f23c3b2c604ccd3e35dc5e7b95b8e6f036c2b78a"
+    },
+    {
+      "path": "resource/music_progress_value.bin",
+      "size": 306,
+      "sha256": "d42099a8e6031fe205a4af64d92664d595c0d2e6e91adb79372b4a014aad3a14"
+    },
+    {
+      "path": "resource/noise_bg_idle.bin",
+      "size": 86980,
+      "sha256": "8a01a40e3a0339600bea4c53ca2955b3943a880c19af50c6b66f8633cbd62664"
+    },
+    {
+      "path": "resource/noise_bg_loud.bin",
+      "size": 88487,
+      "sha256": "faf509b38ee940fe0e492b713cf5babced017d5f7a4523c7d4918c759b30ee64"
+    },
+    {
+      "path": "resource/noise_bg_normal.bin",
+      "size": 87484,
+      "sha256": "1f9bd37adcf391ab1d4bef3705741b2c802720999f65adf7558ea545c6ded88e"
+    },
+    {
+      "path": "resource/noise_close.bin",
+      "size": 1395,
+      "sha256": "6a1a874dfbcaf2fe4034b48a3c249b4c2ca1b3b646c9ee181b707249c4afdba5"
+    },
+    {
+      "path": "resource/noise_status_loud.bin",
+      "size": 810,
+      "sha256": "c8c4161a4e5539f7bfe683582e750473bc1b6077357e8d5905f518b1ba5feb3e"
+    },
+    {
+      "path": "resource/noise_status_normal.bin",
+      "size": 1015,
+      "sha256": "cc8fc98b49c8c79c57bdd31c157bca26334381324dc4369c00492aeede1d0f5c"
+    },
+    {
+      "path": "resource/noise_wave_idle.bin",
+      "size": 3644,
+      "sha256": "da6e97d104880538300d14099199e45e2542f52618db66df2c554d472e866821"
+    },
+    {
+      "path": "resource/noise_wave_loud_10.bin",
+      "size": 3321,
+      "sha256": "cb3df6215871b05174e016d5d064fda7e4f9dec75a871ce366cb1881acfe17ce"
+    },
+    {
+      "path": "resource/noise_wave_normal_10.bin",
+      "size": 9080,
+      "sha256": "f9884caaea8bae7294c038fa3fe9bb7fcb609a16aecfb73d19e27483c78aa019"
+    },
+    {
+      "path": "resource/recorder_icon_back.bin",
+      "size": 5123,
+      "sha256": "6d998279383617f943763913acafb01de44831c88db7555c514ddc060ff4e5ee"
+    },
+    {
+      "path": "resource/recorder_icon_close.bin",
+      "size": 5193,
+      "sha256": "5a3a33e0c86510be60322d3e1836cf2579b17f37ce4ed9546641c9fb8a135f1f"
+    },
+    {
+      "path": "resource/recorder_icon_forward.bin",
+      "size": 5201,
+      "sha256": "df4ee2b1bae0a51df320e3d34180d6f8e1115c835f990eff016cd0a8f79e744f"
+    },
+    {
+      "path": "resource/recorder_icon_microphone.bin",
+      "size": 5693,
+      "sha256": "c5a1f822f630a0556ec7c93685610f5a7398d302d8710bd84882e530f9b7fa02"
+    },
+    {
+      "path": "resource/recorder_icon_pause.bin",
+      "size": 4883,
+      "sha256": "ad62ac1067193f886d7d98a667e87e09a61a2493de166c03b0b6bee85a4cae5f"
+    },
+    {
+      "path": "resource/recorder_icon_play.bin",
+      "size": 4999,
+      "sha256": "e87881949baae0ea89dff76c91fc37c6d0aab3909a621d430e607ca4bbd9a7c9"
+    },
+    {
+      "path": "resource/recorder_icon_record.bin",
+      "size": 5227,
+      "sha256": "0e189c5a42fbbf2c11d65121faddfd792d1eea90d575b9d99723a5eaf22fa584"
+    },
+    {
+      "path": "resource/recorder_icon_rewind.bin",
+      "size": 5282,
+      "sha256": "77b6e6365ec2c6a569b6ac0edd8b0976a44f7551d5d65bd6c42d38bd2c468988"
+    },
+    {
+      "path": "resource/recorder_icon_stop.bin",
+      "size": 5033,
+      "sha256": "46bdd73c22231b50a5dc75c2a7307e8a6385e66d225b158aa4dba856bb6278d1"
+    },
+    {
+      "path": "resource/timer_bg_done.bin",
+      "size": 10691,
+      "sha256": "f1c870301da4562c000caadd4785cb2fd906749e74688edbbfa411102641cf75"
+    },
+    {
+      "path": "resource/timer_bg_row.bin",
+      "size": 1811,
+      "sha256": "081598a0299d446bb79550c58a01c292633a11e9c5346b7936fe4c04e8af8eaf"
+    },
+    {
+      "path": "resource/timer_button_start.bin",
+      "size": 2469,
+      "sha256": "3374eda5ecb17aa2ef5a6c0b1cc8778536ce7f730a83d78cd0f5f96bfefcfff2"
+    },
+    {
+      "path": "resource/timer_button_start_pressed.bin",
+      "size": 2699,
+      "sha256": "5210094d66ba7276150c33a707747262e38f0d7e9ff4fe5bdbf830518d3cf45c"
+    },
+    {
+      "path": "resource/timer_delete_row.bin",
+      "size": 1577,
+      "sha256": "139d861cdd4bcdd90b70e91006ed9cb16b27929aa73083ede72f4401193b674f"
+    },
+    {
+      "path": "resource/timer_icon_add.bin",
+      "size": 1406,
+      "sha256": "d652167257cd474bf73aa96e8e07a80a1215df4b9378e668a29d2d6feb1fe615"
+    },
+    {
+      "path": "resource/timer_icon_cancel.bin",
+      "size": 2491,
+      "sha256": "81d8593ab9af71c9d1f3aeb50b75c6e760a3c485b901cd49df088008dbac5020"
+    },
+    {
+      "path": "resource/timer_icon_cancel_done.bin",
+      "size": 1786,
+      "sha256": "61f54a6a0f4baac1aaaed7b6d726d7b738111a39788a7592401edebd47403ace"
+    },
+    {
+      "path": "resource/timer_icon_pause_big.bin",
+      "size": 1967,
+      "sha256": "aa99b92b1d743c000a9ed276399561d46e6393d2ea3531e366e3bc7fcdecb485"
+    },
+    {
+      "path": "resource/timer_icon_pause_small.bin",
+      "size": 1809,
+      "sha256": "1b98bc4e51ca501e33d5a5e30f4b8c78e23f03d488e6aa56e8d0b01de8ceb14e"
+    },
+    {
+      "path": "resource/timer_icon_preset.bin",
+      "size": 12226,
+      "sha256": "f5c2b31d4669dfcd5ac70931af9065507430599115cb5fc3649a449d4ccfe038"
+    },
+    {
+      "path": "resource/timer_icon_preset_add.bin",
+      "size": 9963,
+      "sha256": "b8f4038cbd45060b442c787f03937ed6bb6bf6a27c064b755c54d3de13997bca"
+    },
+    {
+      "path": "resource/timer_icon_remove_badge.bin",
+      "size": 790,
+      "sha256": "5fc3c3581a6ee7f0d52f7a63fc32905288a3839e61cd7946f7f98f891208ca0f"
+    },
+    {
+      "path": "resource/timer_icon_retry_done.bin",
+      "size": 2269,
+      "sha256": "64c9ac69219dd80f6f536c8aa8ba6b4b6cc6b52521516dba061ea9ebcb6a5be9"
+    },
+    {
+      "path": "resource/timer_icon_start_big.bin",
+      "size": 1768,
+      "sha256": "e968eaed9b0c3df71754efb3164b77cb2974524d1ebbbb1e380e25ccc7f471d2"
+    },
+    {
+      "path": "resource/timer_icon_start_small.bin",
+      "size": 1625,
+      "sha256": "3a743b3ca675bcb7972c81d9beb6969c9a38a9a812152bf5069ba29ed2f683f6"
+    },
+    {
+      "path": "resource/timer_minutes.bin",
+      "size": 501,
+      "sha256": "d3229295008d1436b8e3f9c5a2bb8679ae1033e23a02ac2830d5f20397463fc1"
+    },
+    {
+      "path": "resource/timer_picker_off.bin",
+      "size": 1650,
+      "sha256": "c7347831e2b4e06f829e8f81ba53aa80437e529c93377c2218739bd52b56d9ec"
+    },
+    {
+      "path": "resource/timer_picker_on.bin",
+      "size": 2195,
+      "sha256": "54415c45919a99d7adaa5b321f1609f01a579917112f700e9d3db5e68252123b"
+    },
+    {
+      "path": "resource/timer_ring.bin",
+      "size": 19700,
+      "sha256": "0c16e3d7bfc1e7bbbedacba0bee78ccfac0fd911df0a858245d1e11d47d9b1a5"
+    },
+    {
+      "path": "resource/timer_ring_done.bin",
+      "size": 18794,
+      "sha256": "85405fb0c15c704a2faf7a29ca481e4d7ab0e2252ee5cf68f2207f4f33376117"
+    },
+    {
+      "path": "resource/weather.bin",
+      "size": 3943,
+      "sha256": "a14f931845c3b563f334044427fa4757041dc4f8fd28c4c2c045a0b8628e8dbd"
+    }
+  ]
+}

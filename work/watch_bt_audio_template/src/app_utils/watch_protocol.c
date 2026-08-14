@@ -8,6 +8,9 @@
 #include "watch_protocol.h"
 #include "watch_alarm_service.h"
 #include "watch_settings.h"
+#ifdef LV_USING_FILE_RESOURCE
+#include "resource_update.h"
+#endif
 
 #define LOG_TAG "watch.proto"
 #include "log.h"
@@ -269,6 +272,49 @@ static int watch_protocol_badge(const char *payload, char *result, size_t result
     return RT_EOK;
 }
 
+#ifdef LV_USING_FILE_RESOURCE
+static int watch_protocol_resource(const char *payload, char *result, size_t result_size)
+{
+    char value[40];
+    char *base_version;
+    char *target_version;
+
+    if (!payload || strcmp(payload, "STATUS") == 0)
+    {
+        return RESUPDATE_Status(result, result_size);
+    }
+    if (strcmp(payload, "CANCEL") == 0)
+    {
+        if (RESUPDATE_Cancel() != RT_EOK)
+        {
+            return -RT_ERROR;
+        }
+        return RESUPDATE_Status(result, result_size);
+    }
+    if (strncmp(payload, "BEGIN,", 6) != 0 || rt_strlen(payload) >= sizeof(value))
+    {
+        return -RT_EINVAL;
+    }
+
+    rt_strncpy(value, payload + 6, sizeof(value) - 1);
+    value[sizeof(value) - 1] = '\0';
+    base_version = value;
+    target_version = strchr(base_version, ',');
+    if (!target_version)
+    {
+        return -RT_EINVAL;
+    }
+    *target_version++ = '\0';
+    if (strchr(target_version, ',') ||
+            RESUPDATE_Begin(base_version, target_version) != RT_EOK)
+    {
+        return -RT_EINVAL;
+    }
+
+    return RESUPDATE_Status(result, result_size);
+}
+#endif
+
 int watch_protocol_handle_request(const char *request, char *response, size_t response_size)
 {
     char frame[WATCH_PROTOCOL_MAX_REQUEST];
@@ -315,7 +361,11 @@ int watch_protocol_handle_request(const char *request, char *response, size_t re
     if (strcmp(parts[2], "HELLO") == 0 && count == 3)
     {
         watch_protocol_ok(response, response_size, parts[1],
+#ifdef LV_USING_FILE_RESOURCE
+                          "model=HS52;cap=TIME,BADGE,STATE,ALARM,TIME_REQ,RESOURCE");
+#else
                           "model=HS52;cap=TIME,BADGE,STATE,ALARM,TIME_REQ");
+#endif
     }
     else if (strcmp(parts[2], "TIME") == 0 && count == 4)
     {
@@ -367,6 +417,22 @@ int watch_protocol_handle_request(const char *request, char *response, size_t re
                                  ret == -RT_EINVAL ? WATCH_PROTOCOL_ERR_INVALID_VALUE : WATCH_PROTOCOL_ERR_RUNTIME);
         }
     }
+#ifdef LV_USING_FILE_RESOURCE
+    else if (strcmp(parts[2], "RESOURCE") == 0 && (count == 3 || count == 4))
+    {
+        ret = watch_protocol_resource(count == 4 ? parts[3] : "STATUS",
+                                      result, sizeof(result));
+        if (ret == RT_EOK)
+        {
+            watch_protocol_ok(response, response_size, parts[1], result);
+        }
+        else
+        {
+            watch_protocol_error(response, response_size, parts[1],
+                                 ret == -RT_EINVAL ? WATCH_PROTOCOL_ERR_INVALID_VALUE : WATCH_PROTOCOL_ERR_RUNTIME);
+        }
+    }
+#endif
     else if ((strcmp(parts[2], "MEDIA") == 0 || strcmp(parts[2], "NOTIFY") == 0 ||
               strcmp(parts[2], "FIND") == 0) && count == 3)
     {

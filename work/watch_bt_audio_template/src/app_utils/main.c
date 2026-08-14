@@ -135,7 +135,12 @@ int auto_mnt_init(void)
 
     return RT_EOK;
 }
+#if defined(AGENT_PET_EXTERNAL_RESOURCES)
+/* External fonts are opened by gui_lib_init(). Mount them one init sublevel first. */
+INIT_ENV_EXPORT_DYN(auto_mnt_init, 3);
+#else
 INIT_ENV_EXPORT(auto_mnt_init);
+#endif /* AGENT_PET_EXTERNAL_RESOURCES */
 #endif /* RT_USING_DFS */
 
 

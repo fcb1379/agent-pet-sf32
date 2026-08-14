@@ -35,6 +35,9 @@ uint8_t audio_server_get_max_volume(void);
 #define MUSIC_FONT_BODY                 (20U)
 #define MUSIC_FONT_SUBTITLE             (24U)
 #define MUSIC_FONT_TITLE                (28U)
+#define MUSIC_CONTROL_ICON_WIDTH         (76)
+#define MUSIC_PLAY_ICON_WIDTH            (96)
+#define MUSIC_VOLUME_ICON_WIDTH          (48)
 
 LV_IMG_DECLARE(music_bg_now_listening);
 LV_IMG_DECLARE(music_bg_row_dark);
@@ -289,7 +292,7 @@ static lv_obj_t *MUSIC_CreatePanel(
 
 static lv_obj_t *MUSIC_CreateImage(
     lv_obj_t *pParent,
-    const lv_img_dsc_t *pImage,
+    const void *pImage,
     lv_coord_t lX,
     lv_coord_t lY)
 {
@@ -312,7 +315,7 @@ static lv_obj_t *MUSIC_CreateImage(
 
 static lv_obj_t *MUSIC_CreateImageButton(
     lv_obj_t *pParent,
-    const lv_img_dsc_t *pImage,
+    const void *pImage,
     lv_coord_t lX,
     lv_coord_t lY,
     lv_event_cb_t pCallback,
@@ -590,7 +593,8 @@ static void MUSIC_ActionEvent(lv_event_t *pEvent)
 }
 
 static lv_obj_t *MUSIC_CreateControlButton(
-    const lv_img_dsc_t *pImage,
+    const void *pImage,
+    lv_coord_t lImageWidth,
     lv_coord_t lCenterX,
     lv_coord_t lY,
     MUSIC_ACTION eAction)
@@ -602,7 +606,7 @@ static lv_obj_t *MUSIC_CreateControlButton(
     return MUSIC_CreateImageButton(
         l_tMusicUi.pRoot,
         pImage,
-        lCenterX - ((lv_coord_t)pImage->header.w / 2),
+        lCenterX - (lImageWidth / 2),
         lY,
         MUSIC_ActionEvent,
         (void *)(uintptr_t)eAction);
@@ -610,7 +614,7 @@ static lv_obj_t *MUSIC_CreateControlButton(
 
 static void MUSIC_RenderBackHeader(const char *pTitle)
 {
-    (void)MUSIC_CreateImageButton(l_tMusicUi.pRoot, &music_icon_back,
+    (void)MUSIC_CreateImageButton(l_tMusicUi.pRoot, LV_EXT_IMG_GET(music_icon_back),
                                   0, 0, MUSIC_BackEvent, NULL);
     MUSIC_CreateLabelSized(l_tMusicUi.pRoot, pTitle, 68, 18,
                            LV_HOR_RES_MAX - 142,
@@ -622,7 +626,7 @@ static void MUSIC_RenderBackHeader(const char *pTitle)
 
 static void MUSIC_RenderCloseHeader(const char *pTitle)
 {
-    (void)MUSIC_CreateImageButton(l_tMusicUi.pRoot, &music_icon_cancel,
+    (void)MUSIC_CreateImageButton(l_tMusicUi.pRoot, LV_EXT_IMG_GET(music_icon_cancel),
                                   0, 0, MUSIC_BackEvent, NULL);
     MUSIC_CreateLabelSized(l_tMusicUi.pRoot, pTitle, 68, 18,
                            LV_HOR_RES_MAX - 142,
@@ -634,7 +638,7 @@ static void MUSIC_RenderCloseHeader(const char *pTitle)
 
 static lv_obj_t *MUSIC_CreateListRow(
     lv_coord_t lY,
-    const lv_img_dsc_t *pIcon,
+    const void *pIcon,
     const char *pTitle,
     const char *pSubtitle,
     lv_event_cb_t pCallback,
@@ -643,8 +647,15 @@ static lv_obj_t *MUSIC_CreateListRow(
     bool bNowListening;
     lv_obj_t *pRow;
 
-    bNowListening = ((MUSIC_PAGE_SOURCE == l_tMusicUi.ePage) &&
-                     (&music_icon_now_listening == pIcon));
+    bNowListening = (MUSIC_PAGE_SOURCE == l_tMusicUi.ePage);
+#ifdef LV_USING_FILE_RESOURCE
+    bNowListening = bNowListening &&
+                    (0 == strcmp((const char *)LV_EXT_IMG_GET(music_icon_now_listening),
+                                 (const char *)pIcon));
+#else
+    bNowListening = bNowListening &&
+                    (LV_EXT_IMG_GET(music_icon_now_listening) == pIcon);
+#endif
     pRow = lv_obj_create(l_tMusicUi.pRoot);
     if (NULL == pRow)
     {
@@ -778,7 +789,7 @@ static void MUSIC_CreateNowPlayingShortcut(void)
     (void)MUSIC_CreateImageButton(
         l_tMusicUi.pRoot,
         (MUSIC_SOURCE_NONE == l_tMusicUi.eSource) ?
-            &music_icon_not_playing : &music_icon_playing,
+            LV_EXT_IMG_GET(music_icon_not_playing) : LV_EXT_IMG_GET(music_icon_playing),
         LV_HOR_RES_MAX - 74,
         0,
         MUSIC_NowPlayingShortcutEvent,
@@ -794,14 +805,14 @@ static void MUSIC_RenderSourcePage(void)
     rt_kprintf("music: source header ready\n");
     MUSIC_CreateNowPlayingShortcut();
     rt_kprintf("music: source shortcut ready\n");
-    (void)MUSIC_CreateListRow(92, &music_icon_now_listening,
+    (void)MUSIC_CreateListRow(92, LV_EXT_IMG_GET(music_icon_now_listening),
                               "现在就听", NULL,
                               MUSIC_OpenLocalPageEvent,
                               (void *)(uintptr_t)MUSIC_PAGE_NOW_LISTENING);
-    (void)MUSIC_CreateListRow(196, &music_icon_library, "资料库", NULL,
+    (void)MUSIC_CreateListRow(196, LV_EXT_IMG_GET(music_icon_library), "资料库", NULL,
                               MUSIC_PageEvent,
                               (void *)(uintptr_t)MUSIC_PAGE_LIBRARY);
-    (void)MUSIC_CreateListRow(300, &music_icon_phone_music,
+    (void)MUSIC_CreateListRow(300, LV_EXT_IMG_GET(music_icon_phone_music),
                               "手机音乐控制", NULL,
                               MUSIC_OpenPhoneControlEvent, NULL);
     MUSIC_CreateLabel(l_tMusicUi.pRoot, "左滑退出", MUSIC_PAGE_MARGIN,
@@ -816,7 +827,7 @@ static void MUSIC_RenderSourcePage(void)
 static void MUSIC_RenderEmptyPage(
     const char *pTitle,
     const char *pText,
-    const lv_img_dsc_t *pIcon)
+    const void *pIcon)
 {
     MUSIC_RenderBackHeader(pTitle);
     MUSIC_CreateNowPlayingShortcut();
@@ -836,7 +847,7 @@ static void MUSIC_RenderNowListeningPage(void)
     MUSIC_CreateNowPlayingShortcut();
     if (l_tMusicUi.bTrackRemoved)
     {
-        (void)MUSIC_CreateImage(l_tMusicUi.pRoot, &music_icon_song_empty,
+        (void)MUSIC_CreateImage(l_tMusicUi.pRoot, LV_EXT_IMG_GET(music_icon_song_empty),
                                 (LV_HOR_RES_MAX - 120) / 2, 160);
         MUSIC_CreateLabelSized(
             l_tMusicUi.pRoot, "暂无正在播放的音乐", MUSIC_PAGE_MARGIN, 300,
@@ -845,9 +856,9 @@ static void MUSIC_RenderNowListeningPage(void)
             MUSIC_FONT_BODY);
         return;
     }
-    (void)MUSIC_CreateListRow(92, &music_icon_song, "那些花儿", "朴树",
+    (void)MUSIC_CreateListRow(92, LV_EXT_IMG_GET(music_icon_song), "那些花儿", "朴树",
                               MUSIC_OpenLocalPlayerEvent, NULL);
-    (void)MUSIC_CreateListRow(196, &music_icon_song, "晚风心里吹",
+    (void)MUSIC_CreateListRow(196, LV_EXT_IMG_GET(music_icon_song), "晚风心里吹",
                               "本地音乐",
                               MUSIC_OpenLocalPlayerEvent, NULL);
 
@@ -858,10 +869,10 @@ static void MUSIC_RenderLibraryPage(void)
 {
     MUSIC_RenderBackHeader("资料库");
     MUSIC_CreateNowPlayingShortcut();
-    (void)MUSIC_CreateListRow(92, &music_icon_playlist, "播放列表", NULL,
+    (void)MUSIC_CreateListRow(92, LV_EXT_IMG_GET(music_icon_playlist), "播放列表", NULL,
                               MUSIC_PageEvent,
                               (void *)(uintptr_t)MUSIC_PAGE_PLAYLISTS);
-    (void)MUSIC_CreateListRow(196, &music_icon_artist, "艺人", NULL,
+    (void)MUSIC_CreateListRow(196, LV_EXT_IMG_GET(music_icon_artist), "艺人", NULL,
                               MUSIC_PageEvent,
                               (void *)(uintptr_t)MUSIC_PAGE_ARTISTS);
 
@@ -873,16 +884,16 @@ static void MUSIC_RenderPlaylistsPage(void)
     if (l_tMusicUi.bTrackRemoved)
     {
         MUSIC_RenderEmptyPage("播放列表", "暂无播放列表",
-                              &music_icon_playlist_empty);
+                              LV_EXT_IMG_GET(music_icon_playlist_empty));
         return;
     }
     MUSIC_RenderBackHeader("播放列表");
     MUSIC_CreateNowPlayingShortcut();
-    (void)MUSIC_CreateListRow(92, &music_icon_song, "那些花儿", NULL,
+    (void)MUSIC_CreateListRow(92, LV_EXT_IMG_GET(music_icon_song), "那些花儿", NULL,
                               MUSIC_OpenLocalPlayerEvent, NULL);
-    (void)MUSIC_CreateListRow(196, &music_icon_song, "晚风心里吹", NULL,
+    (void)MUSIC_CreateListRow(196, LV_EXT_IMG_GET(music_icon_song), "晚风心里吹", NULL,
                               MUSIC_OpenLocalPlayerEvent, NULL);
-    (void)MUSIC_CreateListRow(300, &music_icon_song, "东风破", NULL,
+    (void)MUSIC_CreateListRow(300, LV_EXT_IMG_GET(music_icon_song), "东风破", NULL,
                               MUSIC_OpenLocalPlayerEvent, NULL);
 
     return;
@@ -892,18 +903,18 @@ static void MUSIC_RenderArtistsPage(void)
 {
     if (l_tMusicUi.bTrackRemoved)
     {
-        MUSIC_RenderEmptyPage("艺人", "暂无艺人", &music_icon_artist_empty);
+        MUSIC_RenderEmptyPage("艺人", "暂无艺人", LV_EXT_IMG_GET(music_icon_artist_empty));
         return;
     }
     MUSIC_RenderBackHeader("艺人");
     MUSIC_CreateNowPlayingShortcut();
-    (void)MUSIC_CreateListRow(92, &music_icon_artist, "朴树", NULL,
+    (void)MUSIC_CreateListRow(92, LV_EXT_IMG_GET(music_icon_artist), "朴树", NULL,
                               MUSIC_PageEvent,
                               (void *)(uintptr_t)MUSIC_PAGE_ARTIST_ALBUMS);
-    (void)MUSIC_CreateListRow(196, &music_icon_artist, "周杰伦", NULL,
+    (void)MUSIC_CreateListRow(196, LV_EXT_IMG_GET(music_icon_artist), "周杰伦", NULL,
                               MUSIC_PageEvent,
                               (void *)(uintptr_t)MUSIC_PAGE_ARTIST_ALBUMS);
-    (void)MUSIC_CreateListRow(300, &music_icon_artist, "蔡健雅", NULL,
+    (void)MUSIC_CreateListRow(300, LV_EXT_IMG_GET(music_icon_artist), "蔡健雅", NULL,
                               MUSIC_PageEvent,
                               (void *)(uintptr_t)MUSIC_PAGE_ARTIST_ALBUMS);
 
@@ -914,13 +925,13 @@ static void MUSIC_RenderArtistAlbumsPage(void)
 {
     MUSIC_RenderBackHeader("朴树");
     MUSIC_CreateNowPlayingShortcut();
-    (void)MUSIC_CreateListRow(92, &music_icon_album, "我的2002", "2002年",
+    (void)MUSIC_CreateListRow(92, LV_EXT_IMG_GET(music_icon_album), "我的2002", "2002年",
                               MUSIC_PageEvent,
                               (void *)(uintptr_t)MUSIC_PAGE_ALBUM);
-    (void)MUSIC_CreateListRow(196, &music_icon_album, "猎户星座", "2017",
+    (void)MUSIC_CreateListRow(196, LV_EXT_IMG_GET(music_icon_album), "猎户星座", "2017",
                               MUSIC_PageEvent,
                               (void *)(uintptr_t)MUSIC_PAGE_ALBUM);
-    (void)MUSIC_CreateListRow(300, &music_icon_album, "空帆船", "2018",
+    (void)MUSIC_CreateListRow(300, LV_EXT_IMG_GET(music_icon_album), "空帆船", "2018",
                               MUSIC_PageEvent,
                               (void *)(uintptr_t)MUSIC_PAGE_ALBUM);
 
@@ -942,10 +953,10 @@ static void MUSIC_OpenMoreEvent(lv_event_t *pEvent)
 
 static void MUSIC_RenderAlbumPage(void)
 {
-    (void)MUSIC_CreateImage(l_tMusicUi.pRoot, &music_bg_blur_full, 0, 0);
+    (void)MUSIC_CreateImage(l_tMusicUi.pRoot, LV_EXT_IMG_GET(music_bg_blur_full), 0, 0);
     MUSIC_RenderBackHeader("专辑");
     MUSIC_CreateNowPlayingShortcut();
-    (void)MUSIC_CreateImage(l_tMusicUi.pRoot, &music_icon_album_default,
+    (void)MUSIC_CreateImage(l_tMusicUi.pRoot, LV_EXT_IMG_GET(music_icon_album_default),
                             (LV_HOR_RES_MAX - 74) / 2, 76);
     MUSIC_CreateLabelSized(l_tMusicUi.pRoot, "那些花儿", MUSIC_PAGE_MARGIN,
                            158, LV_HOR_RES_MAX - (MUSIC_PAGE_MARGIN * 2),
@@ -955,14 +966,14 @@ static void MUSIC_RenderAlbumPage(void)
                            LV_HOR_RES_MAX - (MUSIC_PAGE_MARGIN * 2),
                            lv_color_hex(0xAAA7B2U), LV_TEXT_ALIGN_CENTER,
                            MUSIC_FONT_CAPTION);
-    (void)MUSIC_CreateImageButton(l_tMusicUi.pRoot, &music_icon_play,
+    (void)MUSIC_CreateImageButton(l_tMusicUi.pRoot, LV_EXT_IMG_GET(music_icon_play),
                                   36, 204, MUSIC_OpenLocalPlayerEvent, NULL);
-    (void)MUSIC_CreateImageButton(l_tMusicUi.pRoot, &music_icon_more,
+    (void)MUSIC_CreateImageButton(l_tMusicUi.pRoot, LV_EXT_IMG_GET(music_icon_more),
                                   LV_HOR_RES_MAX - 110, 215,
                                   MUSIC_OpenMoreEvent, NULL);
-    (void)MUSIC_CreateListRow(294, &music_icon_song, "那些花儿", NULL,
+    (void)MUSIC_CreateListRow(294, LV_EXT_IMG_GET(music_icon_song), "那些花儿", NULL,
                               MUSIC_OpenLocalPlayerEvent, NULL);
-    (void)MUSIC_CreateListRow(398, &music_icon_list_play,
+    (void)MUSIC_CreateListRow(398, LV_EXT_IMG_GET(music_icon_list_play),
                               "查看所有歌曲", NULL,
                               MUSIC_PageEvent,
                               (void *)(uintptr_t)MUSIC_PAGE_ALBUM_TRACKS);
@@ -974,11 +985,11 @@ static void MUSIC_RenderAlbumTracksPage(void)
 {
     MUSIC_RenderBackHeader("专辑歌曲");
     MUSIC_CreateNowPlayingShortcut();
-    (void)MUSIC_CreateListRow(92, &music_icon_song, "1  New Boy", NULL,
+    (void)MUSIC_CreateListRow(92, LV_EXT_IMG_GET(music_icon_song), "1  New Boy", NULL,
                               MUSIC_OpenLocalPlayerEvent, NULL);
-    (void)MUSIC_CreateListRow(196, &music_icon_song, "2  妈妈，我", NULL,
+    (void)MUSIC_CreateListRow(196, LV_EXT_IMG_GET(music_icon_song), "2  妈妈，我", NULL,
                               MUSIC_OpenLocalPlayerEvent, NULL);
-    (void)MUSIC_CreateListRow(300, &music_icon_song, "3  那些花儿", NULL,
+    (void)MUSIC_CreateListRow(300, LV_EXT_IMG_GET(music_icon_song), "3  那些花儿", NULL,
                               MUSIC_OpenLocalPlayerEvent, NULL);
 
     return;
@@ -1012,23 +1023,23 @@ static void MUSIC_RemoveRequestEvent(lv_event_t *pEvent)
 static void MUSIC_RenderMorePage(void)
 {
     const char *pMode;
-    const lv_img_dsc_t *pModeIcon;
+    const void *pModeIcon;
 
     pMode = (0U == l_tMusicUi.ucPlayMode) ? "顺序播放" :
             ((1U == l_tMusicUi.ucPlayMode) ? "随机播放" : "单曲循环");
-    pModeIcon = (0U == l_tMusicUi.ucPlayMode) ? &music_icon_repeat :
-                ((1U == l_tMusicUi.ucPlayMode) ? &music_icon_shuffle :
-                                                 &music_icon_repeat_one);
+    pModeIcon = (0U == l_tMusicUi.ucPlayMode) ? LV_EXT_IMG_GET(music_icon_repeat) :
+                ((1U == l_tMusicUi.ucPlayMode) ? LV_EXT_IMG_GET(music_icon_shuffle) :
+                                                 LV_EXT_IMG_GET(music_icon_repeat_one));
     MUSIC_RenderCloseHeader("那些花儿");
-    (void)MUSIC_CreateListRow(80, &music_icon_remove, "移除...", NULL,
+    (void)MUSIC_CreateListRow(80, LV_EXT_IMG_GET(music_icon_remove), "移除...", NULL,
                               MUSIC_RemoveRequestEvent, NULL);
     (void)MUSIC_CreateListRow(180, pModeIcon, pMode, NULL,
                               MUSIC_PlayModeEvent, NULL);
-    (void)MUSIC_CreateListRow(280, &music_icon_go_artist,
+    (void)MUSIC_CreateListRow(280, LV_EXT_IMG_GET(music_icon_go_artist),
                               "前往艺人", NULL,
                               MUSIC_PageEvent,
                               (void *)(uintptr_t)MUSIC_PAGE_ARTIST_ALBUMS);
-    (void)MUSIC_CreateListRow(380, &music_icon_go_album,
+    (void)MUSIC_CreateListRow(380, LV_EXT_IMG_GET(music_icon_go_album),
                               "前往专辑", NULL,
                               MUSIC_PageEvent,
                               (void *)(uintptr_t)MUSIC_PAGE_ALBUM);
@@ -1057,10 +1068,10 @@ static void MUSIC_RenderRemoveConfirmPage(void)
                       "你要从资料库删除，或\n从此设备移除吗？",
                       36, 125, LV_HOR_RES_MAX - 72,
                       lv_color_hex(0xF6F4FFU), LV_TEXT_ALIGN_CENTER);
-    (void)MUSIC_CreateListRow(250, &music_icon_remove,
+    (void)MUSIC_CreateListRow(250, LV_EXT_IMG_GET(music_icon_remove),
                               "从设备移除", NULL,
                               MUSIC_RemoveConfirmEvent, NULL);
-    (void)MUSIC_CreateListRow(354, &music_icon_remove,
+    (void)MUSIC_CreateListRow(354, LV_EXT_IMG_GET(music_icon_remove),
                               "从资料库删除", NULL,
                               MUSIC_RemoveConfirmEvent, NULL);
 
@@ -1069,7 +1080,7 @@ static void MUSIC_RenderRemoveConfirmPage(void)
 
 static void MUSIC_CreateArtwork(void)
 {
-    (void)MUSIC_CreateImage(l_tMusicUi.pRoot, &music_icon_album_default,
+    (void)MUSIC_CreateImage(l_tMusicUi.pRoot, LV_EXT_IMG_GET(music_icon_album_default),
                             (LV_HOR_RES_MAX - 74) / 2, 72);
 
     return;
@@ -1095,11 +1106,11 @@ static void MUSIC_RenderPlayerPage(void)
 
     ulAccent = (MUSIC_SOURCE_PHONE == l_tMusicUi.eSource) ?
         0x7D79F2U : 0xFF8A65U;
-    (void)MUSIC_CreateImage(l_tMusicUi.pRoot, &music_bg_blur_full, 0, 0);
+    (void)MUSIC_CreateImage(l_tMusicUi.pRoot, LV_EXT_IMG_GET(music_bg_blur_full), 0, 0);
     MUSIC_RenderBackHeader((MUSIC_SOURCE_PHONE == l_tMusicUi.eSource) ?
                            "手机音乐控制" : "正在播放");
     (void)MUSIC_CreateImageButton(
-        l_tMusicUi.pRoot, &music_icon_more, LV_HOR_RES_MAX - 74, 0,
+        l_tMusicUi.pRoot, LV_EXT_IMG_GET(music_icon_more), LV_HOR_RES_MAX - 74, 0,
         (MUSIC_SOURCE_PHONE == l_tMusicUi.eSource) ?
             MUSIC_OpenSettingsEvent : MUSIC_OpenMoreEvent,
         NULL);
@@ -1133,7 +1144,7 @@ static void MUSIC_RenderPlayerPage(void)
         LV_TEXT_ALIGN_CENTER,
         MUSIC_FONT_CAPTION);
 
-    (void)MUSIC_CreateImage(l_tMusicUi.pRoot, &music_progress_track,
+    (void)MUSIC_CreateImage(l_tMusicUi.pRoot, LV_EXT_IMG_GET(music_progress_track),
                             (LV_HOR_RES_MAX - 240) / 2, 260);
     l_tMusicUi.pProgress = lv_bar_create(l_tMusicUi.pRoot);
     lv_obj_set_size(l_tMusicUi.pProgress, 240, 12);
@@ -1150,7 +1161,7 @@ static void MUSIC_RenderPlayerPage(void)
         l_tMusicUi.pProgress,
         lv_color_hex(ulAccent),
         LV_PART_INDICATOR);
-    lv_obj_set_style_bg_img_src(l_tMusicUi.pProgress, &music_progress_value,
+    lv_obj_set_style_bg_img_src(l_tMusicUi.pProgress, LV_EXT_IMG_GET(music_progress_value),
                                 LV_PART_INDICATOR);
     lv_obj_set_style_radius(
         l_tMusicUi.pProgress,
@@ -1182,17 +1193,20 @@ static void MUSIC_RenderPlayerPage(void)
 
     lCenter = LV_HOR_RES_MAX / 2;
     (void)MUSIC_CreateControlButton(
-        &music_icon_previous,
+        LV_EXT_IMG_GET(music_icon_previous),
+        MUSIC_CONTROL_ICON_WIDTH,
         lCenter - 120,
         340,
         MUSIC_ACTION_PREVIOUS);
     l_tMusicUi.pPlayLabel = MUSIC_CreateControlButton(
-        &music_icon_play,
+        LV_EXT_IMG_GET(music_icon_play),
+        MUSIC_PLAY_ICON_WIDTH,
         lCenter,
         330,
         MUSIC_ACTION_TOGGLE);
     (void)MUSIC_CreateControlButton(
-        &music_icon_next,
+        LV_EXT_IMG_GET(music_icon_next),
+        MUSIC_CONTROL_ICON_WIDTH,
         lCenter + 120,
         340,
         MUSIC_ACTION_NEXT);
@@ -1220,7 +1234,7 @@ static void MUSIC_RenderVolumePage(void)
     (void)MUSIC_CreateImage(
         l_tMusicUi.pRoot,
         (MUSIC_SOURCE_PHONE == l_tMusicUi.eSource) ?
-            &music_icon_phone_play : &music_icon_watch_play,
+            LV_EXT_IMG_GET(music_icon_phone_play) : LV_EXT_IMG_GET(music_icon_watch_play),
         82,
         67);
     MUSIC_CreateLabelSized(
@@ -1283,12 +1297,14 @@ static void MUSIC_RenderVolumePage(void)
 
     lCenter = LV_HOR_RES_MAX / 2;
     (void)MUSIC_CreateControlButton(
-        &music_icon_volume_down,
+        LV_EXT_IMG_GET(music_icon_volume_down),
+        MUSIC_VOLUME_ICON_WIDTH,
         lCenter - 78,
         315,
         MUSIC_ACTION_VOLUME_DOWN);
     (void)MUSIC_CreateControlButton(
-        &music_icon_volume_up,
+        LV_EXT_IMG_GET(music_icon_volume_up),
+        MUSIC_VOLUME_ICON_WIDTH,
         lCenter + 78,
         315,
         MUSIC_ACTION_VOLUME_UP);
@@ -1417,7 +1433,7 @@ static void MUSIC_RefreshPhoneMetadata(const ble_ios_services_snapshot_t *pIos)
         lv_label_set_text(l_tMusicUi.pDetail, aDetail);
         lv_img_set_src(
             l_tMusicUi.pPlayLabel,
-            MUSIC_IsPhonePlaying() ? &music_icon_pause : &music_icon_play);
+            MUSIC_IsPhonePlaying() ? LV_EXT_IMG_GET(music_icon_pause) : LV_EXT_IMG_GET(music_icon_play));
     }
 
     return;
@@ -1497,7 +1513,7 @@ static void MUSIC_RefreshLocal(const LOCAL_MUSIC_SNAPSHOT *pLocal)
         lv_img_set_src(
             l_tMusicUi.pPlayLabel,
             MUSIC_IsLocalPlaying(pLocal->eState) ?
-                &music_icon_pause : &music_icon_play);
+                LV_EXT_IMG_GET(music_icon_pause) : LV_EXT_IMG_GET(music_icon_play));
         lv_bar_set_value(l_tMusicUi.pProgress, 0, LV_ANIM_OFF);
         lv_label_set_text(l_tMusicUi.pElapsed, "0:00");
         lv_label_set_text(l_tMusicUi.pDuration, "--:--");

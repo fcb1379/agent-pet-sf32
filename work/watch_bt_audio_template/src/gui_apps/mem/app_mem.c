@@ -8,6 +8,7 @@
  *********************/
 #include <stddef.h>
 #include <string.h>
+#include <sys/stat.h>
 #include "app_mem.h"
 
 #ifndef WIN32
@@ -445,18 +446,84 @@ lv_img_dsc_t *app_cache_copy_alloc(const void *copy, image_cache_t cache_type)
 {
     lv_img_dsc_t img_dsc_temp;
     lv_img_dsc_t *dsc;
+    lv_img_decoder_dsc_t tDecoder;
+    lv_img_src_t eSourceType;
+    lv_res_t eResult;
+    bool bDecoderOpened;
 
-    if (NULL == copy) return NULL;
+    if (NULL == copy)
+    {
+        return NULL;
+    }
 
-    img_dsc_temp = *(lv_img_dsc_t *) copy;
+    (void)memset(&img_dsc_temp, 0, sizeof(img_dsc_temp));
+    (void)memset(&tDecoder, 0, sizeof(tDecoder));
+    bDecoderOpened = false;
+    eSourceType = lv_img_src_get_type(copy);
+    if (LV_IMG_SRC_VARIABLE == eSourceType)
+    {
+        img_dsc_temp = *(const lv_img_dsc_t *)copy;
+    }
+    else if (LV_IMG_SRC_FILE == eSourceType)
+    {
+        struct stat tFileStat;
+
+        eResult = lv_img_decoder_open(&tDecoder, copy, lv_color_black(), 0);
+        if ((LV_RES_OK != eResult) || (NULL == tDecoder.img_data))
+        {
+            if (LV_RES_OK == eResult)
+            {
+                lv_img_decoder_close(&tDecoder);
+            }
+            return NULL;
+        }
+        bDecoderOpened = true;
+        img_dsc_temp.header = tDecoder.header;
+        img_dsc_temp.data = tDecoder.img_data;
+        img_dsc_temp.data_size = tDecoder.img_data_size;
+        if (0U == img_dsc_temp.data_size)
+        {
+            if ((0 == stat((const char *)copy, &tFileStat)) &&
+                    (tFileStat.st_size > (off_t)sizeof(lv_img_header_t)))
+            {
+                img_dsc_temp.data_size = (uint32_t)tFileStat.st_size -
+                    sizeof(lv_img_header_t);
+            }
+        }
+    }
+    else
+    {
+        return NULL;
+    }
+
+    if ((NULL == img_dsc_temp.data) || (0U == img_dsc_temp.data_size))
+    {
+        if (bDecoderOpened)
+        {
+            lv_img_decoder_close(&tDecoder);
+        }
+        return NULL;
+    }
 
     dsc = app_cache_img_alloc(img_dsc_temp.header.w, img_dsc_temp.header.h, img_dsc_temp.header.cf, img_dsc_temp.data_size, cache_type);
 
-    RT_ASSERT(dsc);
-    RT_ASSERT(img_dsc_temp.data);
+    if (NULL == dsc)
+    {
+        if (bDecoderOpened)
+        {
+            lv_img_decoder_close(&tDecoder);
+        }
+        return NULL;
+    }
     if (img_dsc_temp.data_size != dsc->data_size)
+    {
         rt_kprintf("warnning: app_cache_img_alloc diff size, cache %d, copy->data_size %d", dsc->data_size, img_dsc_temp.data_size);
+    }
     memcpy((uint8_t *)dsc->data, (uint8_t *)img_dsc_temp.data, dsc->data_size);
+    if (bDecoderOpened)
+    {
+        lv_img_decoder_close(&tDecoder);
+    }
 
     return dsc;
 }

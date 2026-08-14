@@ -13,6 +13,21 @@ dependencyResolutionManagement {
         maven { url "https://maven.aliyun.com/repository/google" }
         maven { url "https://maven.aliyun.com/repository/public" }
         mavenCentral()
+        maven {
+            name = "SiFli"
+            url = uri("https://packages.aliyun.com/maven/repository/2457536-release-P0YgD8/")
+            credentials {
+                username = providers.gradleProperty("sifliMavenUsername")
+                        .orElse(providers.environmentVariable("SIFLI_MAVEN_USERNAME"))
+                        .getOrElse("")
+                password = providers.gradleProperty("sifliMavenPassword")
+                        .orElse(providers.environmentVariable("SIFLI_MAVEN_PASSWORD"))
+                        .getOrElse("")
+            }
+            content {
+                includeGroup("com.sifli")
+            }
+        }
     }
 }
 

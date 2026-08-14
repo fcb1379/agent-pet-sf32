@@ -26,5 +26,10 @@ src.extend(app_objs)
 # #Add applications utils
 src.extend(SConscript(os.path.join(cwd, 'app_utils/SConscript'), variant_dir="app_utils", duplicate=0))
 
-group = DefineGroup('app', src, depend = ['PKG_USING_LITTLEVGL2RTT'], CPPPATH = inc)
+CPPDEFINES = []
+if GetDepend('AGENT_PET_EXTERNAL_RESOURCES'):
+    CPPDEFINES += ['LV_USING_FILE_RESOURCE']
+
+group = DefineGroup('app', src, depend = ['PKG_USING_LITTLEVGL2RTT'],
+                    CPPPATH = inc, CPPDEFINES = CPPDEFINES)
 Return('group')

@@ -33,11 +33,25 @@ if rtconfig.PLATFORM == 'cl':
 
 TARGET = rtconfig.OUTPUT_DIR + rtconfig.TARGET_NAME + '.' + rtconfig.TARGET_EXT
 # Prepare building environment
-objs = PrepareBuilding(None)
-env = GetCurrentEnv()
+if rtconfig.PLATFORM == 'cl':
+    objs = PrepareBuilding(None)
+    env = GetCurrentEnv()
+else:
+    env = Environment(tools = ['mingw'],
+        AS = rtconfig.AS, ASFLAGS = rtconfig.AFLAGS,
+        CC = rtconfig.CC, CCFLAGS = rtconfig.CFLAGS,
+        AR = rtconfig.AR, ARFLAGS = '-rc',
+        LINK = rtconfig.LINK, LINKFLAGS = rtconfig.LFLAGS)
+    env.PrependENVPath('PATH', rtconfig.EXEC_PATH)
+    objs = PrepareBuilding(env)
 
 # Build application.
 DoBuilding(TARGET, objs)
+
+# Build the offline DFU installer before generating the flash table so the
+# DFU_FLASH_CODE partition receives the matching dfu.bin image.
+if GetDepend('ENABLE_DFU'):
+    AddDFU(SIFLI_SDK)
 
 # Add flash table buld.
 AddFTAB(SIFLI_SDK,rtconfig.CHIP)

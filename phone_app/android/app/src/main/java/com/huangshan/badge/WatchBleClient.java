@@ -153,9 +153,25 @@ final class WatchBleClient {
         closeGatt();
     }
 
+    String disconnectForOta() {
+        BluetoothGatt current = gatt;
+        if (!isReady() || current == null || current.getDevice() == null) return null;
+
+        String address = current.getDevice().getAddress();
+        reconnectEnabled = false;
+        closeGatt();
+        postConnection("已切换到固件升级连接", false);
+        return address;
+    }
+
     private void closeGatt() {
         ready = false;
         serviceDiscoveryRequested = false;
+        linkNotificationsEnabled = false;
+        serialNotificationsEnabled = false;
+        linkCharacteristic = null;
+        serialCharacteristic = null;
+        serialAssembly = null;
         BluetoothGatt current = gatt;
         gatt = null;
         if (current != null) {
@@ -226,6 +242,59 @@ final class WatchBleClient {
             requestWatchface(WatchProtocol.watchfaceMessage(8, new byte[0]), 9);
             postProgress(100);
             postTransfer("图片已保存到手表");
+        });
+    }
+
+    void uploadResources(ResourceUpdatePackage updatePackage) {
+        runWorker(() -> {
+            if (!isReady()) throw new IllegalStateException("请先连接手表");
+            if (updatePackage == null) throw new IllegalArgumentException("请先选择资源差分包");
+
+            postTransfer("校验设备资源版本");
+            boolean sessionStarted = false;
+            try {
+                sendControl("RESOURCE", "BEGIN," + updatePackage.baseVersion + "," + updatePackage.targetVersion);
+                sessionStarted = true;
+            requestWatchface(WatchProtocol.watchfaceMessage(0,
+                    WatchProtocol.join(WatchProtocol.u16(WatchProtocol.CUSTOMIZED_FILE_TYPE),
+                            new byte[] { WatchProtocol.PHONE_TYPE_ANDROID },
+                            WatchProtocol.u32(updatePackage.payloadBytes))), 1);
+
+            int transferred = 0;
+            for (ResourceUpdatePackage.FileEntry file : updatePackage.files) {
+                byte[] upload = WatchProtocol.makeExactUpload(file.data);
+                byte[] wireName = (file.path + "|" + file.sha256).getBytes(StandardCharsets.US_ASCII);
+                requestWatchface(WatchProtocol.watchfaceMessage(2,
+                        WatchProtocol.join(WatchProtocol.u32(upload.length),
+                                WatchProtocol.u16(wireName.length), wireName)), 3);
+
+                int packetIndex = 0;
+                for (int offset = 0; offset < upload.length; offset += WatchProtocol.CHUNK_SIZE) {
+                    int end = Math.min(offset + WatchProtocol.CHUNK_SIZE, upload.length);
+                    byte[] data = new byte[end - offset];
+                    System.arraycopy(upload, offset, data, 0, data.length);
+                    requestWatchface(WatchProtocol.watchfaceMessage(4,
+                            WatchProtocol.join(WatchProtocol.u32(packetIndex++), data)), 5);
+                    int current = transferred + end;
+                    postProgress((int) ((long) current * 100 / updatePackage.payloadBytes));
+                    postTransfer("正在更新 " + file.path + "（" + current / 1024 + " KiB）");
+                }
+                requestWatchface(WatchProtocol.watchfaceMessage(6, new byte[0]), 7);
+                transferred += upload.length;
+            }
+            requestWatchface(WatchProtocol.watchfaceMessage(8, new byte[0]), 9);
+            postProgress(100);
+            } catch (Exception error) {
+                if (sessionStarted && isReady()) {
+                    try {
+                        sendControl("RESOURCE", "CANCEL");
+                    } catch (Exception ignored) {
+                        // Incomplete journals are also rolled back at next boot.
+                    }
+                }
+                throw error;
+            }
+            postTransfer("资源已差分升级到 " + updatePackage.targetVersion);
         });
     }
 
