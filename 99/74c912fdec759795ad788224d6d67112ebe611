@@ -1,0 +1,33 @@
+docs/2026-08-18-momo-memory-calendar-test-results.md
+  s_b991e4ff93e87f::t_5cba0c43918df0 1-105
+tests/momo_memory_calendar_host_test.c
+  s_b991e4ff93e87f::t_0c5241370f841f 1-339
+tests/run_momo_memory_calendar_host_test.ps1
+  s_b991e4ff93e87f::t_7bed2ee0f575f1 1-21
+work/watch_bt_audio_template/project/Kconfig.proj
+  s_b991e4ff93e87f::t_848a4ea18b8d28 31-38
+work/watch_bt_audio_template/src/gui_apps/pet/SConscript
+  s_b991e4ff93e87f::t_9fb05127433843 9-13
+work/watch_bt_audio_template/src/gui_apps/pet/app_pet.c
+  s_b991e4ff93e87f::t_14115c116a9f6a 3-4,11-13,87-108,179-187,201-203,206-208,235-241,254-260,513-515,1501-1503,1510-1512,1877-2647,2938-2940,3252-3254,3260-3262,3580-3583,3617-3619,3647-3649,3665-3685
+work/watch_bt_audio_template/src/gui_apps/pet/momo_memory_calendar.c
+  s_b991e4ff93e87f::t_39a46e07770878 1-789
+work/watch_bt_audio_template/src/gui_apps/pet/momo_memory_calendar.h
+  s_b991e4ff93e87f::t_01541da3ca08a9 1-85
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "9974c912fdec759795ad788224d6d67112ebe611",
+  "prompts": {},
+  "sessions": {
+    "s_b991e4ff93e87f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd60c-817e-7cf2-aadd-448c400c6b83",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}
