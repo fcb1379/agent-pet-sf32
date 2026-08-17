@@ -10,6 +10,11 @@ if not GetDepend('AGENT_PET_BEHAVIOR_ENGINE'):
     src = [item for item in src
            if os.path.basename(str(item)) != 'pet_state_assets.c']
 
+if not GetDepend('AGENT_PET_USING_MEMORY_CALENDAR'):
+    src = [item for item in src
+           if not str(item).replace('\\', '/').endswith(
+               '/momo_memory_calendar.c')]
+
 if not GetDepend('BSP_USING_PC_SIMULATOR'):
     local_ccflags = ' -Wall -Wextra -Wno-cast-function-type -Werror'
 

@@ -1,6 +1,8 @@
 #include <rtthread.h>
 #include <time.h>
 
+#include <string.h>
+
 #include "littlevgl2rtt.h"
 #include "app_mem.h"
 #include "agent_pet_ble_service.h"
@@ -9,6 +11,9 @@
 #include "local_music_player.h"
 #include "pet_behavior.h"
 #include "pet_state_assets.h"
+#if defined(AGENT_PET_USING_MEMORY_CALENDAR)
+    #include "momo_memory_calendar.h"
+#endif
 #if !defined(BSP_USING_PC_SIMULATOR) || !defined(AGENT_PET_STANDALONE_PREVIEW)
     #include "lv_ext_resource_manager.h"
     #include "gui_app_fwk.h"
@@ -85,6 +90,28 @@ LV_IMG_DECLARE(agent_pet_merit_plus_one);
 #define PET_BEHAVIOR_SAVE_INTERVAL_MS (300000U)
 #endif
 #define PET_BEHAVIOR_INVALID_STATE (0xFFU)
+#if defined(AGENT_PET_USING_MEMORY_CALENDAR)
+    #define PET_MEMORY_PREF_NAME "agent_pet_memory_calendar_v1"
+    #define PET_MEMORY_PREF_SLOT_A_KEY "mem_a"
+    #define PET_MEMORY_PREF_SLOT_B_KEY "mem_b"
+    #define PET_MEMORY_PREF_ACTIVE_KEY "mem_active"
+    #define PET_MEMORY_ENTRY_X (8)
+    #define PET_MEMORY_ENTRY_Y (5)
+    #define PET_MEMORY_ENTRY_WIDTH (44)
+    #define PET_MEMORY_ENTRY_HEIGHT (28)
+    #define PET_MEMORY_PANEL_MARGIN (12)
+    #define PET_MEMORY_PANEL_TOP (34)
+    #define PET_MEMORY_PANEL_WIDTH (LV_HOR_RES_MAX - 24)
+    #define PET_MEMORY_PANEL_HEIGHT (LV_VER_RES_MAX - 46)
+    #define PET_MEMORY_CELL_COLUMNS (6U)
+    #define PET_MEMORY_CELL_WIDTH (42)
+    #define PET_MEMORY_CELL_HEIGHT (36)
+    #define PET_MEMORY_CELL_GAP (5)
+    #define PET_MEMORY_CELL_START_X (42)
+    #define PET_MEMORY_CELL_START_Y (78)
+    #define PET_MEMORY_DATE_DIVIDER (10U)
+    #define PET_MEMORY_CLEAR_CONFIRM_SECONDS (5U)
+#endif
 #ifndef BSP_USING_PC_SIMULATOR
     #define PET_QUEST_PREF_NAME "agent_pet_quest_garden_pref_v1_"
     #define PET_QUEST_PREF_VERSION_KEY "q_ver"
@@ -164,6 +191,15 @@ typedef struct
     lv_obj_t *garden_label;
     lv_obj_t *seed_button;
     lv_obj_t *seed_label;
+#if defined(AGENT_PET_USING_MEMORY_CALENDAR)
+    lv_obj_t *memory_entry;
+    lv_obj_t *memory_panel;
+    lv_obj_t *memory_summary;
+    lv_obj_t *memory_status;
+    lv_obj_t *memory_clear_button;
+    lv_obj_t *memory_clear_label;
+    lv_obj_t *aMemoryCells[MOMO_MEMORY_DAY_COUNT];
+#endif
     lv_obj_t *status_label;
     lv_obj_t *task_label;
     lv_obj_t *behavior_label;
@@ -181,10 +217,16 @@ typedef struct
 #ifdef AGENT_PET_BEHAVIOR_ENGINE
     share_prefs_t *pBehaviorPrefs;
 #endif
+#if defined(AGENT_PET_USING_MEMORY_CALENDAR)
+    share_prefs_t *pMemoryPrefs;
+#endif
 #endif
     QUEST_GARDEN tQuestGarden;
 #ifdef AGENT_PET_BEHAVIOR_ENGINE
     PET_BEHAVIOR tBehavior;
+#endif
+#if defined(AGENT_PET_USING_MEMORY_CALENDAR)
+    MOMO_MEMORY_CONTEXT tMemoryCalendar;
 #endif
     uint32_t ulRenderedGeneration;
     uint32_t ulRenderedWoodenFishGeneration;
@@ -222,6 +264,13 @@ typedef struct
     bool bExpressionOverride;
     bool bTypingActive;
     bool bRenderedTypingActive;
+#if defined(AGENT_PET_USING_MEMORY_CALENDAR)
+    uint8_t ucMemoryDateDivider;
+    uint8_t ucMemoryClearConfirmSeconds;
+    bool bMemoryPanelOpen;
+    bool bMemoryClearConfirm;
+    bool bMemoryUiUnavailable;
+#endif
 #if defined(AGENT_PET_USING_IMU) && !defined(BSP_USING_PC_SIMULATOR)
     PET_MOTION_DETECTOR tMotionDetector;
     uint8_t ucMotionReadErrors;
@@ -241,6 +290,15 @@ static void PET_PlayWoodenFish(lv_event_t *pEvent);
 static void PET_HandleMascotEvent(lv_event_t *pEvent);
 static bool PET_PostBehaviorEvent(PET_BEHAVIOR_EVENT_TYPE eType,
                                   uint8_t ucValue);
+#endif
+#if defined(AGENT_PET_USING_MEMORY_CALENDAR)
+static void PET_RecordMemory(uint8_t ucEvent);
+static void PET_CloseMemoryPanel(void);
+static void PET_UpdateMemoryCalendarDay(void);
+static bool PET_MemoryStatusBlocksPanel(
+    const AGENTPET_BLE_STATUS *pStatus);
+static void PET_ArbitrateMemoryPanel(const AGENTPET_BLE_STATUS *pStatus);
+static bool PET_CreateMemoryPanel(void);
 #endif
 
 #if defined(AGENT_PET_USING_IMU) && !defined(BSP_USING_PC_SIMULATOR)
@@ -501,6 +559,9 @@ static void PET_MotionSample(lv_timer_t *pTimer)
         (void)PET_PostBehaviorEvent(PET_BEHAVIOR_EVENT_IMPACT, 0U);
 #endif
         PET_PlayWoodenFishAnimation(NULL);
+#if defined(AGENT_PET_USING_MEMORY_CALENDAR)
+        PET_RecordMemory(MOMO_MEMORY_EVENT_PLAY);
+#endif
         rt_kprintf("agent pet: motion wooden fish hit\n");
     }
     else if ((PET_MOTION_STATE_IDLE == ePreviousState) &&
@@ -1572,6 +1633,7 @@ static void PET_UpdateBehavior(uint8_t ucAgentState,
     uint32_t ulEpochSeconds;
     uint32_t ulNowMs;
     bool bSnapshotReady;
+    bool bVisualBlocked;
 
     if (!g_pet_ui.bBehaviorReady)
     {
@@ -1602,7 +1664,12 @@ static void PET_UpdateBehavior(uint8_t ucAgentState,
         return;
     }
 
-    if ((g_pet_ui.ucRenderedBehaviorState !=
+    bVisualBlocked = false;
+#if defined(AGENT_PET_USING_MEMORY_CALENDAR)
+    bVisualBlocked = g_pet_ui.bMemoryPanelOpen;
+#endif
+    if (!bVisualBlocked &&
+        (g_pet_ui.ucRenderedBehaviorState !=
          (uint8_t)tSnapshot.eVisualState) &&
         (NULL != g_pet_ui.behavior_label))
     {
@@ -1611,15 +1678,19 @@ static void PET_UpdateBehavior(uint8_t ucAgentState,
             "Agent Pet  |  %s",
             PETBEHAVIOR_VisualStateName(tSnapshot.eVisualState));
     }
-    if ((g_pet_ui.ucRenderedBehaviorState !=
+    if (!bVisualBlocked &&
+        (g_pet_ui.ucRenderedBehaviorState !=
          (uint8_t)tSnapshot.eVisualState) &&
         (NULL != g_pet_ui.root))
     {
         lv_obj_set_style_bg_color(
             g_pet_ui.root, PET_BehaviorColor(tSnapshot.eVisualState), 0);
     }
-    PET_ApplyStateAnimation(ucAgentState, tSnapshot.eVisualState);
-    if ((NULL != pImageStatus) &&
+    if (!bVisualBlocked)
+    {
+        PET_ApplyStateAnimation(ucAgentState, tSnapshot.eVisualState);
+    }
+    if (!bVisualBlocked && (NULL != pImageStatus) &&
         !g_pet_ui.bExpressionOverride &&
         !g_pet_ui.bTypingActive)
     {
@@ -2011,6 +2082,9 @@ static void PET_RefreshStatus(lv_timer_t *pTimer)
                 (unsigned long)g_pet_ui.ulMeritCount);
         }
     }
+#if defined(AGENT_PET_USING_MEMORY_CALENDAR)
+    PET_UpdateMemoryCalendarDay();
+#endif
     if (!AGENTPETBLE_GetStatus(&tStatus))
     {
 #ifdef AGENT_PET_BEHAVIOR_ENGINE
@@ -2022,6 +2096,9 @@ static void PET_RefreshStatus(lv_timer_t *pTimer)
     PET_RefreshExpressionAnimation(tStatus.bConnected);
     ucAgentState = tStatus.bHasSnapshot ?
         tStatus.tSnapshot.ucAggregateState : AGENTPET_STATE_IDLE;
+#if defined(AGENT_PET_USING_MEMORY_CALENDAR)
+    PET_ArbitrateMemoryPanel(&tStatus);
+#endif
 #ifdef AGENT_PET_BEHAVIOR_ENGINE
     PET_UpdateBehavior(ucAgentState, &tStatus.tImageStatus);
 #else
@@ -2192,6 +2269,12 @@ static void PET_ApplyStateAnimation(
     uint32_t ulTime;
     uint16_t usRepeatCount;
 
+#if defined(AGENT_PET_USING_MEMORY_CALENDAR)
+    if (g_pet_ui.bMemoryPanelOpen)
+    {
+        return;
+    }
+#endif
     if ((NULL == g_pet_ui.stage) ||
         (NULL == g_pet_ui.attention_panel) ||
         (NULL == g_pet_ui.typing_scene) ||
@@ -2436,6 +2519,807 @@ static void PET_ApplyStateAnimation(
 
     return;
 }
+
+#if defined(AGENT_PET_USING_MEMORY_CALENDAR)
+/*
+ * PET_MemoryCurrentDay
+ * 功能：读取设备本地RTC并转换为回忆日历自然日序号。
+ * 参数：无。
+ * 返回值：可信自然日序号，RTC无效返回0。
+ */
+static uint32_t PET_MemoryCurrentDay(void)
+{
+#ifndef BSP_USING_PC_SIMULATOR
+    time_t tNow;
+    struct tm tDate;
+    MOMO_MEMORY_DATE tMemoryDate;
+    uint32_t ulDay;
+
+    tNow = time(NULL);
+    if ((time_t)86400 > tNow)
+    {
+        return 0U;
+    }
+    if (NULL == gmtime_r(&tNow, &tDate))
+    {
+        return 0U;
+    }
+    if ((120 > tDate.tm_year) || (199 < tDate.tm_year) ||
+        (0 > tDate.tm_mon) || (11 < tDate.tm_mon) ||
+        (1 > tDate.tm_mday) || (31 < tDate.tm_mday))
+    {
+        return 0U;
+    }
+    tMemoryDate.usYear = (uint16_t)((uint16_t)tDate.tm_year + 1900U);
+    tMemoryDate.ucMonth = (uint8_t)((uint8_t)tDate.tm_mon + 1U);
+    tMemoryDate.ucDay = (uint8_t)tDate.tm_mday;
+    ulDay = 0U;
+    if (!MOMOMEMORY_DateToDay(&tMemoryDate, &ulDay))
+    {
+        return 0U;
+    }
+
+    return ulDay;
+#else
+    return 0U;
+#endif
+}
+
+/*
+ * PET_SaveMemoryCandidate
+ * 功能：把候选状态原子写入双槽，回读验证后提交代号和活动槽。
+ * 参数：
+ *   - pCandidate: 候选RAM状态，保存成功后就地提交元数据
+ * 返回值：完整保存成功返回true，否则返回false且不提交元数据。
+ */
+static bool PET_SaveMemoryCandidate(MOMO_MEMORY_CONTEXT *pCandidate)
+{
+    MOMO_MEMORY_PERSISTED tPersisted;
+    uint32_t ulNextGeneration;
+    uint8_t ucTargetSlot;
+#ifndef BSP_USING_PC_SIMULATOR
+    MOMO_MEMORY_PERSISTED tReadBack;
+    const char *pKey;
+    int32_t lReadLength;
+    rt_err_t tResult;
+#endif
+
+    if (NULL == pCandidate)
+    {
+        return false;
+    }
+    ulNextGeneration = pCandidate->ulGeneration + 1U;
+    ucTargetSlot = (MOMO_MEMORY_SLOT_A == pCandidate->ucActiveSlot) ?
+        MOMO_MEMORY_SLOT_B : MOMO_MEMORY_SLOT_A;
+    if (!MOMOMEMORY_Export(
+            pCandidate, ulNextGeneration, &tPersisted))
+    {
+        return false;
+    }
+#ifndef BSP_USING_PC_SIMULATOR
+    if (NULL == g_pet_ui.pMemoryPrefs)
+    {
+        return false;
+    }
+    pKey = (MOMO_MEMORY_SLOT_A == ucTargetSlot) ?
+        PET_MEMORY_PREF_SLOT_A_KEY : PET_MEMORY_PREF_SLOT_B_KEY;
+    tResult = share_prefs_set_block(
+        g_pet_ui.pMemoryPrefs, pKey,
+        &tPersisted, (int32_t)sizeof(tPersisted));
+    if (RT_EOK != tResult)
+    {
+        rt_kprintf("agent pet: memory slot write failed %d\n", tResult);
+        return false;
+    }
+    rt_memset(&tReadBack, 0, sizeof(tReadBack));
+    lReadLength = share_prefs_get_block(
+        g_pet_ui.pMemoryPrefs, pKey,
+        &tReadBack, (int32_t)sizeof(tReadBack));
+    if (((int32_t)sizeof(tReadBack) != lReadLength) ||
+        !MOMOMEMORY_ValidatePersisted(&tReadBack) ||
+        (0 != memcmp(&tReadBack, &tPersisted, sizeof(tPersisted))))
+    {
+        rt_kprintf(
+            "agent pet: memory slot verify failed slot=%u len=%ld\n",
+            ucTargetSlot, (long)lReadLength);
+        return false;
+    }
+#endif
+    if (!MOMOMEMORY_Commit(
+            pCandidate, ulNextGeneration, ucTargetSlot))
+    {
+        return false;
+    }
+#ifndef BSP_USING_PC_SIMULATOR
+    tResult = share_prefs_set_int(
+        g_pet_ui.pMemoryPrefs,
+        PET_MEMORY_PREF_ACTIVE_KEY,
+        (int32_t)ucTargetSlot);
+    if (RT_EOK != tResult)
+    {
+        rt_kprintf("agent pet: memory slot hint failed %d\n", tResult);
+    }
+#endif
+
+    return true;
+}
+
+/*
+ * PET_LoadMemoryCalendar
+ * 功能：读取并校验双槽回忆数据；存储不可用时安全退化为RAM状态。
+ */
+static void PET_LoadMemoryCalendar(void)
+{
+    MOMO_MEMORY_PERSISTED tSlotA;
+    MOMO_MEMORY_PERSISTED tSlotB;
+    const MOMO_MEMORY_PERSISTED *pSlotA;
+    const MOMO_MEMORY_PERSISTED *pSlotB;
+    uint8_t ucPreferredSlot;
+#ifndef BSP_USING_PC_SIMULATOR
+    int32_t lReadLength;
+    int32_t lPreferredSlot;
+#endif
+
+    pSlotA = NULL;
+    pSlotB = NULL;
+    ucPreferredSlot = MOMO_MEMORY_SLOT_NONE;
+    rt_memset(&tSlotA, 0, sizeof(tSlotA));
+    rt_memset(&tSlotB, 0, sizeof(tSlotB));
+#ifndef BSP_USING_PC_SIMULATOR
+    g_pet_ui.pMemoryPrefs = share_prefs_open(
+        PET_MEMORY_PREF_NAME, SHAREPREFS_MODE_PRIVATE);
+    if (NULL != g_pet_ui.pMemoryPrefs)
+    {
+        lReadLength = share_prefs_get_block(
+            g_pet_ui.pMemoryPrefs, PET_MEMORY_PREF_SLOT_A_KEY,
+            &tSlotA, (int32_t)sizeof(tSlotA));
+        if ((int32_t)sizeof(tSlotA) == lReadLength)
+        {
+            pSlotA = &tSlotA;
+        }
+        lReadLength = share_prefs_get_block(
+            g_pet_ui.pMemoryPrefs, PET_MEMORY_PREF_SLOT_B_KEY,
+            &tSlotB, (int32_t)sizeof(tSlotB));
+        if ((int32_t)sizeof(tSlotB) == lReadLength)
+        {
+            pSlotB = &tSlotB;
+        }
+        lPreferredSlot = share_prefs_get_int(
+            g_pet_ui.pMemoryPrefs,
+            PET_MEMORY_PREF_ACTIVE_KEY,
+            (int32_t)MOMO_MEMORY_SLOT_NONE);
+        if (((int32_t)MOMO_MEMORY_SLOT_A == lPreferredSlot) ||
+            ((int32_t)MOMO_MEMORY_SLOT_B == lPreferredSlot))
+        {
+            ucPreferredSlot = (uint8_t)lPreferredSlot;
+        }
+    }
+#endif
+    if (!MOMOMEMORY_Init(
+            &g_pet_ui.tMemoryCalendar,
+            pSlotA, pSlotB, ucPreferredSlot))
+    {
+        rt_kprintf("agent pet: memory calendar init failed\n");
+        (void)MOMOMEMORY_Init(
+            &g_pet_ui.tMemoryCalendar, NULL, NULL,
+            MOMO_MEMORY_SLOT_NONE);
+    }
+    if (((NULL != pSlotA) && !MOMOMEMORY_ValidatePersisted(pSlotA)) ||
+        ((NULL != pSlotB) && !MOMOMEMORY_ValidatePersisted(pSlotB)))
+    {
+        rt_kprintf("agent pet: invalid memory calendar slot ignored\n");
+    }
+
+    return;
+}
+
+/*
+ * PET_MemorySetSummary
+ * 功能：显示选中回忆日的本地日期和非敏感事件摘要。
+ */
+static void PET_MemorySetSummary(uint8_t ucIndex)
+{
+    MOMO_MEMORY_DATE tDate;
+    uint32_t ulDay;
+    uint8_t ucEvents;
+    const char *pSummary;
+
+    if ((NULL == g_pet_ui.memory_summary) ||
+        !MOMOMEMORY_GetDay(
+            &g_pet_ui.tMemoryCalendar, ucIndex, &ulDay, &ucEvents) ||
+        (0U == ulDay) || !MOMOMEMORY_DayToDate(ulDay, &tDate))
+    {
+        if (NULL != g_pet_ui.memory_summary)
+        {
+            lv_label_set_text(g_pet_ui.memory_summary, "No trusted date");
+        }
+        return;
+    }
+    switch (ucEvents)
+    {
+    case 0U:
+        pSummary = "quiet day";
+        break;
+    case MOMO_MEMORY_EVENT_MEET:
+        pSummary = "met Momo";
+        break;
+    case MOMO_MEMORY_EVENT_PLAY:
+        pSummary = "played";
+        break;
+    case MOMO_MEMORY_EVENT_ACHIEVEMENT:
+        pSummary = "achievement";
+        break;
+    case MOMO_MEMORY_EVENT_MEET | MOMO_MEMORY_EVENT_PLAY:
+        pSummary = "met, played";
+        break;
+    case MOMO_MEMORY_EVENT_MEET | MOMO_MEMORY_EVENT_ACHIEVEMENT:
+        pSummary = "met, achievement";
+        break;
+    case MOMO_MEMORY_EVENT_PLAY | MOMO_MEMORY_EVENT_ACHIEVEMENT:
+        pSummary = "played, achievement";
+        break;
+    default:
+        pSummary = "met, played, achievement";
+        break;
+    }
+    lv_label_set_text_fmt(
+        g_pet_ui.memory_summary,
+        "%u/%u/%u: %s",
+        tDate.usYear, tDate.ucMonth, tDate.ucDay, pSummary);
+
+    return;
+}
+
+/*
+ * PET_UpdateMemoryCalendar
+ * 功能：事件驱动刷新30个固定回忆点和RTC状态。
+ */
+static void PET_UpdateMemoryCalendar(void)
+{
+    lv_obj_t *pCell;
+    uint32_t ulDay;
+    uint8_t ucEvents;
+    uint8_t ucIndex;
+
+    if (NULL == g_pet_ui.memory_panel)
+    {
+        return;
+    }
+    for (ucIndex = 0U; ucIndex < MOMO_MEMORY_DAY_COUNT; ucIndex++)
+    {
+        pCell = g_pet_ui.aMemoryCells[ucIndex];
+        if ((NULL == pCell) ||
+            !MOMOMEMORY_GetDay(
+                &g_pet_ui.tMemoryCalendar, ucIndex, &ulDay, &ucEvents))
+        {
+            continue;
+        }
+        lv_obj_set_style_bg_color(pCell, lv_color_hex(0x233840U), 0);
+        lv_obj_set_style_bg_opa(pCell, LV_OPA_40, 0);
+        lv_obj_set_style_border_width(pCell, 1, 0);
+        lv_obj_set_style_border_color(pCell, lv_color_hex(0x556B73U), 0);
+        lv_obj_set_style_radius(pCell, 8, 0);
+        if (MOMO_MEMORY_EVENT_ALL == ucEvents)
+        {
+            lv_obj_set_style_bg_color(pCell, lv_color_hex(0x65D69EU), 0);
+            lv_obj_set_style_bg_opa(pCell, LV_OPA_COVER, 0);
+            lv_obj_set_style_border_width(pCell, 3, 0);
+            lv_obj_set_style_border_color(pCell, lv_color_white(), 0);
+        }
+        else if (0U != (ucEvents & MOMO_MEMORY_EVENT_ACHIEVEMENT))
+        {
+            lv_obj_set_style_bg_color(pCell, lv_color_hex(0x8A4268U), 0);
+            lv_obj_set_style_bg_opa(pCell, LV_OPA_50, 0);
+            lv_obj_set_style_border_width(pCell, 4, 0);
+            lv_obj_set_style_border_color(pCell, lv_color_hex(0xFF8AAEU), 0);
+        }
+        else if (0U != (ucEvents & MOMO_MEMORY_EVENT_PLAY))
+        {
+            lv_obj_set_style_bg_color(pCell, lv_color_hex(0xFFDD6AU), 0);
+            lv_obj_set_style_bg_opa(pCell, LV_OPA_70, 0);
+            lv_obj_set_style_border_width(pCell, 1, 0);
+        }
+        else if (0U != (ucEvents & MOMO_MEMORY_EVENT_MEET))
+        {
+            lv_obj_set_style_border_width(pCell, 2, 0);
+            lv_obj_set_style_border_color(pCell, lv_color_hex(0x75ECFFU), 0);
+        }
+        lv_obj_set_style_outline_width(
+            pCell,
+            (MOMO_MEMORY_DAY_COUNT - 1U == ucIndex) ? 2 : 0,
+            0);
+        lv_obj_set_style_outline_color(pCell, lv_color_white(), 0);
+        lv_obj_set_style_outline_pad(pCell, 2, 0);
+    }
+    if (NULL != g_pet_ui.memory_status)
+    {
+        if (g_pet_ui.tMemoryCalendar.bRtcInvalid)
+        {
+            lv_label_set_text(
+                g_pet_ui.memory_status, "Time sync needed before saving");
+        }
+        else if (g_pet_ui.tMemoryCalendar.bRollback)
+        {
+            lv_label_set_text(
+                g_pet_ui.memory_status, "Time changed; history protected");
+        }
+        else
+        {
+            lv_label_set_text(
+                g_pet_ui.memory_status, "Local only - recent 30 days");
+        }
+    }
+    PET_MemorySetSummary(MOMO_MEMORY_DAY_COUNT - 1U);
+
+    return;
+}
+
+/*
+ * PET_RecordMemory
+ * 功能：记录一次本机内部事件，只有位变化才触发双槽保存。
+ */
+static void PET_RecordMemory(uint8_t ucEvent)
+{
+    MOMO_MEMORY_CONTEXT tCandidate;
+    MOMO_MEMORY_RESULT tResult;
+
+    tCandidate = g_pet_ui.tMemoryCalendar;
+    if (!MOMOMEMORY_Record(
+            &tCandidate, PET_MemoryCurrentDay(), ucEvent, &tResult))
+    {
+        return;
+    }
+    if (tResult.bSaveRequired && !PET_SaveMemoryCandidate(&tCandidate))
+    {
+        tCandidate.bDirty = true;
+        rt_kprintf("agent pet: memory event kept in RAM event=%u\n", ucEvent);
+    }
+    g_pet_ui.tMemoryCalendar = tCandidate;
+    if (tResult.bChanged)
+    {
+        PET_UpdateMemoryCalendar();
+    }
+
+    return;
+}
+
+/*
+ * PET_UpdateMemoryCalendarDay
+ * 功能：以现有状态timer的1秒软件分频处理日期变化，无同日Flash写。
+ */
+static void PET_UpdateMemoryCalendarDay(void)
+{
+    MOMO_MEMORY_CONTEXT tCandidate;
+    MOMO_MEMORY_RESULT tResult;
+    bool bPreviousRtcInvalid;
+    bool bPreviousRollback;
+
+    g_pet_ui.ucMemoryDateDivider++;
+    if (PET_MEMORY_DATE_DIVIDER > g_pet_ui.ucMemoryDateDivider)
+    {
+        return;
+    }
+    g_pet_ui.ucMemoryDateDivider = 0U;
+    if (g_pet_ui.bMemoryClearConfirm &&
+        (0U != g_pet_ui.ucMemoryClearConfirmSeconds))
+    {
+        g_pet_ui.ucMemoryClearConfirmSeconds--;
+        if (0U == g_pet_ui.ucMemoryClearConfirmSeconds)
+        {
+            g_pet_ui.bMemoryClearConfirm = false;
+            if (NULL != g_pet_ui.memory_clear_label)
+            {
+                lv_label_set_text(g_pet_ui.memory_clear_label, "Clear");
+            }
+        }
+    }
+    tCandidate = g_pet_ui.tMemoryCalendar;
+    bPreviousRtcInvalid = tCandidate.bRtcInvalid;
+    bPreviousRollback = tCandidate.bRollback;
+    if (!MOMOMEMORY_ProcessDay(
+            &tCandidate, PET_MemoryCurrentDay(), &tResult))
+    {
+        return;
+    }
+    if (tResult.bSaveRequired && !PET_SaveMemoryCandidate(&tCandidate))
+    {
+        tCandidate.bDirty = true;
+    }
+    g_pet_ui.tMemoryCalendar = tCandidate;
+    if (tResult.bChanged ||
+        (bPreviousRtcInvalid != tCandidate.bRtcInvalid) ||
+        (bPreviousRollback != tCandidate.bRollback))
+    {
+        PET_UpdateMemoryCalendar();
+    }
+
+    return;
+}
+
+/*
+ * PET_MemoryCellClicked
+ * 功能：显示被点选日期的非敏感摘要。
+ */
+static void PET_MemoryCellClicked(lv_event_t *pEvent)
+{
+    lv_obj_t *pTarget;
+    uint8_t ucIndex;
+
+    if ((NULL == pEvent) ||
+        (LV_EVENT_SHORT_CLICKED != lv_event_get_code(pEvent)))
+    {
+        return;
+    }
+    pTarget = lv_event_get_target(pEvent);
+    for (ucIndex = 0U; ucIndex < MOMO_MEMORY_DAY_COUNT; ucIndex++)
+    {
+        if (pTarget == g_pet_ui.aMemoryCells[ucIndex])
+        {
+            PET_MemorySetSummary(ucIndex);
+            break;
+        }
+    }
+
+    return;
+}
+
+/*
+ * PET_CloseMemoryPanel
+ * 功能：删除按需创建的回忆面板子树、清空相关指针并取消清空确认。
+ */
+static void PET_CloseMemoryPanel(void)
+{
+    bool bWasOpen;
+
+    bWasOpen = g_pet_ui.bMemoryPanelOpen;
+    g_pet_ui.bMemoryPanelOpen = false;
+    g_pet_ui.bMemoryClearConfirm = false;
+    g_pet_ui.ucMemoryClearConfirmSeconds = 0U;
+    if (NULL != g_pet_ui.memory_panel)
+    {
+        lv_obj_del(g_pet_ui.memory_panel);
+    }
+    g_pet_ui.memory_panel = NULL;
+    g_pet_ui.memory_summary = NULL;
+    g_pet_ui.memory_status = NULL;
+    g_pet_ui.memory_clear_button = NULL;
+    g_pet_ui.memory_clear_label = NULL;
+    rt_memset(
+        g_pet_ui.aMemoryCells, 0,
+        sizeof(g_pet_ui.aMemoryCells));
+    if (bWasOpen)
+    {
+        g_pet_ui.ucRenderedState = 0xFFU;
+        g_pet_ui.ucRenderedBehaviorState = PET_BEHAVIOR_INVALID_STATE;
+        g_pet_ui.ucLoadedBehaviorAsset = PET_BEHAVIOR_INVALID_STATE;
+    }
+
+    return;
+}
+
+/*
+ * PET_MemoryCloseClicked
+ * 功能：处理面板关闭按钮。
+ */
+static void PET_MemoryCloseClicked(lv_event_t *pEvent)
+{
+    if ((NULL != pEvent) &&
+        (LV_EVENT_SHORT_CLICKED == lv_event_get_code(pEvent)))
+    {
+        PET_CloseMemoryPanel();
+    }
+
+    return;
+}
+
+/*
+ * PET_MemoryEntryClicked
+ * 功能：打开回忆面板并刷新固定对象。
+ */
+static void PET_MemoryEntryClicked(lv_event_t *pEvent)
+{
+    AGENTPET_BLE_STATUS tStatus;
+
+    if ((NULL == pEvent) ||
+        (LV_EVENT_SHORT_CLICKED != lv_event_get_code(pEvent)))
+    {
+        return;
+    }
+    if (AGENTPETBLE_GetStatus(&tStatus) &&
+        PET_MemoryStatusBlocksPanel(&tStatus))
+    {
+        return;
+    }
+    if ((NULL == g_pet_ui.memory_panel) && !PET_CreateMemoryPanel())
+    {
+        rt_kprintf("agent pet: memory panel allocation failed\n");
+        return;
+    }
+    g_pet_ui.bMemoryPanelOpen = true;
+    g_pet_ui.bMemoryClearConfirm = false;
+    PET_UpdateMemoryCalendar();
+    lv_obj_clear_flag(g_pet_ui.memory_panel, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(g_pet_ui.memory_panel);
+
+    return;
+}
+
+/*
+ * PET_MemoryClearClicked
+ * 功能：两次点击确认后原子保存空快照，失败保持旧显示。
+ */
+static void PET_MemoryClearClicked(lv_event_t *pEvent)
+{
+    MOMO_MEMORY_CONTEXT tCandidate;
+    MOMO_MEMORY_RESULT tResult;
+
+    if ((NULL == pEvent) ||
+        (LV_EVENT_SHORT_CLICKED != lv_event_get_code(pEvent)))
+    {
+        return;
+    }
+    if (!g_pet_ui.bMemoryClearConfirm)
+    {
+        g_pet_ui.bMemoryClearConfirm = true;
+        g_pet_ui.ucMemoryClearConfirmSeconds =
+            PET_MEMORY_CLEAR_CONFIRM_SECONDS;
+        if (NULL != g_pet_ui.memory_clear_label)
+        {
+            lv_label_set_text(g_pet_ui.memory_clear_label, "Confirm clear");
+        }
+        return;
+    }
+
+    tCandidate = g_pet_ui.tMemoryCalendar;
+    if (!MOMOMEMORY_Clear(
+            &tCandidate, PET_MemoryCurrentDay(), &tResult) ||
+        !PET_SaveMemoryCandidate(&tCandidate))
+    {
+        g_pet_ui.bMemoryClearConfirm = false;
+        g_pet_ui.ucMemoryClearConfirmSeconds = 0U;
+        if (NULL != g_pet_ui.memory_clear_label)
+        {
+            lv_label_set_text(g_pet_ui.memory_clear_label, "Clear");
+        }
+        if (NULL != g_pet_ui.memory_summary)
+        {
+            lv_label_set_text(g_pet_ui.memory_summary, "Clear failed; history kept");
+        }
+        return;
+    }
+    g_pet_ui.tMemoryCalendar = tCandidate;
+    g_pet_ui.bMemoryClearConfirm = false;
+    g_pet_ui.ucMemoryClearConfirmSeconds = 0U;
+    if (NULL != g_pet_ui.memory_clear_label)
+    {
+        lv_label_set_text(g_pet_ui.memory_clear_label, "Clear");
+    }
+    PET_UpdateMemoryCalendar();
+
+    return;
+}
+
+/*
+ * PET_CreateMemoryCalendar
+ * 功能：创建常驻的独立回忆入口；面板只在用户打开时按需创建。
+ */
+static void PET_CreateMemoryCalendar(void)
+{
+    lv_obj_t *pLabel;
+
+    if ((NULL == g_pet_ui.root) || (NULL != g_pet_ui.memory_entry))
+    {
+        return;
+    }
+    g_pet_ui.memory_entry = lv_btn_create(g_pet_ui.root);
+    if (NULL == g_pet_ui.memory_entry)
+    {
+        g_pet_ui.bMemoryUiUnavailable = true;
+        return;
+    }
+    lv_obj_set_pos(
+        g_pet_ui.memory_entry, PET_MEMORY_ENTRY_X, PET_MEMORY_ENTRY_Y);
+    lv_obj_set_size(
+        g_pet_ui.memory_entry,
+        PET_MEMORY_ENTRY_WIDTH, PET_MEMORY_ENTRY_HEIGHT);
+    lv_obj_set_style_bg_color(
+        g_pet_ui.memory_entry, lv_color_hex(0x285267U), 0);
+    lv_obj_add_event_cb(
+        g_pet_ui.memory_entry, PET_MemoryEntryClicked,
+        LV_EVENT_SHORT_CLICKED, NULL);
+    pLabel = lv_label_create(g_pet_ui.memory_entry);
+    if (NULL == pLabel)
+    {
+        lv_obj_del(g_pet_ui.memory_entry);
+        g_pet_ui.memory_entry = NULL;
+        g_pet_ui.bMemoryUiUnavailable = true;
+        return;
+    }
+    lv_label_set_text(pLabel, "Memo");
+    lv_obj_center(pLabel);
+
+    return;
+}
+
+/*
+ * PET_CreateMemoryPanel
+ * 功能：按需创建不超过38个对象的固定30天面板。
+ */
+static bool PET_CreateMemoryPanel(void)
+{
+    lv_obj_t *pObject;
+    uint8_t ucIndex;
+    lv_coord_t tX;
+    lv_coord_t tY;
+
+    if ((NULL == g_pet_ui.root) || (NULL != g_pet_ui.memory_panel))
+    {
+        return (NULL != g_pet_ui.memory_panel);
+    }
+    g_pet_ui.memory_panel = lv_obj_create(g_pet_ui.root);
+    if (NULL == g_pet_ui.memory_panel)
+    {
+        g_pet_ui.bMemoryUiUnavailable = true;
+        return false;
+    }
+    lv_obj_set_pos(
+        g_pet_ui.memory_panel,
+        PET_MEMORY_PANEL_MARGIN, PET_MEMORY_PANEL_TOP);
+    lv_obj_set_size(
+        g_pet_ui.memory_panel,
+        PET_MEMORY_PANEL_WIDTH, PET_MEMORY_PANEL_HEIGHT);
+    lv_obj_set_style_bg_color(
+        g_pet_ui.memory_panel, lv_color_hex(0x10232BU), 0);
+    lv_obj_set_style_bg_opa(g_pet_ui.memory_panel, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(g_pet_ui.memory_panel, 2, 0);
+    lv_obj_set_style_border_color(
+        g_pet_ui.memory_panel, lv_color_hex(0x75ECFFU), 0);
+    lv_obj_set_style_radius(g_pet_ui.memory_panel, 18, 0);
+    lv_obj_clear_flag(g_pet_ui.memory_panel, LV_OBJ_FLAG_SCROLLABLE);
+
+    pObject = lv_label_create(g_pet_ui.memory_panel);
+    if (NULL == pObject)
+    {
+        PET_CloseMemoryPanel();
+        return false;
+    }
+    lv_label_set_text(pObject, "Momo memories");
+    lv_obj_align(pObject, LV_ALIGN_TOP_MID, 0, 0);
+    g_pet_ui.memory_status = lv_label_create(g_pet_ui.memory_panel);
+    if (NULL == g_pet_ui.memory_status)
+    {
+        PET_CloseMemoryPanel();
+        return false;
+    }
+    lv_obj_set_width(g_pet_ui.memory_status, LV_PCT(100));
+    lv_obj_set_pos(g_pet_ui.memory_status, 0, 26);
+    lv_obj_set_style_text_align(
+        g_pet_ui.memory_status, LV_TEXT_ALIGN_CENTER, 0);
+    g_pet_ui.memory_summary = lv_label_create(g_pet_ui.memory_panel);
+    if (NULL == g_pet_ui.memory_summary)
+    {
+        PET_CloseMemoryPanel();
+        return false;
+    }
+    lv_obj_set_width(g_pet_ui.memory_summary, LV_PCT(100));
+    lv_obj_align(g_pet_ui.memory_summary, LV_ALIGN_BOTTOM_MID, 0, -48);
+    lv_obj_set_style_text_align(
+        g_pet_ui.memory_summary, LV_TEXT_ALIGN_CENTER, 0);
+    for (ucIndex = 0U; ucIndex < MOMO_MEMORY_DAY_COUNT; ucIndex++)
+    {
+        tX = PET_MEMORY_CELL_START_X +
+            (lv_coord_t)((ucIndex % PET_MEMORY_CELL_COLUMNS) *
+                (PET_MEMORY_CELL_WIDTH + PET_MEMORY_CELL_GAP));
+        tY = PET_MEMORY_CELL_START_Y +
+            (lv_coord_t)((ucIndex / PET_MEMORY_CELL_COLUMNS) *
+                (PET_MEMORY_CELL_HEIGHT + PET_MEMORY_CELL_GAP));
+        g_pet_ui.aMemoryCells[ucIndex] =
+            lv_btn_create(g_pet_ui.memory_panel);
+        if (NULL == g_pet_ui.aMemoryCells[ucIndex])
+        {
+            g_pet_ui.bMemoryUiUnavailable = true;
+            PET_CloseMemoryPanel();
+            return false;
+        }
+        lv_obj_set_pos(g_pet_ui.aMemoryCells[ucIndex], tX, tY);
+        lv_obj_set_size(
+            g_pet_ui.aMemoryCells[ucIndex],
+            PET_MEMORY_CELL_WIDTH, PET_MEMORY_CELL_HEIGHT);
+        lv_obj_set_style_pad_all(g_pet_ui.aMemoryCells[ucIndex], 0, 0);
+        lv_obj_add_event_cb(
+            g_pet_ui.aMemoryCells[ucIndex], PET_MemoryCellClicked,
+            LV_EVENT_SHORT_CLICKED, NULL);
+    }
+
+    pObject = lv_btn_create(g_pet_ui.memory_panel);
+    if (NULL == pObject)
+    {
+        PET_CloseMemoryPanel();
+        return false;
+    }
+    lv_obj_set_size(pObject, 76, 34);
+    lv_obj_align(pObject, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+    lv_obj_add_event_cb(
+        pObject, PET_MemoryCloseClicked, LV_EVENT_SHORT_CLICKED, NULL);
+    {
+        lv_obj_t *pLabel;
+
+        pLabel = lv_label_create(pObject);
+        if (NULL == pLabel)
+        {
+            PET_CloseMemoryPanel();
+            return false;
+        }
+        lv_label_set_text(pLabel, "Close");
+        lv_obj_center(pLabel);
+    }
+    g_pet_ui.memory_clear_button = lv_btn_create(g_pet_ui.memory_panel);
+    if (NULL == g_pet_ui.memory_clear_button)
+    {
+        PET_CloseMemoryPanel();
+        return false;
+    }
+    lv_obj_set_size(g_pet_ui.memory_clear_button, 116, 34);
+    lv_obj_align(
+        g_pet_ui.memory_clear_button, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
+    lv_obj_add_event_cb(
+        g_pet_ui.memory_clear_button, PET_MemoryClearClicked,
+        LV_EVENT_SHORT_CLICKED, NULL);
+    g_pet_ui.memory_clear_label =
+        lv_label_create(g_pet_ui.memory_clear_button);
+    if (NULL == g_pet_ui.memory_clear_label)
+    {
+        PET_CloseMemoryPanel();
+        return false;
+    }
+    lv_label_set_text(g_pet_ui.memory_clear_label, "Clear");
+    lv_obj_center(g_pet_ui.memory_clear_label);
+    PET_UpdateMemoryCalendar();
+    g_pet_ui.bMemoryUiUnavailable = false;
+
+    return true;
+}
+
+/*
+ * PET_MemoryStatusBlocksPanel
+ * 功能：判断远端播放、打字、图传或Agent状态是否应抢占回忆面板。
+ */
+static bool PET_MemoryStatusBlocksPanel(
+    const AGENTPET_BLE_STATUS *pStatus)
+{
+    uint8_t ucState;
+
+    if (NULL == pStatus)
+    {
+        return false;
+    }
+    ucState = pStatus->bHasSnapshot ?
+        pStatus->tSnapshot.ucAggregateState : AGENTPET_STATE_IDLE;
+
+    return (AGENTPET_IMAGE_RECEIVING == pStatus->tImageStatus.eState) ||
+        g_pet_ui.bTypingActive ||
+        (AGENTPET_IMAGE_BASE_SLOT != g_pet_ui.ucRequestedImageSlot) ||
+        (AGENTPET_STATE_IDLE != ucState);
+}
+
+/*
+ * PET_ArbitrateMemoryPanel
+ * 功能：高优先级Agent/图片/表达状态到来时关闭回忆面板且不补播。
+ */
+static void PET_ArbitrateMemoryPanel(const AGENTPET_BLE_STATUS *pStatus)
+{
+    if (!g_pet_ui.bMemoryPanelOpen || (NULL == pStatus))
+    {
+        return;
+    }
+    if (PET_MemoryStatusBlocksPanel(pStatus))
+    {
+        PET_CloseMemoryPanel();
+    }
+
+    return;
+}
+#endif /* AGENT_PET_USING_MEMORY_CALENDAR */
 
 /*
  * PET_QuestCurrentDay
@@ -2727,6 +3611,9 @@ static void PET_CollectQuestSeed(lv_event_t *pEvent)
     {
         PET_UpdateQuestGarden();
         PET_SaveQuestGarden();
+#if defined(AGENT_PET_USING_MEMORY_CALENDAR)
+        PET_RecordMemory(MOMO_MEMORY_EVENT_ACHIEVEMENT);
+#endif
         if ((NULL != g_pet_ui.daily_summary) &&
             (NULL != g_pet_ui.daily_timer))
         {
@@ -3038,11 +3925,17 @@ static void PET_PlayWoodenFish(lv_event_t *pEvent)
     if (NULL == pInput)
     {
         PET_PlayWoodenFishAnimation(NULL);
+#if defined(AGENT_PET_USING_MEMORY_CALENDAR)
+        PET_RecordMemory(MOMO_MEMORY_EVENT_PLAY);
+#endif
         return;
     }
 
     lv_indev_get_point(pInput, &tPoint);
     PET_PlayWoodenFishAnimation(&tPoint);
+#if defined(AGENT_PET_USING_MEMORY_CALENDAR)
+    PET_RecordMemory(MOMO_MEMORY_EVENT_PLAY);
+#endif
 
     return;
 }
@@ -3405,6 +4298,10 @@ static void pet_on_start(void)
     PET_LoadBehavior();
 #endif
     PET_UpdateQuestGarden();
+#if defined(AGENT_PET_USING_MEMORY_CALENDAR)
+    PET_LoadMemoryCalendar();
+    PET_CreateMemoryCalendar();
+#endif
     g_pet_ui.wooden_timer = lv_timer_create(
         PET_EndWoodenFish,
         PET_WOODEN_FISH_IDLE_MS,
@@ -3444,6 +4341,9 @@ static void pet_on_start(void)
         AGENTPET_STATE_IDLE, PET_BEHAVIOR_VISUAL_CALM);
 #endif
     PET_RefreshStatus(g_pet_ui.status_timer);
+#if defined(AGENT_PET_USING_MEMORY_CALENDAR)
+    PET_RecordMemory(MOMO_MEMORY_EVENT_MEET);
+#endif
 }
 
 static void pet_on_stop(void)
@@ -3471,6 +4371,9 @@ static void pet_on_stop(void)
         lv_timer_del(g_pet_ui.daily_timer);
         g_pet_ui.daily_timer = NULL;
     }
+#if defined(AGENT_PET_USING_MEMORY_CALENDAR)
+    PET_CloseMemoryPanel();
+#endif
 #ifndef BSP_USING_PC_SIMULATOR
 #ifdef AGENT_PET_BEHAVIOR_ENGINE
     if (NULL != g_pet_ui.pBehaviorPrefs)
@@ -3502,6 +4405,27 @@ static void pet_on_stop(void)
         }
         g_pet_ui.pQuestPrefs = NULL;
     }
+#if defined(AGENT_PET_USING_MEMORY_CALENDAR)
+    if (NULL != g_pet_ui.pMemoryPrefs)
+    {
+        MOMO_MEMORY_CONTEXT tCandidate;
+        rt_err_t tMemoryCloseResult;
+
+        tCandidate = g_pet_ui.tMemoryCalendar;
+        if (tCandidate.bDirty && PET_SaveMemoryCandidate(&tCandidate))
+        {
+            g_pet_ui.tMemoryCalendar = tCandidate;
+        }
+        tMemoryCloseResult = share_prefs_close(g_pet_ui.pMemoryPrefs);
+        if (RT_EOK != tMemoryCloseResult)
+        {
+            rt_kprintf(
+                "agent pet: close memory storage failed %d\n",
+                tMemoryCloseResult);
+        }
+        g_pet_ui.pMemoryPrefs = NULL;
+    }
+#endif
 #endif
     AGENTPETMERIT_Save();
     if (g_pet_ui.root)
