@@ -38,6 +38,14 @@ config AGENT_PET_USING_TF_CARD
         Enable the Huangshan board SPI1 TF card and PA27 card-detect input.
         The PC simulator never builds the TF driver or file-manager app.
 
+config AGENT_PET_MOMO_PLAY_BALL
+    bool "Enable local Momo touch play-ball interaction"
+    default n
+    help
+        Enable a fixed-memory local drag, throw, chase and catch interaction.
+        This adds no protocol, host application requirement, persistent
+        storage, external media asset or RTOS thread.
+
 config FRAME_BUFFER_IN_PSRAM
     bool
     depends on BSP_USING_PSRAM
