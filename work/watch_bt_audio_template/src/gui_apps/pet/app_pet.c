@@ -18,6 +18,9 @@
 #if defined(AGENT_PET_USING_STROKE)
     #include "momo_stroking.h"
 #endif
+#if defined(AGENT_PET_MOMO_PLAY_BALL)
+    #include "momo_play_ball.h"
+#endif
 #if !defined(BSP_USING_PC_SIMULATOR) || !defined(AGENT_PET_STANDALONE_PREVIEW)
     #include "lv_ext_resource_manager.h"
     #include "gui_app_fwk.h"
@@ -133,6 +136,16 @@ LV_IMG_DECLARE(agent_pet_merit_plus_one);
     #define PET_MEMORY_DATE_DIVIDER (10U)
     #define PET_MEMORY_CLEAR_CONFIRM_SECONDS (5U)
 #endif
+#if defined(AGENT_PET_MOMO_PLAY_BALL)
+    #define PET_PLAY_BALL_TIMER_MS (50U)
+    #define PET_PLAY_BALL_DIAMETER (26)
+    #define PET_PLAY_BALL_RADIUS (PET_PLAY_BALL_DIAMETER / 2)
+    #define PET_PLAY_BALL_EDGE_GUARD (24)
+    #define PET_PLAY_BALL_TOP_GUARD (48)
+    #define PET_PLAY_BALL_BOTTOM_GUARD (84)
+    #define PET_PLAY_BALL_HIT_RADIUS (24U)
+    #define PET_PLAY_BALL_COLLISION_RADIUS (42U)
+#endif
 #ifndef BSP_USING_PC_SIMULATOR
     #define PET_QUEST_PREF_NAME "agent_pet_quest_garden_pref_v1_"
     #define PET_QUEST_PREF_VERSION_KEY "q_ver"
@@ -242,6 +255,13 @@ typedef struct
     lv_obj_t *stroke_switch;
     lv_obj_t *stroke_halo;
     lv_obj_t *stroke_hint;
+#endif
+#if defined(AGENT_PET_MOMO_PLAY_BALL)
+    lv_obj_t *play_ball;
+    lv_obj_t *play_ball_feedback;
+    lv_timer_t *play_ball_timer;
+    MOMO_PLAY_BALL tPlayBall;
+    bool bPlayBallAvailable;
 #endif
 #ifndef BSP_USING_PC_SIMULATOR
     share_prefs_t *pQuestPrefs;
@@ -2277,6 +2297,303 @@ static const char *PET_ProviderName(uint8_t ucProvider)
     return l_aProviderNames[ucProvider];
 }
 
+#if defined(AGENT_PET_MOMO_PLAY_BALL)
+/***************************
+ * PET_SyncPlayBallObjects: 将纯状态机坐标同步到已有LVGL对象
+ * 参数：无
+ * 返回值：无
+ ***************************/
+static void PET_SyncPlayBallObjects(void)
+{
+    if (NULL != g_pet_ui.play_ball)
+    {
+        lv_obj_set_pos(
+            g_pet_ui.play_ball,
+            g_pet_ui.tPlayBall.sBallX - PET_PLAY_BALL_RADIUS,
+            g_pet_ui.tPlayBall.sBallY - PET_PLAY_BALL_RADIUS);
+    }
+    if (NULL != g_pet_ui.stage)
+    {
+        lv_obj_set_pos(
+            g_pet_ui.stage,
+            g_pet_ui.tPlayBall.sMomoX - (PET_MASCOT_SIZE / 2),
+            g_pet_ui.tPlayBall.sMomoY - (PET_MASCOT_SIZE / 2));
+    }
+    return;
+}
+
+/***************************
+ * PET_CancelPlayBall: 中止本轮并恢复原有宠物动画布局
+ * 参数：无
+ * 返回值：无
+ ***************************/
+static void PET_CancelPlayBall(void)
+{
+    MOMOPLAYBALL_Cancel(&g_pet_ui.tPlayBall);
+    if (NULL != g_pet_ui.play_ball_timer)
+    {
+        lv_timer_pause(g_pet_ui.play_ball_timer);
+    }
+    if (NULL != g_pet_ui.play_ball_feedback)
+    {
+        lv_obj_add_flag(g_pet_ui.play_ball_feedback, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (NULL != g_pet_ui.stage)
+    {
+        lv_obj_set_pos(g_pet_ui.stage, PET_MASCOT_X, PET_MASCOT_Y);
+    }
+    PET_SyncPlayBallObjects();
+    g_pet_ui.ucRenderedState = 0xFFU;
+    return;
+}
+
+/***************************
+ * PET_SetPlayBallAllowed: 根据Agent、图片和打字状态仲裁玩球入口
+ * 参数：
+ *   - bAllowed: 当前允许本地玩球为true
+ * 返回值：无
+ ***************************/
+static void PET_SetPlayBallAllowed(bool bAllowed)
+{
+    if (MOMO_PLAY_BALL_STATE_DISABLED == g_pet_ui.tPlayBall.eState)
+    {
+        bAllowed = false;
+    }
+    if (!bAllowed)
+    {
+        if (g_pet_ui.bPlayBallAvailable ||
+            (MOMO_PLAY_BALL_STATE_IDLE != g_pet_ui.tPlayBall.eState))
+        {
+            PET_CancelPlayBall();
+        }
+        g_pet_ui.bPlayBallAvailable = false;
+        if (NULL != g_pet_ui.play_ball)
+        {
+            lv_obj_add_flag(g_pet_ui.play_ball, LV_OBJ_FLAG_HIDDEN);
+        }
+        return;
+    }
+
+    g_pet_ui.bPlayBallAvailable = true;
+    if (NULL != g_pet_ui.play_ball)
+    {
+        PET_SyncPlayBallObjects();
+        lv_obj_clear_flag(g_pet_ui.play_ball, LV_OBJ_FLAG_HIDDEN);
+    }
+    return;
+}
+
+/***************************
+ * PET_PlayBallTimer: 在LVGL线程推进运动、追逐和反馈
+ * 参数：
+ *   - pTimer: 页面唯一玩球定时器
+ * 返回值：无
+ ***************************/
+static void PET_PlayBallTimer(lv_timer_t *pTimer)
+{
+    MOMO_PLAY_BALL_EVENT eEvent;
+
+    if ((NULL == pTimer) || !g_pet_ui.bPlayBallAvailable ||
+        (NULL == g_pet_ui.root) || (NULL == g_pet_ui.play_ball))
+    {
+        if (NULL != pTimer)
+        {
+            lv_timer_pause(pTimer);
+        }
+        return;
+    }
+
+    eEvent = MOMOPLAYBALL_Update(
+        &g_pet_ui.tPlayBall, PET_PLAY_BALL_TIMER_MS);
+    PET_SyncPlayBallObjects();
+    if (MOMO_PLAY_BALL_EVENT_CAUGHT == eEvent)
+    {
+        if (NULL != g_pet_ui.play_ball_feedback)
+        {
+            lv_obj_clear_flag(
+                g_pet_ui.play_ball_feedback, LV_OBJ_FLAG_HIDDEN);
+        }
+        lv_obj_set_style_bg_color(
+            g_pet_ui.play_ball, lv_color_hex(0x65D69EU), 0);
+    }
+    else if (MOMO_PLAY_BALL_EVENT_RESET == eEvent)
+    {
+        lv_timer_pause(pTimer);
+        if (NULL != g_pet_ui.play_ball_feedback)
+        {
+            lv_obj_add_flag(
+                g_pet_ui.play_ball_feedback, LV_OBJ_FLAG_HIDDEN);
+        }
+        lv_obj_set_style_bg_color(
+            g_pet_ui.play_ball, lv_color_hex(0xFFB347U), 0);
+        g_pet_ui.ucRenderedState = 0xFFU;
+        PET_ApplyStateAnimation(AGENTPET_STATE_IDLE);
+    }
+    return;
+}
+
+/***************************
+ * PET_PlayBallInput: 处理球对象自身的按压、拖动、释放和丢失事件
+ * 参数：
+ *   - pEvent: LVGL输入事件
+ * 返回值：无
+ ***************************/
+static void PET_PlayBallInput(lv_event_t *pEvent)
+{
+    lv_indev_t *pInput;
+    lv_point_t tPoint;
+    lv_event_code_t eCode;
+    uint32_t ulTickMs;
+    bool bStarted;
+
+    if ((NULL == pEvent) || !g_pet_ui.bPlayBallAvailable)
+    {
+        return;
+    }
+    eCode = lv_event_get_code(pEvent);
+    pInput = lv_event_get_indev(pEvent);
+    if (NULL == pInput)
+    {
+        pInput = lv_indev_get_act();
+    }
+    if (NULL == pInput)
+    {
+        PET_CancelPlayBall();
+        return;
+    }
+    lv_indev_get_point(pInput, &tPoint);
+    ulTickMs = rt_tick_get_millisecond();
+    bStarted = false;
+
+    if (LV_EVENT_PRESSED == eCode)
+    {
+        bStarted = MOMOPLAYBALL_Press(
+            &g_pet_ui.tPlayBall, tPoint.x, tPoint.y, ulTickMs);
+        if (bStarted)
+        {
+            lv_anim_del(g_pet_ui.stage, NULL);
+            PET_SyncPlayBallObjects();
+        }
+    }
+    else if (LV_EVENT_PRESSING == eCode)
+    {
+        (void)MOMOPLAYBALL_Drag(
+            &g_pet_ui.tPlayBall, tPoint.x, tPoint.y, ulTickMs);
+        PET_SyncPlayBallObjects();
+    }
+    else if (LV_EVENT_RELEASED == eCode)
+    {
+        bStarted = MOMOPLAYBALL_Release(
+            &g_pet_ui.tPlayBall, tPoint.x, tPoint.y, ulTickMs);
+        PET_SyncPlayBallObjects();
+        if (bStarted && (NULL != g_pet_ui.play_ball_timer))
+        {
+            lv_timer_reset(g_pet_ui.play_ball_timer);
+            lv_timer_resume(g_pet_ui.play_ball_timer);
+        }
+        else
+        {
+            g_pet_ui.ucRenderedState = 0xFFU;
+            PET_ApplyStateAnimation(AGENTPET_STATE_IDLE);
+        }
+    }
+    else if (LV_EVENT_PRESS_LOST == eCode)
+    {
+        PET_CancelPlayBall();
+        PET_ApplyStateAnimation(AGENTPET_STATE_IDLE);
+    }
+    return;
+}
+
+/***************************
+ * PET_CreatePlayBall: 创建两个可复用对象和一个初始暂停timer
+ * 参数：无
+ * 返回值：创建成功返回true，否则false
+ ***************************/
+static bool PET_CreatePlayBall(void)
+{
+    MOMO_PLAY_BALL_BOUNDS tBounds;
+    int16_t sMomoHalf;
+
+    sMomoHalf = PET_MASCOT_SIZE / 2;
+    tBounds.sBallMinX = PET_PLAY_BALL_EDGE_GUARD + PET_PLAY_BALL_RADIUS;
+    tBounds.sBallMaxX = LV_HOR_RES_MAX - PET_PLAY_BALL_EDGE_GUARD -
+        PET_PLAY_BALL_RADIUS;
+    tBounds.sBallMinY = PET_PLAY_BALL_TOP_GUARD + PET_PLAY_BALL_RADIUS;
+    tBounds.sBallMaxY = LV_VER_RES_MAX - PET_PLAY_BALL_BOTTOM_GUARD -
+        PET_PLAY_BALL_RADIUS;
+    tBounds.sMomoMinX = sMomoHalf;
+    tBounds.sMomoMaxX = LV_HOR_RES_MAX - sMomoHalf;
+    tBounds.sMomoMinY = sMomoHalf;
+    tBounds.sMomoMaxY = LV_VER_RES_MAX - sMomoHalf;
+    tBounds.sBallStartX = tBounds.sBallMaxX - 32;
+    tBounds.sBallStartY = (int16_t)(tBounds.sBallMinY +
+        ((tBounds.sBallMaxY - tBounds.sBallMinY) / 3));
+    tBounds.sMomoStartX = PET_MASCOT_X + sMomoHalf;
+    tBounds.sMomoStartY = PET_MASCOT_Y + sMomoHalf;
+    tBounds.ucHitRadius = PET_PLAY_BALL_HIT_RADIUS;
+    tBounds.ucCollisionX = PET_PLAY_BALL_COLLISION_RADIUS;
+    tBounds.ucCollisionY = PET_PLAY_BALL_COLLISION_RADIUS;
+    MOMOPLAYBALL_Init(&g_pet_ui.tPlayBall, &tBounds);
+    if (MOMO_PLAY_BALL_STATE_DISABLED == g_pet_ui.tPlayBall.eState)
+    {
+        return false;
+    }
+
+    g_pet_ui.play_ball = lv_obj_create(g_pet_ui.root);
+    if (NULL == g_pet_ui.play_ball)
+    {
+        return false;
+    }
+    lv_obj_set_size(
+        g_pet_ui.play_ball, PET_PLAY_BALL_DIAMETER, PET_PLAY_BALL_DIAMETER);
+    lv_obj_set_style_radius(g_pet_ui.play_ball, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(
+        g_pet_ui.play_ball, lv_color_hex(0xFFB347U), 0);
+    lv_obj_set_style_bg_opa(g_pet_ui.play_ball, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(g_pet_ui.play_ball, 3, 0);
+    lv_obj_set_style_border_color(
+        g_pet_ui.play_ball, lv_color_hex(0xFFF4AAU), 0);
+    lv_obj_set_style_pad_all(g_pet_ui.play_ball, 0, 0);
+    lv_obj_clear_flag(g_pet_ui.play_ball, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(g_pet_ui.play_ball, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_ext_click_area(g_pet_ui.play_ball, 11);
+    lv_obj_add_event_cb(
+        g_pet_ui.play_ball, PET_PlayBallInput, LV_EVENT_ALL, NULL);
+
+    g_pet_ui.play_ball_feedback = lv_label_create(g_pet_ui.root);
+    if (NULL == g_pet_ui.play_ball_feedback)
+    {
+        lv_obj_del(g_pet_ui.play_ball);
+        g_pet_ui.play_ball = NULL;
+        return false;
+    }
+    lv_label_set_text(g_pet_ui.play_ball_feedback, "Good catch!");
+    lv_obj_set_width(g_pet_ui.play_ball_feedback, 150);
+    lv_obj_set_pos(
+        g_pet_ui.play_ball_feedback, (LV_HOR_RES_MAX - 150) / 2, 52);
+    lv_obj_set_style_text_align(
+        g_pet_ui.play_ball_feedback, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_color(
+        g_pet_ui.play_ball_feedback, lv_color_hex(0xFFF4AAU), 0);
+    lv_obj_add_flag(g_pet_ui.play_ball_feedback, LV_OBJ_FLAG_HIDDEN);
+
+    g_pet_ui.play_ball_timer = lv_timer_create(
+        PET_PlayBallTimer, PET_PLAY_BALL_TIMER_MS, NULL);
+    if (NULL == g_pet_ui.play_ball_timer)
+    {
+        lv_obj_del(g_pet_ui.play_ball_feedback);
+        lv_obj_del(g_pet_ui.play_ball);
+        g_pet_ui.play_ball_feedback = NULL;
+        g_pet_ui.play_ball = NULL;
+        return false;
+    }
+    lv_timer_pause(g_pet_ui.play_ball_timer);
+    PET_SyncPlayBallObjects();
+    return true;
+}
+#endif /* AGENT_PET_MOMO_PLAY_BALL */
+
 /*
  * PET_RefreshMascotImage
  * Function: switch atomically committed custom JPEG or GIF images on the LVGL thread.
@@ -2303,6 +2620,9 @@ static void PET_RefreshMascotImage(const AGENTPET_IMAGE_STATUS *pStatus)
         return;
     }
 
+#if defined(AGENT_PET_MOMO_PLAY_BALL)
+    PET_CancelPlayBall();
+#endif
     g_pet_ui.ulRenderedImageGeneration = pStatus->ulGeneration;
     g_pet_ui.ucRenderedImageSlot = pStatus->ucSlot;
     g_pet_ui.bRenderedCustomImage = pStatus->bImageAvailable;
@@ -2506,6 +2826,9 @@ static void PET_RefreshExpressionAnimation(bool bConnected)
     else if (bHasEvent &&
         (g_pet_ui.ulRenderedAnimationGeneration != ulGeneration))
     {
+#if defined(AGENT_PET_MOMO_PLAY_BALL)
+        PET_CancelPlayBall();
+#endif
         g_pet_ui.ulRenderedAnimationGeneration = ulGeneration;
         if (AGENTPET_ANIMATION_ACTION_PLAY == tEvent.ucAction)
         {
@@ -2601,6 +2924,21 @@ static void PET_RefreshStatus(lv_timer_t *pTimer)
         tStatus.tSnapshot.ucAggregateState : AGENTPET_STATE_IDLE;
 #if defined(AGENT_PET_USING_MEMORY_CALENDAR)
     PET_ArbitrateMemoryPanel(&tStatus);
+#endif
+#if defined(AGENT_PET_MOMO_PLAY_BALL)
+    PET_SetPlayBallAllowed(
+        (AGENTPET_STATE_IDLE == ucAgentState) &&
+        (AGENTPET_IMAGE_RECEIVING != tStatus.tImageStatus.eState) &&
+        !g_pet_ui.bTypingActive &&
+        !g_pet_ui.bExpressionOverride &&
+        (AGENTPET_IMAGE_BASE_SLOT == g_pet_ui.ucRequestedImageSlot)
+#if defined(AGENT_PET_USING_MEMORY_CALENDAR)
+        && !g_pet_ui.bMemoryPanelOpen
+#endif
+#if defined(AGENT_PET_USING_STROKE)
+        && !g_pet_ui.bStrokeVisualActive
+#endif
+        );
 #endif
 #if defined(AGENT_PET_USING_STROKE)
     g_pet_ui.bStrokeAllowed = PET_StrokeCanShow(&tStatus);
@@ -2798,6 +3136,14 @@ static void PET_ApplyStateAnimation(
 #endif
 #if defined(AGENT_PET_USING_STROKE)
     if (g_pet_ui.bStrokeVisualActive)
+    {
+        return;
+    }
+#endif
+#if defined(AGENT_PET_MOMO_PLAY_BALL)
+    if ((MOMO_PLAY_BALL_STATE_DRAGGING == g_pet_ui.tPlayBall.eState) ||
+        (MOMO_PLAY_BALL_STATE_MOVING == g_pet_ui.tPlayBall.eState) ||
+        (MOMO_PLAY_BALL_STATE_FEEDBACK == g_pet_ui.tPlayBall.eState))
     {
         return;
     }
@@ -4832,6 +5178,13 @@ static void pet_on_start(void)
 #if defined(AGENT_PET_USING_STROKE)
     PET_CreateStrokeUi();
 #endif
+#if defined(AGENT_PET_MOMO_PLAY_BALL)
+    if (PET_CreatePlayBall())
+    {
+        g_pet_ui.bPlayBallAvailable = false;
+        lv_obj_add_flag(g_pet_ui.play_ball, LV_OBJ_FLAG_HIDDEN);
+    }
+#endif
 
     PET_LoadMerit();
     PET_LoadQuestGarden();
@@ -4896,6 +5249,17 @@ static void pet_on_stop(void)
 #endif
 #if defined(AGENT_PET_USING_IMU) && !defined(BSP_USING_PC_SIMULATOR)
     PET_StopMotionDetection();
+#endif
+#if defined(AGENT_PET_MOMO_PLAY_BALL)
+    g_pet_ui.bPlayBallAvailable = false;
+    PET_CancelPlayBall();
+    if (NULL != g_pet_ui.play_ball_timer)
+    {
+        lv_timer_del(g_pet_ui.play_ball_timer);
+        g_pet_ui.play_ball_timer = NULL;
+    }
+    g_pet_ui.play_ball = NULL;
+    g_pet_ui.play_ball_feedback = NULL;
 #endif
     if (g_pet_ui.motion_timer)
     {

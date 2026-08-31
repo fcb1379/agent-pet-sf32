@@ -18,6 +18,10 @@ if not GetDepend('AGENT_PET_USING_MEMORY_CALENDAR'):
            if not str(item).replace('\\', '/').endswith(
                '/momo_memory_calendar.c')]
 
+if not GetDepend('AGENT_PET_MOMO_PLAY_BALL'):
+    src = [node for node in src
+           if os.path.basename(str(node)) != 'momo_play_ball.c']
+
 if not GetDepend('BSP_USING_PC_SIMULATOR'):
     local_ccflags = ' -Wall -Wextra -Wno-cast-function-type -Werror'
 
