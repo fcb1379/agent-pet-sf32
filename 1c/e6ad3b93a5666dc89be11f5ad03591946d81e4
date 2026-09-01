@@ -1,0 +1,40 @@
+tests/momo_play_ball_host_test.c
+  s_b991e4ff93e87f::t_17b12044775111 7-9,13-14,34-37,41-42,49-52,56-152,154-192,244-246,248
+  s_b991e4ff93e87f::t_0bbca9af42a74d 222
+  s_b991e4ff93e87f::t_53f2b6887e3371 153
+  s_e1cba9f94a57b3::t_69bcebcba844d2 193
+work/watch_bt_audio_template/src/gui_apps/pet/app_pet.c
+  s_b991e4ff93e87f::t_3263a079599675 90,182,1271,1280-1284,1339-1341,1350,1354-1361,1376,1409-1415,1453,1482-1483,1485,1510,1525-1532,1534,1541,1562
+docs/2026-08-28-momo-play-ball-design.md
+  s_b991e4ff93e87f::t_fc737a2527f1c7 62,73,81,90,110-111,120,134,158,216-218
+docs/2026-08-28-momo-play-ball-test-results.md
+  s_b991e4ff93e87f::t_7501375814384f 66-67,69,87,94-98,147,150-152
+work/watch_bt_audio_template/src/gui_apps/pet/momo_play_ball.h
+  s_b991e4ff93e87f::t_3ef5c3302dd424 62
+work/watch_bt_audio_template/src/gui_apps/pet/momo_play_ball.c
+  s_b991e4ff93e87f::t_3ef5c3302dd424 52-60,107,154,188,191-196,216-218
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "1ce6ad3b93a5666dc89be11f5ad03591946d81e4",
+  "prompts": {},
+  "sessions": {
+    "s_b991e4ff93e87f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd60c-817e-7cf2-aadd-448c400c6b83",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    },
+    "s_e1cba9f94a57b3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a05704-3a52-7da2-8f57-4d4e1200dbe6",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}
