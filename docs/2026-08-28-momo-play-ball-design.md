@@ -59,7 +59,7 @@ MOMO_PLAY_BALL_EVENT MOMOPLAYBALL_Update(MOMO_PLAY_BALL *pGame,
                                          uint16_t usDeltaMs);
 ```
 
-`MOMO_PLAY_BALL` 只保存状态、球/Momo 中心、Q8 定点速度、最近一次触点和 tick、轮次/反馈累计时间与布尔锁。结构体由 `_Static_assert` 限制在 256 B 内。
+`MOMO_PLAY_BALL` 只保存状态、球/Momo 中心、Q8 定点速度、最近一次触点、速度样本 tick、轮次/反馈累计时间与布尔锁。结构体由 `_Static_assert` 限制在 256 B 内。
 
 ### 3.2 LVGL 适配层
 
@@ -70,7 +70,7 @@ MOMO_PLAY_BALL_EVENT MOMOPLAYBALL_Update(MOMO_PLAY_BALL *pGame,
 - 游戏 timer 一个，50 ms 周期，空闲时暂停。
 - 一份 `MOMO_PLAY_BALL` 静态业务状态。
 
-新增对象数为 2，新增 timer 数为 1。球的事件回调使用 `LV_EVENT_PRESSED`、`LV_EVENT_PRESSING`、`LV_EVENT_RELEASED` 和 `LV_EVENT_PRESS_LOST`。坐标从当前活动输入设备读取；读不到输入设备时取消本轮。
+新增对象数为 2，新增 timer 数为 1。球只分别注册 `LV_EVENT_PRESSED`、`LV_EVENT_PRESSING`、`LV_EVENT_RELEASED` 和 `LV_EVENT_PRESS_LOST`，不注册 `LV_EVENT_ALL`；回调在读取输入设备前再次过滤事件码，避免位置/样式变化等非输入事件在无 indev 时误取消或嵌套。坐标从当前活动输入设备读取；合法输入事件读不到输入设备时取消本轮。
 
 ## 4. 坐标、边界和手势
 
@@ -78,7 +78,7 @@ MOMO_PLAY_BALL_EVENT MOMOPLAYBALL_Update(MOMO_PLAY_BALL *pGame,
 
 运行时边界由屏幕宏推导：
 
-- 左右保留 24 px 边缘手势带，球中心不得进入该区域。
+- 左右保留 24 px 边缘手势带。球半径 13 px、扩展点击区 11 px，因此球心边界为 `24 + 13 + 11` 到 `LV_HOR_RES_MAX - 24 - 13 - 11`；视觉边缘离屏幕 35 px，扩展命中边缘仍严格离屏幕 24 px，左右对称。
 - 顶部避开标题和系统状态区域，安全上边界取 48 px。
 - 底部避开状态/任务文字，安全下边界取 `LV_VER_RES_MAX - 84`。
 - 若小屏配置无法容纳上述固定留白，则在初始化时验证边界；边界宽/高不足以容纳球与 Momo 时功能创建失败并保持关闭，不进行无符号回绕计算。
@@ -87,7 +87,7 @@ MOMO_PLAY_BALL_EVENT MOMOPLAYBALL_Update(MOMO_PLAY_BALL *pGame,
 
 ### 4.2 边缘返回手势
 
-球初始位置和活动区排除左右 24 px。球对象只在自身命中区接收触摸，不添加覆盖根对象的大面积点击层，也不向输入设备调用 `lv_indev_wait_release()`，因此根页面/框架仍可识别边缘返回手势。
+球初始位置和活动区按视觉半径及 11 px 扩展点击区共同排除左右 24 px。球对象只在自身命中区接收触摸，不添加覆盖根对象的大面积点击层，也不向输入设备调用 `lv_indev_wait_release()`，因此根页面/框架仍可识别边缘返回手势。
 
 如果拖动中触点进入边缘保留区，状态机只钳制球的位置，不扩大球命中范围。真机必须验证左右边缘返回、快速拖动到四边及拖动中退出；如果框架手势仍被球事件抢占，回退为更大保留区或关闭 Kconfig。
 
@@ -107,8 +107,8 @@ MOMO_PLAY_BALL_EVENT MOMOPLAYBALL_Update(MOMO_PLAY_BALL *pGame,
 ### 5.2 整数/定点物理
 
 - 位置使用有符号 16 位像素中心坐标；速度使用有符号 32 位 Q8 像素/秒。
-- 释放速度由最后一个有效拖动样本与 release 点计算，时间差通过无符号减法处理 32 位 tick 回绕，并钳制到 16–200 ms。
-- 每 tick 的 `delta` 钳制到 1–100 ms。乘法先提升到 64 位，再除以 `1000*256`，避免溢出。
+- 释放速度使用最后一个 8–200 ms 的非零拖动样本，时间差通过无符号减法处理 32 位 tick 回绕。间隔达到 8 ms 且零位移，或间隔超过 200 ms，会立即清除旧速度；release 再按样本 tick 复核新鲜度。release 紧随最近有效 `PRESSING` 且间隔小于 8 ms 时保留该最新样本。
+- timer 回调以 `rt_tick_get_millisecond()` 的无符号 tick 差作为实际 `delta`，零值提升为 1 ms，收窄到 `uint16_t` 前饱和；状态机再钳制到 1–100 ms。乘法先提升到 64 位，再除以 `1000*256`，避免溢出与 GUI 调度抖动造成物理时间漂移。
 - 速度绝对值限制为 520 px/s；每 50 ms 乘以 235/256 做确定性衰减。
 - 越界时先把位置钳回边界，再将对应速度反向并乘以 3/4；每轴每 tick 最多处理一次反弹，不使用循环追边。
 - 两轴均低于停止阈值或运动达到 5 s 时进入有限复位。
@@ -117,7 +117,7 @@ MOMO_PLAY_BALL_EVENT MOMOPLAYBALL_Update(MOMO_PLAY_BALL *pGame,
 
 ### 5.3 tick 回绕与异常输入
 
-`uint32_t` tick 只做 `(uint32_t)(now - previous)` 差值；从不比较绝对 tick 大小。异常大触点在进入计算前钳制到边界，重复 release、空指针、无效状态和零/过大 delta 均返回安全结果。
+`uint32_t` tick 只做 `(uint32_t)(now - previous)` 差值；从不比较绝对 tick 大小。拖拽采样和 LVGL timer 分别保存自己的上一 tick，Cancel 时同步清零。异常大触点在进入计算前钳制到边界，重复 release、空指针、无效状态和零/过大 delta 均返回安全结果。
 
 ## 6. Momo 展示与动画仲裁
 
@@ -131,7 +131,7 @@ MOMO_PLAY_BALL_EVENT MOMOPLAYBALL_Update(MOMO_PLAY_BALL *pGame,
 4. Momo 玩球。
 5. 原有空闲动画。
 
-`PET_RefreshStatus()` 在刷新图片、外部动画和 Agent 聚合状态时计算“是否允许玩球”。如果不允许，则同步取消游戏、暂停游戏 timer、隐藏球/反馈并把 stage 恢复为 `PET_MASCOT_X/Y`，随后继续原有动画流程。玩球不修改 Agent 快照、图片槽、GIF timer 或表达事件代际。
+`PET_RefreshStatus()` 在刷新图片、外部动画和 Agent 聚合状态时计算“是否允许玩球”。如果不允许，则同步取消游戏、暂停游戏 timer、隐藏球/反馈、把球恢复为橙色并把 stage 恢复为 `PET_MASCOT_X/Y`，随后继续原有动画流程，避免反馈期外部取消后绿色样式泄漏。玩球不修改 Agent 快照、图片槽、GIF timer 或表达事件代际。
 
 仅在以下条件同时满足时显示和响应球：页面存活、图片非接收态、没有 typing、请求基础图片槽、Agent 聚合状态为 `IDLE`。首次从高优先级状态恢复为空闲时只恢复球到初始位置，不恢复旧轨迹。
 
@@ -155,7 +155,7 @@ MOMO_PLAY_BALL_EVENT MOMOPLAYBALL_Update(MOMO_PLAY_BALL *pGame,
 ### 7.2 运行
 
 - LVGL 事件回调只更新纯状态机并同步球位置，不阻塞、不分配内存、不访问 BLE。
-- 50 ms timer 调用一次纯状态机 `Update`，再更新球、stage 和反馈样式。
+- 50 ms timer 是调度目标；每次回调按实际无符号 tick 差调用纯状态机 `Update`，再更新球、stage 和反馈样式。
 - timer 参数不保存页面外部指针；回调先检查页面根对象、球对象和功能启用标志。
 - `PET_RefreshStatus()` 和游戏 timer 同属 LVGL 线程，无需新增锁。BLE 快照仍由现有临界区/服务接口负责同步。
 
@@ -213,8 +213,9 @@ MOMO_PLAY_BALL_EVENT MOMOPLAYBALL_Update(MOMO_PLAY_BALL *pGame,
 
 - 初始化/无效边界/空指针。
 - 球外按压、按压、拖动、释放、零位移和重复 release。
-- 四边/四角反弹、速度上限、衰减停止和 5 s 超时。
-- Momo 追逐、单次碰撞反馈、反馈结束复位。
+- 旧速度样本在静止 8 ms 或超过 200 ms 后失效，以及有效样本后小于 8 ms 松手继续生效。
+- 四边精确反弹、速度上限、衰减停止和精确 5 s 超时。
+- Momo 追逐、`CAUGHT` 仅一次、700 ms 反馈结束精确复位。
 - tick 在 `UINT32_MAX` 附近回绕、delta 过大、异常坐标。
 - Cancel/重新开始、连续至少 200 轮有界伪随机输入。
 - `-std=c11 -Wall -Wextra -Werror -pedantic` 编译并运行。

@@ -63,10 +63,10 @@ $env:PYTHONPATH='<repo>\sdk\tools\build;<repo>\sdk\tools\build\default'
 | 配置 | text | data | bss | dec |
 |---|---:|---:|---:|---:|
 | OFF | 5,497,138 B | 16,620 B | 4,864,640 B | 10,378,398 B |
-| ON | 5,499,314 B | 16,620 B | 4,864,736 B | 10,380,670 B |
-| 增量 | **+2,176 B** | **+0 B** | **+96 B** | **+2,272 B** |
+| ON | 5,499,474 B | 16,620 B | 4,864,744 B | 10,380,838 B |
+| 增量 | **+2,336 B** | **+0 B** | **+104 B** | **+2,440 B** |
 
-纯状态结构在主机 ABI 下为 80 B，并有 `_Static_assert(sizeof(MOMO_PLAY_BALL) < 256U)` 编译期上限。其余 16 B BSS 增量来自页面中的布尔/指针成员及对齐；LVGL 对象内部内存由既有 LVGL 对象系统管理，不计入静态 BSS 差值。
+推送前安全修复后使用相同工具链重新完成 OFF/ON 全量构建。纯状态结构在主机 ABI 下为 84 B，并有 `_Static_assert(sizeof(MOMO_PLAY_BALL) < 256U)` 编译期上限。其余 20 B BSS 增量来自页面中的指针、实际 timer tick、布尔成员及对齐；LVGL 对象内部内存由既有 LVGL 对象系统管理，不计入静态 BSS 差值。
 
 ## 纯状态机主机测试
 
@@ -84,16 +84,19 @@ cc -std=c11 -Wall -Wextra -Werror -pedantic \
   work/watch_bt_audio_template/src/gui_apps/pet/momo_play_ball.c
 ```
 
-结果：`PASS momo_play_ball_host_test state=80 bytes rounds=200`
+结果：`PASS momo_play_ball_host_test state=84 bytes deterministic=5 rounds=200`
 
 覆盖：
 
 - 无效边界使状态机保持禁用；NULL 更新安全返回。
 - 球外按下拒绝；无有效速度采样的释放复位。
 - `uint32_t` tick 回绕下仍能取得有效拖动采样。
-- 200 轮固定种子拖拽、释放、运动、四边反弹、追逐、捕获反馈和停止/超时复位。
+- 确定性验证四边精确反弹。
+- 确定性验证有效速度后静止 8 ms、超过 200 ms 均使旧样本失效；有效样本后小于 8 ms 松手仍可进入运动。
+- 确定性验证第 5,000 ms 触发 `RESET`，且此前保持运动。
+- 确定性验证 `CAUGHT` 仅触发一次，随后 650 ms 保持反馈，第 700 ms 精确 `RESET`。
+- 200 轮固定种子拖拽、释放、运动、反弹、追逐、捕获反馈和停止/超时复位。
 - 每一步断言球和 Momo 坐标均未越过配置边界。
-- 捕获与普通复位路径在 200 轮内均被命中。
 
 ## 现有回归
 
@@ -141,10 +144,12 @@ sdk\external\CmBacktrace-v1.3.0\cmb_cfg.h(52): fatal error C1189:
 - 纯 C 状态机无 `malloc/free`、文件、协议或外设访问；所有输入指针先校验。
 - 位置、速度、时间和碰撞参数均有边界；乘法在进入除法前提升至 `int64_t`。
 - 速度上限 520 px/s，单次更新最大 100 ms，轮次最大 5 s，反馈 700 ms。
-- tick 采样使用无符号减法，允许自然回绕；异常长采样不更新释放速度。
+- tick 采样使用无符号减法，允许自然回绕；静止达到 8 ms 或异常长采样会主动清除旧释放速度。timer 也按实际无符号 tick 差推进，零差最小为 1 ms，状态机上限仍为 100 ms。
 - 仅 LVGL 事件和 LVGL 定时器回调访问 LVGL；没有新增 RTOS 线程、锁、队列或 ISR。
 - 页面仅有一个 50 ms 定时器，空闲时暂停；退出时先禁止交互、取消状态，再删除定时器并清空对象指针。
-- 球只注册自身输入事件，24 px 左右边缘保护带不放置球心；未增加覆盖全屏的可点击层。
+- 球半径 13 px、扩展点击区 11 px，球心左右边界额外计入两者，使实际命中区距离两侧屏幕边界均为 24 px。未增加覆盖全屏的可点击层。
+- 球只分别注册 `PRESSED/PRESSING/RELEASED/PRESS_LOST` 四类事件，不注册 `LV_EVENT_ALL`；回调在读取 indev 前再次过滤事件码，避免位置或样式事件误取消游戏。
+- Cancel 会清除实际 timer tick、隐藏反馈并恢复橙色球；图片、多 GIF 或 Agent 状态在绿色反馈期抢占时不会泄漏反馈样式。
 - Agent 非 IDLE、打字、图片接收、非基础多 GIF 槽或外部动画更新会取消本轮并恢复原动画，避免争用 stage 坐标和 LVGL 动画。
 
 ## 待硬件验收

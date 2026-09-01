@@ -49,6 +49,15 @@ static int32_t PlayBall_ClampVelocity(int64_t dVelocityQ8)
     return (int32_t)dVelocityQ8;
 }
 
+/* 清除已失效的拖拽速度，禁止松手复用旧样本。 */
+static void PlayBall_ClearVelocitySample(MOMO_PLAY_BALL *pGame)
+{
+    pGame->lReleaseVelocityXQ8 = 0L;
+    pGame->lReleaseVelocityYQ8 = 0L;
+    pGame->ulVelocitySampleTickMs = 0U;
+    pGame->bHasVelocitySample = false;
+}
+
 /* 校验所有起点、活动区和碰撞参数。 */
 static bool PlayBall_BoundsValid(const MOMO_PLAY_BALL_BOUNDS *pBounds)
 {
@@ -95,6 +104,7 @@ static void PlayBall_Reset(MOMO_PLAY_BALL *pGame)
     pGame->sLastTouchX = pGame->sBallX;
     pGame->sLastTouchY = pGame->sBallY;
     pGame->ulLastTouchTickMs = 0U;
+    pGame->ulVelocitySampleTickMs = 0U;
     pGame->usRoundElapsedMs = 0U;
     pGame->usFeedbackElapsedMs = 0U;
     pGame->bHasVelocitySample = false;
@@ -141,7 +151,7 @@ bool MOMOPLAYBALL_Press(MOMO_PLAY_BALL *pGame, int16_t sTouchX,
     pGame->sLastTouchX = sTouchX;
     pGame->sLastTouchY = sTouchY;
     pGame->ulLastTouchTickMs = ulTickMs;
-    pGame->bHasVelocitySample = false;
+    PlayBall_ClearVelocitySample(pGame);
     pGame->bCollisionLatched = false;
     return true;
 }
@@ -175,7 +185,14 @@ bool MOMOPLAYBALL_Drag(MOMO_PLAY_BALL *pGame, int16_t sTouchX,
             ((int64_t)lDeltaX * 1000LL * PLAYBALL_Q8_ONE) / ulDeltaMs);
         pGame->lReleaseVelocityYQ8 = PlayBall_ClampVelocity(
             ((int64_t)lDeltaY * 1000LL * PLAYBALL_Q8_ONE) / ulDeltaMs);
+        pGame->ulVelocitySampleTickMs = ulTickMs;
         pGame->bHasVelocitySample = true;
+    }
+    else if ((PLAYBALL_MAX_SAMPLE_MS < ulDeltaMs) ||
+             ((PLAYBALL_MIN_SAMPLE_MS <= ulDeltaMs) &&
+              (0L == lDeltaX) && (0L == lDeltaY)))
+    {
+        PlayBall_ClearVelocitySample(pGame);
     }
     pGame->sBallX = sClampedX;
     pGame->sBallY = sClampedY;
@@ -196,7 +213,9 @@ bool MOMOPLAYBALL_Release(MOMO_PLAY_BALL *pGame, int16_t sTouchX,
         return false;
     }
     (void)MOMOPLAYBALL_Drag(pGame, sTouchX, sTouchY, ulTickMs);
-    if (!pGame->bHasVelocitySample)
+    if (!pGame->bHasVelocitySample ||
+        (PLAYBALL_MAX_SAMPLE_MS <
+         (uint32_t)(ulTickMs - pGame->ulVelocitySampleTickMs)))
     {
         PlayBall_Reset(pGame);
         return false;

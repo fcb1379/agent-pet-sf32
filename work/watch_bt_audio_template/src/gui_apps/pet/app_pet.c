@@ -87,6 +87,7 @@ LV_IMG_DECLARE(agent_pet_merit_plus_one);
     #define PET_PLAY_BALL_DIAMETER (26)
     #define PET_PLAY_BALL_RADIUS (PET_PLAY_BALL_DIAMETER / 2)
     #define PET_PLAY_BALL_EDGE_GUARD (24)
+    #define PET_PLAY_BALL_EXT_CLICK_AREA (11)
     #define PET_PLAY_BALL_TOP_GUARD (48)
     #define PET_PLAY_BALL_BOTTOM_GUARD (84)
     #define PET_PLAY_BALL_HIT_RADIUS (24U)
@@ -178,6 +179,7 @@ typedef struct
     lv_obj_t *play_ball_feedback;
     lv_timer_t *play_ball_timer;
     MOMO_PLAY_BALL tPlayBall;
+    uint32_t ulPlayBallLastTickMs;
     bool bPlayBallAvailable;
 #endif
 #ifndef BSP_USING_PC_SIMULATOR
@@ -1266,6 +1268,7 @@ static void PET_SyncPlayBallObjects(void)
 static void PET_CancelPlayBall(void)
 {
     MOMOPLAYBALL_Cancel(&g_pet_ui.tPlayBall);
+    g_pet_ui.ulPlayBallLastTickMs = 0U;
     if (NULL != g_pet_ui.play_ball_timer)
     {
         lv_timer_pause(g_pet_ui.play_ball_timer);
@@ -1273,6 +1276,11 @@ static void PET_CancelPlayBall(void)
     if (NULL != g_pet_ui.play_ball_feedback)
     {
         lv_obj_add_flag(g_pet_ui.play_ball_feedback, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (NULL != g_pet_ui.play_ball)
+    {
+        lv_obj_set_style_bg_color(
+            g_pet_ui.play_ball, lv_color_hex(0xFFB347U), 0);
     }
     if (NULL != g_pet_ui.stage)
     {
@@ -1328,6 +1336,9 @@ static void PET_SetPlayBallAllowed(bool bAllowed)
 static void PET_PlayBallTimer(lv_timer_t *pTimer)
 {
     MOMO_PLAY_BALL_EVENT eEvent;
+    uint32_t ulTickMs;
+    uint32_t ulDeltaMs;
+    uint16_t usDeltaMs;
 
     if ((NULL == pTimer) || !g_pet_ui.bPlayBallAvailable ||
         (NULL == g_pet_ui.root) || (NULL == g_pet_ui.play_ball))
@@ -1336,11 +1347,18 @@ static void PET_PlayBallTimer(lv_timer_t *pTimer)
         {
             lv_timer_pause(pTimer);
         }
+        g_pet_ui.ulPlayBallLastTickMs = 0U;
         return;
     }
 
-    eEvent = MOMOPLAYBALL_Update(
-        &g_pet_ui.tPlayBall, PET_PLAY_BALL_TIMER_MS);
+    ulTickMs = rt_tick_get_millisecond();
+    ulDeltaMs = (0U == g_pet_ui.ulPlayBallLastTickMs) ? 1U :
+        (uint32_t)(ulTickMs - g_pet_ui.ulPlayBallLastTickMs);
+    g_pet_ui.ulPlayBallLastTickMs = ulTickMs;
+    ulDeltaMs = (0U == ulDeltaMs) ? 1U : ulDeltaMs;
+    usDeltaMs = (UINT16_MAX < ulDeltaMs) ? UINT16_MAX :
+        (uint16_t)ulDeltaMs;
+    eEvent = MOMOPLAYBALL_Update(&g_pet_ui.tPlayBall, usDeltaMs);
     PET_SyncPlayBallObjects();
     if (MOMO_PLAY_BALL_EVENT_CAUGHT == eEvent)
     {
@@ -1355,6 +1373,7 @@ static void PET_PlayBallTimer(lv_timer_t *pTimer)
     else if (MOMO_PLAY_BALL_EVENT_RESET == eEvent)
     {
         lv_timer_pause(pTimer);
+        g_pet_ui.ulPlayBallLastTickMs = 0U;
         if (NULL != g_pet_ui.play_ball_feedback)
         {
             lv_obj_add_flag(
@@ -1387,6 +1406,13 @@ static void PET_PlayBallInput(lv_event_t *pEvent)
         return;
     }
     eCode = lv_event_get_code(pEvent);
+    if ((LV_EVENT_PRESSED != eCode) &&
+        (LV_EVENT_PRESSING != eCode) &&
+        (LV_EVENT_RELEASED != eCode) &&
+        (LV_EVENT_PRESS_LOST != eCode))
+    {
+        return;
+    }
     pInput = lv_event_get_indev(pEvent);
     if (NULL == pInput)
     {
@@ -1424,6 +1450,7 @@ static void PET_PlayBallInput(lv_event_t *pEvent)
         PET_SyncPlayBallObjects();
         if (bStarted && (NULL != g_pet_ui.play_ball_timer))
         {
+            g_pet_ui.ulPlayBallLastTickMs = ulTickMs;
             lv_timer_reset(g_pet_ui.play_ball_timer);
             lv_timer_resume(g_pet_ui.play_ball_timer);
         }
@@ -1452,9 +1479,10 @@ static bool PET_CreatePlayBall(void)
     int16_t sMomoHalf;
 
     sMomoHalf = PET_MASCOT_SIZE / 2;
-    tBounds.sBallMinX = PET_PLAY_BALL_EDGE_GUARD + PET_PLAY_BALL_RADIUS;
+    tBounds.sBallMinX = PET_PLAY_BALL_EDGE_GUARD + PET_PLAY_BALL_RADIUS +
+        PET_PLAY_BALL_EXT_CLICK_AREA;
     tBounds.sBallMaxX = LV_HOR_RES_MAX - PET_PLAY_BALL_EDGE_GUARD -
-        PET_PLAY_BALL_RADIUS;
+        PET_PLAY_BALL_RADIUS - PET_PLAY_BALL_EXT_CLICK_AREA;
     tBounds.sBallMinY = PET_PLAY_BALL_TOP_GUARD + PET_PLAY_BALL_RADIUS;
     tBounds.sBallMaxY = LV_VER_RES_MAX - PET_PLAY_BALL_BOTTOM_GUARD -
         PET_PLAY_BALL_RADIUS;
@@ -1479,6 +1507,7 @@ static bool PET_CreatePlayBall(void)
     g_pet_ui.play_ball = lv_obj_create(g_pet_ui.root);
     if (NULL == g_pet_ui.play_ball)
     {
+        MOMOPLAYBALL_Init(&g_pet_ui.tPlayBall, NULL);
         return false;
     }
     lv_obj_set_size(
@@ -1493,15 +1522,23 @@ static bool PET_CreatePlayBall(void)
     lv_obj_set_style_pad_all(g_pet_ui.play_ball, 0, 0);
     lv_obj_clear_flag(g_pet_ui.play_ball, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(g_pet_ui.play_ball, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_ext_click_area(g_pet_ui.play_ball, 11);
+    lv_obj_set_ext_click_area(
+        g_pet_ui.play_ball, PET_PLAY_BALL_EXT_CLICK_AREA);
     lv_obj_add_event_cb(
-        g_pet_ui.play_ball, PET_PlayBallInput, LV_EVENT_ALL, NULL);
+        g_pet_ui.play_ball, PET_PlayBallInput, LV_EVENT_PRESSED, NULL);
+    lv_obj_add_event_cb(
+        g_pet_ui.play_ball, PET_PlayBallInput, LV_EVENT_PRESSING, NULL);
+    lv_obj_add_event_cb(
+        g_pet_ui.play_ball, PET_PlayBallInput, LV_EVENT_RELEASED, NULL);
+    lv_obj_add_event_cb(
+        g_pet_ui.play_ball, PET_PlayBallInput, LV_EVENT_PRESS_LOST, NULL);
 
     g_pet_ui.play_ball_feedback = lv_label_create(g_pet_ui.root);
     if (NULL == g_pet_ui.play_ball_feedback)
     {
         lv_obj_del(g_pet_ui.play_ball);
         g_pet_ui.play_ball = NULL;
+        MOMOPLAYBALL_Init(&g_pet_ui.tPlayBall, NULL);
         return false;
     }
     lv_label_set_text(g_pet_ui.play_ball_feedback, "Good catch!");
@@ -1522,6 +1559,7 @@ static bool PET_CreatePlayBall(void)
         lv_obj_del(g_pet_ui.play_ball);
         g_pet_ui.play_ball_feedback = NULL;
         g_pet_ui.play_ball = NULL;
+        MOMOPLAYBALL_Init(&g_pet_ui.tPlayBall, NULL);
         return false;
     }
     lv_timer_pause(g_pet_ui.play_ball_timer);

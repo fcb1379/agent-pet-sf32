@@ -59,6 +59,7 @@ typedef struct _MOMO_PLAY_BALL
     int16_t sLastTouchX;
     int16_t sLastTouchY;
     uint32_t ulLastTouchTickMs;
+    uint32_t ulVelocitySampleTickMs;
     uint16_t usRoundElapsedMs;
     uint16_t usFeedbackElapsedMs;
     bool bHasVelocitySample;
