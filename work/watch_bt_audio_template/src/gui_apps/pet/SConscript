@@ -3,8 +3,24 @@ import os
 
 cwd = GetCurrentDir()
 src = Glob('*.c')
+if not GetDepend('AGENT_PET_USING_STROKE'):
+    src = [source for source in src
+           if os.path.basename(str(source)) != 'momo_stroking.c']
 app_utils = os.path.join(cwd, '..', '..', 'app_utils')
 local_ccflags = ''
+
+if not GetDepend('AGENT_PET_BEHAVIOR_ENGINE'):
+    src = [item for item in src
+           if os.path.basename(str(item)) != 'pet_state_assets.c']
+
+if not GetDepend('AGENT_PET_USING_MEMORY_CALENDAR'):
+    src = [item for item in src
+           if not str(item).replace('\\', '/').endswith(
+               '/momo_memory_calendar.c')]
+
+if not GetDepend('AGENT_PET_MOMO_PLAY_BALL'):
+    src = [node for node in src
+           if os.path.basename(str(node)) != 'momo_play_ball.c']
 
 if not GetDepend('BSP_USING_PC_SIMULATOR'):
     local_ccflags = ' -Wall -Wextra -Wno-cast-function-type -Werror'
