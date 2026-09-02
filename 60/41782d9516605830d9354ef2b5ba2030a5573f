@@ -1,0 +1,21 @@
+docs/2026-08-28-lvgl-pet-watch-idea-scan.md
+  s_b991e4ff93e87f::t_0874a0c66f0054 1-115
+docs/2026-08-28-momo-play-ball-prd.md
+  s_b991e4ff93e87f::t_0874a0c66f0054 1-282
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "6041782d9516605830d9354ef2b5ba2030a5573f",
+  "prompts": {},
+  "sessions": {
+    "s_b991e4ff93e87f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd60c-817e-7cf2-aadd-448c400c6b83",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": null
+    }
+  }
+}
