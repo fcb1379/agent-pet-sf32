@@ -1,11 +1,15 @@
 #ifndef AGENT_PET_BLE_SERVICE_H
 #define AGENT_PET_BLE_SERVICE_H
 
+#include <rtconfig.h>
 #include <stdbool.h>
 #include <stdint.h>
 
 #include "agent_pet_protocol.h"
 #include "agent_pet_image_transfer.h"
+#ifdef AGENT_PET_WEATHER_MOMENTS
+    #include "agent_pet_weather.h"
+#endif
 
 /* AGENTPET_BLE_STATUS: BLE 链路和最近一次有效 Agent 快照的只读副本。
  * 成员说明：
@@ -28,7 +32,21 @@ typedef struct _AGENTPET_BLE_STATUS
     uint32_t ulRejectedFrameCount;
     AGENTPET_SNAPSHOT tSnapshot;
     AGENTPET_IMAGE_STATUS tImageStatus;
+#ifdef AGENT_PET_WEATHER_MOMENTS
+    bool bHasWeatherSnapshot;
+    AGENTPET_WEATHER_SNAPSHOT tWeatherSnapshot;
+    AGENTPET_WEATHER_DIAGNOSTICS tWeatherDiagnostics;
+#endif
 } AGENTPET_BLE_STATUS;
+
+#ifdef AGENT_PET_WEATHER_MOMENTS
+bool AGENTPETBLE_ClaimWeatherInteraction(
+    uint16_t usSequence,
+    uint32_t ulNowMonotonicTicks);
+bool AGENTPETBLE_CanClaimWeatherInteraction(
+    const AGENTPET_WEATHER_SNAPSHOT *pSnapshot,
+    uint32_t ulNowMonotonicTicks);
+#endif
 
 void AGENTPETBLE_Init(void);
 bool AGENTPETBLE_RegisterService(void);

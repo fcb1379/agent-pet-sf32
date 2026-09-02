@@ -13,6 +13,7 @@
 #ifndef BSP_USING_PC_SIMULATOR
     #include <time.h>
     #include "share_prefs.h"
+    #include "watch_settings.h"
 #endif
 #if defined(AGENT_PET_USING_IMU) && !defined(BSP_USING_PC_SIMULATOR)
     #include "pet_imu.h"
@@ -61,6 +62,12 @@ LV_IMG_DECLARE(agent_pet_merit_plus_one);
 #define PET_TYPING_PAW_Y (126)
 #define PET_TYPING_PAW_LEFT_X (50)
 #define PET_TYPING_PAW_RIGHT_X (112)
+#ifdef AGENT_PET_WEATHER_MOMENTS
+    #define PET_WEATHER_PROMPT_MS (4000U)
+    #define PET_WEATHER_FEEDBACK_MS (1500U)
+    #define PET_WEATHER_PARTICLE_COUNT (3U)
+    #define PET_WEATHER_LAYER_Y (82)
+#endif
 #define PET_MOTION_SAMPLE_MS (20U)
 #define PET_MOTION_SWING_DYN_MG (120U)
 #define PET_MOTION_SWING_GYRO_MDPS (60000U)
@@ -142,6 +149,12 @@ typedef struct
     lv_obj_t *typing_keyboard;
     lv_obj_t *typing_paw_left;
     lv_obj_t *typing_paw_right;
+#ifdef AGENT_PET_WEATHER_MOMENTS
+    lv_obj_t *weather_layer;
+    lv_obj_t *weather_body;
+    lv_obj_t *aWeatherParticles[PET_WEATHER_PARTICLE_COUNT];
+    lv_obj_t *weather_hint;
+#endif
     lv_obj_t *garden_pot;
     lv_obj_t *garden_stem;
     lv_obj_t *aGardenLeaves[QUEST_GARDEN_MAX_LEAVES];
@@ -190,6 +203,12 @@ typedef struct
     bool bRenderedCustomImage;
     bool bTypingActive;
     bool bRenderedTypingActive;
+#ifdef AGENT_PET_WEATHER_MOMENTS
+    AGENTPET_WEATHER_SNAPSHOT tRenderedWeather;
+    AGENTPET_WEATHER_PRESENTATION eWeatherPresentation;
+    uint32_t ulWeatherFeedbackStartTick;
+    bool bWeatherFeedbackActive;
+#endif
 #if defined(AGENT_PET_USING_IMU) && !defined(BSP_USING_PC_SIMULATOR)
     PET_MOTION_DETECTOR tMotionDetector;
     uint8_t ucMotionReadErrors;
@@ -202,6 +221,11 @@ static pet_ui_t g_pet_ui;
 static void PET_ApplyStateAnimation(uint8_t ucState);
 static void PET_PlayWoodenFishAnimation(const lv_point_t *pPoint);
 static void PET_PlayWoodenFish(lv_event_t *pEvent);
+#ifdef AGENT_PET_WEATHER_MOMENTS
+static void PET_CreateWeatherAmbience(void);
+static void PET_RefreshWeather(const AGENTPET_BLE_STATUS *pStatus);
+static void PET_HandleMascotClick(lv_event_t *pEvent);
+#endif
 
 #if defined(AGENT_PET_USING_IMU) && !defined(BSP_USING_PC_SIMULATOR)
 /***************************
@@ -1004,7 +1028,11 @@ static bool PET_LoadCustomGif(
     lv_obj_add_flag(g_pet_ui.mascot_gif, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(
         g_pet_ui.mascot_gif,
+#ifdef AGENT_PET_WEATHER_MOMENTS
+        PET_HandleMascotClick,
+#else
         PET_PlayWoodenFish,
+#endif
         LV_EVENT_SHORT_CLICKED,
         NULL);
     g_pet_ui.gif_timer = lv_timer_create(
@@ -1408,6 +1436,327 @@ static void PET_RefreshExpressionAnimation(bool bConnected)
     return;
 }
 
+#ifdef AGENT_PET_WEATHER_MOMENTS
+/*
+ * PET_GetWeatherClock
+ * Function: read raw RT ticks and derive UTC only after trusted time sync.
+ * Parameters:
+ *   - pNowUtc: UTC output, zero when unavailable.
+ *   - pNowTick: raw RT tick output.
+ * Return: true when UTC is trustworthy; false uses monotonic TTL fallback.
+ */
+static bool PET_GetWeatherClock(uint32_t *pNowUtc, uint32_t *pNowTick)
+{
+    bool bRtcValid;
+
+    if ((NULL == pNowUtc) || (NULL == pNowTick))
+    {
+        return false;
+    }
+    *pNowUtc = 0U;
+    *pNowTick = (uint32_t)rt_tick_get();
+    bRtcValid = false;
+#ifndef BSP_USING_PC_SIMULATOR
+    {
+        watch_settings_snapshot_t tSettings;
+        time_t tLocalTime;
+        int64_t dUtcTime;
+
+        if ((RT_EOK == watch_settings_get_snapshot(&tSettings)) &&
+            (0U != tSettings.last_time_sync_epoch))
+        {
+            tLocalTime = time(NULL);
+            dUtcTime = (int64_t)tLocalTime -
+                ((int64_t)tSettings.timezone_offset_minutes * 60LL);
+            if ((1577836800LL <= dUtcTime) &&
+                (2145916800LL >= dUtcTime))
+            {
+                *pNowUtc = (uint32_t)dUtcTime;
+                bRtcValid = true;
+            }
+        }
+    }
+#endif
+
+    return bRtcValid;
+}
+
+/*
+ * PET_WeatherPrompt
+ * Function: select a short provider-independent care prompt.
+ * Parameters:
+ *   - pSnapshot: current validated weather snapshot.
+ * Return: static prompt string.
+ */
+static const char *PET_WeatherPrompt(
+    const AGENTPET_WEATHER_SNAPSHOT *pSnapshot)
+{
+    if (NULL == pSnapshot)
+    {
+        return "";
+    }
+    if (0U != (pSnapshot->ucFlags & AGENTPET_WEATHER_FLAG_HOT))
+    {
+        return "Tap to fan Momo";
+    }
+    if (0U != (pSnapshot->ucFlags & AGENTPET_WEATHER_FLAG_COLD))
+    {
+        return "Tap to warm Momo";
+    }
+    if (AGENTPET_WEATHER_CLEAR == pSnapshot->ucCondition)
+    {
+        return "Tap to share sunshine";
+    }
+    if (AGENTPET_WEATHER_CLOUDY == pSnapshot->ucCondition)
+    {
+        return "Tap to nudge a cloud";
+    }
+    if ((AGENTPET_WEATHER_RAIN == pSnapshot->ucCondition) ||
+        (AGENTPET_WEATHER_SNOW == pSnapshot->ucCondition))
+    {
+        return "Tap to shelter Momo";
+    }
+    if (AGENTPET_WEATHER_STORM == pSnapshot->ucCondition)
+    {
+        return "Storm nearby - staying calm";
+    }
+
+    return "Weather nearby";
+}
+
+/*
+ * PET_StyleWeatherObjects
+ * Function: update the fixed LVGL objects for one condition at 10 FPS.
+ * Parameters:
+ *   - pSnapshot: current validated weather snapshot.
+ *   - ulNowTick: current raw RT tick.
+ * Return: none.
+ */
+static void PET_StyleWeatherObjects(
+    const AGENTPET_WEATHER_SNAPSHOT *pSnapshot,
+    uint32_t ulNowTick)
+{
+    uint32_t ulFrameDivisor;
+    uint32_t ulFrame;
+    uint32_t ulColor;
+    lv_coord_t lParticleX;
+    lv_coord_t lParticleY;
+    lv_coord_t lParticleWidth;
+    lv_coord_t lParticleHeight;
+    uint8_t ucIndex;
+
+    if ((NULL == pSnapshot) || (NULL == g_pet_ui.weather_body))
+    {
+        return;
+    }
+    ulFrameDivisor = RT_TICK_PER_SECOND / 10U;
+    if (0U == ulFrameDivisor)
+    {
+        ulFrameDivisor = 1U;
+    }
+    ulFrame = ulNowTick / ulFrameDivisor;
+    ulColor = 0x7CC8FFU;
+    if (0U != (pSnapshot->ucFlags & AGENTPET_WEATHER_FLAG_HOT))
+    {
+        ulColor = 0xFF9B5EU;
+    }
+    else if (0U != (pSnapshot->ucFlags & AGENTPET_WEATHER_FLAG_COLD))
+    {
+        ulColor = 0x75ECFFU;
+    }
+    else if (AGENTPET_WEATHER_CLEAR == pSnapshot->ucCondition)
+    {
+        ulColor = 0xFFD76AU;
+    }
+    else if (AGENTPET_WEATHER_CLOUDY == pSnapshot->ucCondition)
+    {
+        ulColor = 0x9BAFC0U;
+    }
+    else if (AGENTPET_WEATHER_RAIN == pSnapshot->ucCondition)
+    {
+        ulColor = 0x65AEE8U;
+    }
+    else if (AGENTPET_WEATHER_SNOW == pSnapshot->ucCondition)
+    {
+        ulColor = 0xE5F7FFU;
+    }
+    else if (AGENTPET_WEATHER_STORM == pSnapshot->ucCondition)
+    {
+        ulColor = 0x74809AU;
+    }
+    lv_obj_set_style_bg_color(
+        g_pet_ui.weather_body,
+        lv_color_hex(ulColor),
+        0);
+    lv_obj_set_style_bg_opa(g_pet_ui.weather_body, LV_OPA_20, 0);
+    for (ucIndex = 0U;
+         ucIndex < PET_WEATHER_PARTICLE_COUNT;
+         ucIndex++)
+    {
+        if (NULL == g_pet_ui.aWeatherParticles[ucIndex])
+        {
+            continue;
+        }
+        lParticleWidth = 12;
+        lParticleHeight = 12;
+        if ((AGENTPET_WEATHER_RAIN == pSnapshot->ucCondition) ||
+            (AGENTPET_WEATHER_SNOW == pSnapshot->ucCondition))
+        {
+            lParticleX = 54 + (lv_coord_t)(ucIndex * 105U);
+            lParticleY = 30 + (lv_coord_t)(
+                ((ulFrame * 5U) + (ucIndex * 43U)) % 135U);
+            if (AGENTPET_WEATHER_RAIN == pSnapshot->ucCondition)
+            {
+                lParticleWidth = 5;
+                lParticleHeight = 20;
+            }
+        }
+        else if (AGENTPET_WEATHER_CLOUDY == pSnapshot->ucCondition)
+        {
+            lParticleX = 24 + (lv_coord_t)(
+                ((ulFrame * 2U) + (ucIndex * 96U)) % 280U);
+            lParticleY = 44 + (lv_coord_t)(ucIndex * 32U);
+            lParticleWidth = 38;
+            lParticleHeight = 22;
+        }
+        else
+        {
+            lParticleX = 42 + (lv_coord_t)(ucIndex * 116U);
+            lParticleY = 56 + (lv_coord_t)(
+                ((ulFrame * 2U) + (ucIndex * 31U)) % 82U);
+        }
+        lv_obj_set_pos(
+            g_pet_ui.aWeatherParticles[ucIndex],
+            lParticleX,
+            lParticleY);
+        lv_obj_set_size(
+            g_pet_ui.aWeatherParticles[ucIndex],
+            lParticleWidth,
+            lParticleHeight);
+        lv_obj_set_style_radius(
+            g_pet_ui.aWeatherParticles[ucIndex],
+            LV_RADIUS_CIRCLE,
+            0);
+        lv_obj_set_style_bg_color(
+            g_pet_ui.aWeatherParticles[ucIndex],
+            lv_color_hex(ulColor),
+            0);
+        lv_obj_set_style_bg_opa(
+            g_pet_ui.aWeatherParticles[ucIndex],
+            LV_OPA_50,
+            0);
+    }
+
+    return;
+}
+
+/*
+ * PET_RefreshWeather
+ * Function: evaluate priority/TTL and update weather only on the GUI thread.
+ * Parameters:
+ *   - pStatus: thread-safe Agent Pet service snapshot.
+ * Return: none.
+ */
+static void PET_RefreshWeather(const AGENTPET_BLE_STATUS *pStatus)
+{
+    AGENTPET_WEATHER_PRIORITY_INPUT tInput;
+    AGENTPET_WEATHER_FRESHNESS eFreshness;
+    QUEST_GARDEN_VIEW tGardenView;
+    uint32_t ulNowUtc;
+    uint32_t ulNowTick;
+    uint32_t ulPromptTicks;
+    uint32_t ulFeedbackTicks;
+    bool bRtcValid;
+    bool bHasGardenView;
+
+    if ((NULL == pStatus) || (NULL == g_pet_ui.weather_layer))
+    {
+        return;
+    }
+    bRtcValid = PET_GetWeatherClock(&ulNowUtc, &ulNowTick);
+    eFreshness = pStatus->bHasWeatherSnapshot ?
+        AGENTPETWEATHER_EvaluateFreshness(
+            &pStatus->tWeatherSnapshot,
+            ulNowUtc,
+            ulNowTick,
+            RT_TICK_PER_SECOND,
+            bRtcValid) : AGENTPET_WEATHER_FRESHNESS_EMPTY;
+    (void)rt_memset(&tGardenView, 0, sizeof(tGardenView));
+    bHasGardenView = QUESTGARDEN_GetView(
+        &g_pet_ui.tQuestGarden,
+        &tGardenView);
+    (void)rt_memset(&tInput, 0, sizeof(tInput));
+    tInput.bFeatureEnabled = true;
+    tInput.bSnapshotFresh =
+        (AGENTPET_WEATHER_FRESHNESS_RTC == eFreshness) ||
+        (AGENTPET_WEATHER_FRESHNESS_MONOTONIC == eFreshness);
+    tInput.bImageTransferActive =
+        (AGENTPET_IMAGE_RECEIVING == pStatus->tImageStatus.eState);
+    tInput.bAgentBlocksWeather = pStatus->bHasSnapshot &&
+        (AGENTPET_STATE_IDLE != pStatus->tSnapshot.ucAggregateState);
+    tInput.bTypingActive = g_pet_ui.bTypingActive;
+    tInput.bRemoteExpressionActive =
+        (AGENTPET_IMAGE_BASE_SLOT != g_pet_ui.ucRequestedImageSlot);
+    tInput.bQuestFeedbackPending = bHasGardenView &&
+        (0U != tGardenView.ulPending);
+    tInput.bInteractionAvailable = pStatus->bHasWeatherSnapshot &&
+        tInput.bSnapshotFresh &&
+        AGENTPETBLE_CanClaimWeatherInteraction(
+            &pStatus->tWeatherSnapshot,
+            ulNowTick);
+    g_pet_ui.eWeatherPresentation =
+        AGENTPETWEATHER_SelectPresentation(&tInput);
+    ulFeedbackTicks = (uint32_t)(((uint64_t)PET_WEATHER_FEEDBACK_MS *
+        RT_TICK_PER_SECOND) / 1000ULL);
+    if (g_pet_ui.bWeatherFeedbackActive &&
+        ((ulNowTick - g_pet_ui.ulWeatherFeedbackStartTick) >=
+         ulFeedbackTicks))
+    {
+        g_pet_ui.bWeatherFeedbackActive = false;
+    }
+    if (AGENTPET_WEATHER_PRESENTATION_HIDDEN ==
+        g_pet_ui.eWeatherPresentation)
+    {
+        lv_obj_add_flag(g_pet_ui.weather_layer, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+
+    g_pet_ui.tRenderedWeather = pStatus->tWeatherSnapshot;
+    lv_obj_clear_flag(g_pet_ui.weather_layer, LV_OBJ_FLAG_HIDDEN);
+    PET_StyleWeatherObjects(&g_pet_ui.tRenderedWeather, ulNowTick);
+    if (NULL != g_pet_ui.weather_hint)
+    {
+        lv_obj_add_flag(g_pet_ui.weather_hint, LV_OBJ_FLAG_HIDDEN);
+        if (g_pet_ui.bWeatherFeedbackActive)
+        {
+            lv_label_set_text(
+                g_pet_ui.weather_hint,
+                "Momo feels cared for");
+            lv_obj_clear_flag(g_pet_ui.weather_hint, LV_OBJ_FLAG_HIDDEN);
+        }
+        else if (AGENTPET_WEATHER_PRESENTATION_INTERACTION ==
+                 g_pet_ui.eWeatherPresentation)
+        {
+            ulPromptTicks = (uint32_t)(((uint64_t)PET_WEATHER_PROMPT_MS *
+                RT_TICK_PER_SECOND) / 1000ULL);
+            if ((ulNowTick -
+                 g_pet_ui.tRenderedWeather.ulReceivedMonotonicTicks) <
+                ulPromptTicks)
+            {
+                lv_label_set_text(
+                    g_pet_ui.weather_hint,
+                    PET_WeatherPrompt(&g_pet_ui.tRenderedWeather));
+                lv_obj_clear_flag(
+                    g_pet_ui.weather_hint,
+                    LV_OBJ_FLAG_HIDDEN);
+            }
+        }
+    }
+
+    return;
+}
+#endif /* AGENT_PET_WEATHER_MOMENTS */
+
 /*
  * PET_RefreshStatus
  * 功能：在 LVGL 线程中读取已发布快照并刷新桌宠状态文字。
@@ -1448,6 +1797,9 @@ static void PET_RefreshStatus(lv_timer_t *pTimer)
     PET_ApplyStateAnimation(
         tStatus.bHasSnapshot ?
             tStatus.tSnapshot.ucAggregateState : AGENTPET_STATE_IDLE);
+#ifdef AGENT_PET_WEATHER_MOMENTS
+    PET_RefreshWeather(&tStatus);
+#endif
     ulQuestDay = PET_QuestCurrentDay();
     if (QUESTGARDEN_Rollover(
             &g_pet_ui.tQuestGarden, ulQuestDay, &tQuestResult) &&
@@ -2419,6 +2771,147 @@ static void PET_PlayWoodenFish(lv_event_t *pEvent)
     return;
 }
 
+#ifdef AGENT_PET_WEATHER_MOMENTS
+/*
+ * PET_HandleMascotClick
+ * Function: claim local weather care before falling back to wooden-fish merit.
+ * Parameters:
+ *   - pEvent: LVGL short-click event.
+ * Return: none.
+ */
+static void PET_HandleMascotClick(lv_event_t *pEvent)
+{
+    uint32_t ulNowTick;
+
+    if ((NULL == pEvent) ||
+        (LV_EVENT_SHORT_CLICKED != lv_event_get_code(pEvent)))
+    {
+        return;
+    }
+    ulNowTick = (uint32_t)rt_tick_get();
+    if (AGENTPET_WEATHER_PRESENTATION_INTERACTION ==
+        g_pet_ui.eWeatherPresentation)
+    {
+        if (AGENTPETBLE_ClaimWeatherInteraction(
+                g_pet_ui.tRenderedWeather.usSequence,
+                ulNowTick))
+        {
+            g_pet_ui.bWeatherFeedbackActive = true;
+            g_pet_ui.ulWeatherFeedbackStartTick = ulNowTick;
+            if (NULL != g_pet_ui.weather_hint)
+            {
+                lv_label_set_text(
+                    g_pet_ui.weather_hint,
+                    "Momo feels cared for");
+                lv_obj_clear_flag(
+                    g_pet_ui.weather_hint,
+                    LV_OBJ_FLAG_HIDDEN);
+            }
+        }
+
+        /* Suppress the legacy merit action while the weather prompt owns the
+         * click, including a second tap before the next 100 ms refresh. */
+        return;
+    }
+
+    PET_PlayWoodenFish(pEvent);
+
+    return;
+}
+
+/*
+ * PET_CreateWeatherAmbience
+ * Function: create the fixed weather layer as children of the pet page root.
+ * Parameters: none.
+ * Return: none.
+ */
+static void PET_CreateWeatherAmbience(void)
+{
+    uint8_t ucIndex;
+
+    if (NULL == g_pet_ui.root)
+    {
+        return;
+    }
+    g_pet_ui.weather_layer = lv_obj_create(g_pet_ui.root);
+    if (NULL == g_pet_ui.weather_layer)
+    {
+        return;
+    }
+    lv_obj_set_pos(g_pet_ui.weather_layer, 0, PET_WEATHER_LAYER_Y);
+    lv_obj_set_size(
+        g_pet_ui.weather_layer,
+        LV_HOR_RES_MAX,
+        PET_MASCOT_SIZE + 38);
+    lv_obj_set_style_bg_opa(g_pet_ui.weather_layer, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(g_pet_ui.weather_layer, 0, 0);
+    lv_obj_set_style_pad_all(g_pet_ui.weather_layer, 0, 0);
+    lv_obj_clear_flag(g_pet_ui.weather_layer, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(g_pet_ui.weather_layer, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_flag(g_pet_ui.weather_layer, LV_OBJ_FLAG_HIDDEN);
+
+    g_pet_ui.weather_body = lv_obj_create(g_pet_ui.weather_layer);
+    if (NULL != g_pet_ui.weather_body)
+    {
+        lv_obj_set_pos(g_pet_ui.weather_body, 30, 32);
+        lv_obj_set_size(g_pet_ui.weather_body, LV_HOR_RES_MAX - 60, 170);
+        lv_obj_set_style_border_width(g_pet_ui.weather_body, 0, 0);
+        lv_obj_set_style_pad_all(g_pet_ui.weather_body, 0, 0);
+        lv_obj_set_style_radius(
+            g_pet_ui.weather_body,
+            LV_RADIUS_CIRCLE,
+            0);
+        lv_obj_clear_flag(g_pet_ui.weather_body, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_clear_flag(g_pet_ui.weather_body, LV_OBJ_FLAG_CLICKABLE);
+    }
+    for (ucIndex = 0U;
+         ucIndex < PET_WEATHER_PARTICLE_COUNT;
+         ucIndex++)
+    {
+        g_pet_ui.aWeatherParticles[ucIndex] =
+            lv_obj_create(g_pet_ui.weather_layer);
+        if (NULL != g_pet_ui.aWeatherParticles[ucIndex])
+        {
+            lv_obj_set_style_border_width(
+                g_pet_ui.aWeatherParticles[ucIndex],
+                0,
+                0);
+            lv_obj_set_style_pad_all(
+                g_pet_ui.aWeatherParticles[ucIndex],
+                0,
+                0);
+            lv_obj_clear_flag(
+                g_pet_ui.aWeatherParticles[ucIndex],
+                LV_OBJ_FLAG_SCROLLABLE);
+            lv_obj_clear_flag(
+                g_pet_ui.aWeatherParticles[ucIndex],
+                LV_OBJ_FLAG_CLICKABLE);
+        }
+    }
+    g_pet_ui.weather_hint = lv_label_create(g_pet_ui.weather_layer);
+    if (NULL != g_pet_ui.weather_hint)
+    {
+        lv_obj_set_width(g_pet_ui.weather_hint, LV_HOR_RES_MAX - 32);
+        lv_obj_set_pos(g_pet_ui.weather_hint, 16, 0);
+        lv_obj_set_style_text_align(
+            g_pet_ui.weather_hint,
+            LV_TEXT_ALIGN_CENTER,
+            0);
+        lv_obj_set_style_text_color(
+            g_pet_ui.weather_hint,
+            lv_color_hex(0xD8F7EEU),
+            0);
+        lv_obj_set_style_text_opa(
+            g_pet_ui.weather_hint,
+            LV_OPA_COVER,
+            0);
+        lv_obj_add_flag(g_pet_ui.weather_hint, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    return;
+}
+#endif /* AGENT_PET_WEATHER_MOMENTS */
+
 /*
  * PET_CreateWoodenFish
  * Function: Build independent image layers exported from the desktop CSS.
@@ -2497,6 +2990,10 @@ static void pet_on_start(void)
         lv_obj_set_style_bg_opa(floor, LV_OPA_60, 0);
     }
 
+#ifdef AGENT_PET_WEATHER_MOMENTS
+    PET_CreateWeatherAmbience();
+#endif
+
     g_pet_ui.stage = lv_obj_create(g_pet_ui.root);
     lv_obj_set_pos(g_pet_ui.stage, PET_MASCOT_X, PET_MASCOT_Y);
     lv_obj_set_size(g_pet_ui.stage, PET_MASCOT_SIZE, PET_MASCOT_SIZE);
@@ -2513,7 +3010,11 @@ static void pet_on_start(void)
     lv_obj_add_flag(g_pet_ui.mascot, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(
         g_pet_ui.mascot,
+#ifdef AGENT_PET_WEATHER_MOMENTS
+        PET_HandleMascotClick,
+#else
         PET_PlayWoodenFish,
+#endif
         LV_EVENT_SHORT_CLICKED,
         NULL);
 

@@ -38,6 +38,14 @@ config AGENT_PET_USING_TF_CARD
         Enable the Huangshan board SPI1 TF card and PA27 card-detect input.
         The PC simulator never builds the TF driver or file-manager app.
 
+config AGENT_PET_WEATHER_MOMENTS
+    bool "Enable privacy-minimized weather ambience for Agent Pet"
+    default y
+    help
+        Accept fixed weather snapshots over the existing Agent Pet status
+        characteristic and render a low-rate ambience on the pet page. The
+        firmware never receives location or accesses a weather provider.
+
 config FRAME_BUFFER_IN_PSRAM
     bool
     depends on BSP_USING_PSRAM

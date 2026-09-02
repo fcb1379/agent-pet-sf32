@@ -489,6 +489,7 @@ static uint8_t Local_GattWriteCallback(
     AGENTPET_RESULT eResult;
     AGENTPET_AUDIO_CONTROL_COMMAND eAudioCommand;
     bool bQueued;
+    bool bDigestSelection;
     rt_err_t eMailboxResult;
     uint8_t ucIndex;
     (void)ucConnectionIndex;
@@ -503,13 +504,19 @@ static uint8_t Local_GattWriteCallback(
     if (AGENTPET_ATT_STATUS_VALUE == pParameter->idx)
     {
         rt_enter_critical();
-        eResult = AGENTPET_ProcessFrame(pParameter->value, pParameter->len);
+        eResult = AGENTPET_ProcessFrameAt(
+            pParameter->value,
+            pParameter->len,
+            (uint32_t)rt_tick_get());
         if (
             (AGENTPET_RESULT_FRAME_ACCEPTED == eResult) ||
             (AGENTPET_RESULT_SNAPSHOT_PUBLISHED == eResult) ||
             (AGENTPET_RESULT_EVENT_PUBLISHED == eResult) ||
             (AGENTPET_RESULT_TIME_SYNC_PUBLISHED == eResult) ||
             (AGENTPET_RESULT_ANIMATION_PUBLISHED == eResult) ||
+#ifdef AGENT_PET_WEATHER_MOMENTS
+            (AGENTPET_RESULT_WEATHER_PUBLISHED == eResult) ||
+#endif
             (AGENTPET_RESULT_DUPLICATE == eResult)
         )
         {
@@ -549,14 +556,16 @@ static uint8_t Local_GattWriteCallback(
     }
     else if (AGENTPET_ATT_IMAGE_VALUE == pParameter->idx)
     {
-        if ((AGENTPET_IMAGE_CONTROL_FRAME_SIZE == pParameter->len) &&
+        bDigestSelection =
+            (AGENTPET_IMAGE_CONTROL_FRAME_SIZE == pParameter->len) &&
             (0x41U == pParameter->value[0]) &&
             (0x49U == pParameter->value[1]) &&
             (2U == pParameter->value[2]) &&
             (5U == pParameter->value[3]) &&
             (pParameter->value[19] == AGENTPET_Crc8Atm(
                 pParameter->value,
-                19U)))
+                19U));
+        if (bDigestSelection)
         {
             bQueued = true;
             for (ucIndex = 5U; ucIndex < 19U; ucIndex++)
@@ -902,6 +911,11 @@ bool AGENTPETBLE_GetStatus(AGENTPET_BLE_STATUS *pStatus)
     bool bHasWoodenFishEvent;
     uint16_t usWoodenFishSequence;
     uint32_t ulWoodenFishGeneration;
+#ifdef AGENT_PET_WEATHER_MOMENTS
+    AGENTPET_WEATHER_SNAPSHOT tWeatherSnapshot;
+    AGENTPET_WEATHER_DIAGNOSTICS tWeatherDiagnostics;
+    bool bHasWeatherSnapshot;
+#endif
 
     if (NULL == pStatus)
     {
@@ -914,6 +928,11 @@ bool AGENTPETBLE_GetStatus(AGENTPET_BLE_STATUS *pStatus)
     bHasWoodenFishEvent = AGENTPET_GetWoodenFishEvent(
         &usWoodenFishSequence,
         &ulWoodenFishGeneration);
+#ifdef AGENT_PET_WEATHER_MOMENTS
+    bHasWeatherSnapshot = AGENTPETWEATHER_GetSnapshot(
+        &tWeatherSnapshot,
+        &tWeatherDiagnostics);
+#endif
     if (bHasSnapshot)
     {
         pStatus->bHasSnapshot = true;
@@ -926,6 +945,14 @@ bool AGENTPETBLE_GetStatus(AGENTPET_BLE_STATUS *pStatus)
         pStatus->usWoodenFishSequence = usWoodenFishSequence;
         pStatus->ulWoodenFishGeneration = ulWoodenFishGeneration;
     }
+#ifdef AGENT_PET_WEATHER_MOMENTS
+    pStatus->bHasWeatherSnapshot = bHasWeatherSnapshot;
+    pStatus->tWeatherDiagnostics = tWeatherDiagnostics;
+    if (bHasWeatherSnapshot)
+    {
+        pStatus->tWeatherSnapshot = tWeatherSnapshot;
+    }
+#endif
     rt_exit_critical();
     if (AGENTPETIMAGE_GetStatus(&tImageStatus))
     {
@@ -937,3 +964,53 @@ bool AGENTPETBLE_GetStatus(AGENTPET_BLE_STATUS *pStatus)
 
     return true;
 }
+
+#ifdef AGENT_PET_WEATHER_MOMENTS
+/*
+ * AGENTPETBLE_CanClaimWeatherInteraction
+ * Function: evaluate local weather interaction eligibility under protection.
+ * Parameters:
+ *   - pSnapshot: weather snapshot currently rendered by the GUI.
+ *   - ulNowMonotonicTicks: current raw RT tick.
+ * Return: true when the current sequence may be claimed.
+ */
+bool AGENTPETBLE_CanClaimWeatherInteraction(
+    const AGENTPET_WEATHER_SNAPSHOT *pSnapshot,
+    uint32_t ulNowMonotonicTicks)
+{
+    bool bCanClaim;
+
+    rt_enter_critical();
+    bCanClaim = AGENTPETWEATHER_CanInteract(
+        pSnapshot,
+        ulNowMonotonicTicks,
+        RT_TICK_PER_SECOND);
+    rt_exit_critical();
+
+    return bCanClaim;
+}
+
+/*
+ * AGENTPETBLE_ClaimWeatherInteraction
+ * Function: claim one local weather interaction under protocol protection.
+ * Parameters:
+ *   - usSequence: weather sequence currently rendered by the GUI.
+ *   - ulNowMonotonicTicks: current raw RT tick.
+ * Return: true only for one eligible local claim.
+ */
+bool AGENTPETBLE_ClaimWeatherInteraction(
+    uint16_t usSequence,
+    uint32_t ulNowMonotonicTicks)
+{
+    bool bClaimed;
+
+    rt_enter_critical();
+    bClaimed = AGENTPETWEATHER_ClaimInteraction(
+        usSequence,
+        ulNowMonotonicTicks,
+        RT_TICK_PER_SECOND);
+    rt_exit_critical();
+
+    return bClaimed;
+}
+#endif

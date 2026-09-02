@@ -29,6 +29,7 @@ typedef enum _AGENTPET_RESULT
     AGENTPET_RESULT_EVENT_PUBLISHED = 3,
     AGENTPET_RESULT_TIME_SYNC_PUBLISHED = 4,
     AGENTPET_RESULT_ANIMATION_PUBLISHED = 5,
+    AGENTPET_RESULT_WEATHER_PUBLISHED = 6,
     AGENTPET_ERROR_INVALID_PARAMETER = 100,
     AGENTPET_ERROR_FRAME_LENGTH = 101,
     AGENTPET_ERROR_HEADER = 102,
@@ -38,7 +39,8 @@ typedef enum _AGENTPET_RESULT
     AGENTPET_ERROR_SNAPSHOT = 106,
     AGENTPET_ERROR_EVENT = 107,
     AGENTPET_ERROR_TIME_SYNC = 108,
-    AGENTPET_ERROR_ANIMATION = 109
+    AGENTPET_ERROR_ANIMATION = 109,
+    AGENTPET_ERROR_WEATHER = 110
 } AGENTPET_RESULT;
 
 #define AGENTPET_ANIMATION_ACTION_PLAY    (1U)
@@ -112,6 +114,10 @@ void AGENTPET_ProtocolInit(void);
 void AGENTPET_ResetAssembly(void);
 uint8_t AGENTPET_Crc8Atm(const uint8_t *pData, size_t ulLength);
 AGENTPET_RESULT AGENTPET_ProcessFrame(const uint8_t *pFrame, size_t ulLength);
+AGENTPET_RESULT AGENTPET_ProcessFrameAt(
+    const uint8_t *pFrame,
+    size_t ulLength,
+    uint32_t ulReceivedMonotonicTicks);
 bool AGENTPET_GetSnapshot(AGENTPET_SNAPSHOT *pSnapshot, uint32_t *pGeneration);
 bool AGENTPET_GetWoodenFishEvent(uint16_t *pSequence, uint32_t *pGeneration);
 bool AGENTPET_GetTimeSync(AGENTPET_TIME_SYNC *pTimeSync, uint32_t *pGeneration);
