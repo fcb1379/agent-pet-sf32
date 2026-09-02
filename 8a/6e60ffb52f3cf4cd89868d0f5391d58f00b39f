@@ -4,6 +4,8 @@ work/watch_bt_audio_template/src/gui_apps/pet/app_pet.c
   s_b991e4ff93e87f::t_710396a8d61416 2623-2625,2829-2831,2924,2928-2929,2931-2932,2961
   s_b991e4ff93e87f::t_ca2ad2d0ceda81 3143-3150
   s_b991e4ff93e87f::t_7f7917303816db 265,5181-5187,5252-5262
+  s_b991e4ff93e87f::t_4263f8d3df5201 2930,2933-2942
+  s_b991e4ff93e87f::t_a130de09bd316a 3142
 work/watch_bt_audio_template/src/gui_apps/pet/momo_play_ball.h
   s_b991e4ff93e87f::t_c9dda6bcf0da80 1-80
 work/watch_bt_audio_template/src/gui_apps/pet/momo_play_ball.c
