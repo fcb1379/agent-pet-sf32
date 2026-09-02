@@ -81,7 +81,9 @@ LV_IMG_DECLARE(agent_pet_merit_plus_one);
 #define PET_MOTION_SWITCH_HEIGHT (26)
 #define PET_QUEST_GARDEN_ENABLED (1U)
 #define PET_QUEST_GARDEN_WIDTH (76)
+#ifdef AGENT_PET_BEHAVIOR_ENGINE
 #define PET_BEHAVIOR_SAVE_INTERVAL_MS (300000U)
+#endif
 #define PET_BEHAVIOR_INVALID_STATE (0xFFU)
 #ifndef BSP_USING_PC_SIMULATOR
     #define PET_QUEST_PREF_NAME "agent_pet_quest_garden_pref_v1_"
@@ -92,6 +94,7 @@ LV_IMG_DECLARE(agent_pet_merit_plus_one);
     #define PET_QUEST_PREF_PENDING_KEY "q_pending"
     #define PET_QUEST_PREF_STREAK_KEY "q_streak"
     #define PET_QUEST_PREF_OVERFLOW_KEY "q_over"
+#ifdef AGENT_PET_BEHAVIOR_ENGINE
     #define PET_BEHAVIOR_PREF_NAME "agent_pet_behavior_v1_________"
     #define PET_BEHAVIOR_PREF_VERSION_KEY "b_ver"
     #define PET_BEHAVIOR_PREF_AFFINITY_KEY "b_aff"
@@ -99,6 +102,7 @@ LV_IMG_DECLARE(agent_pet_merit_plus_one);
     #define PET_BEHAVIOR_PREF_AROUSAL_KEY "b_arousal"
     #define PET_BEHAVIOR_PREF_INTERACTION_KEY "b_last"
     #define PET_BEHAVIOR_PREF_RANDOM_KEY "b_rng"
+#endif
 #endif
 
 #if defined(AGENT_PET_USING_IMU) && !defined(BSP_USING_PC_SIMULATOR)
@@ -174,10 +178,14 @@ typedef struct
     lv_obj_t *motion_switch;
 #ifndef BSP_USING_PC_SIMULATOR
     share_prefs_t *pQuestPrefs;
+#ifdef AGENT_PET_BEHAVIOR_ENGINE
     share_prefs_t *pBehaviorPrefs;
 #endif
+#endif
     QUEST_GARDEN tQuestGarden;
+#ifdef AGENT_PET_BEHAVIOR_ENGINE
     PET_BEHAVIOR tBehavior;
+#endif
     uint32_t ulRenderedGeneration;
     uint32_t ulRenderedWoodenFishGeneration;
     uint32_t ulRenderedImageGeneration;
@@ -185,7 +193,9 @@ typedef struct
     uint32_t ulRenderedMeritGeneration;
     uint32_t ulLastHitTick;
     uint32_t ulImageProgressTick;
+#ifdef AGENT_PET_BEHAVIOR_ENGINE
     uint32_t ulLastBehaviorSaveTick;
+#endif
     uint32_t ulMeritCount;
     uint8_t ucRenderedState;
     uint8_t ucRenderedBehaviorState;
@@ -205,7 +215,9 @@ typedef struct
 #endif
     bool bRenderedConnected;
     bool bRenderedCustomImage;
+#ifdef AGENT_PET_BEHAVIOR_ENGINE
     bool bBehaviorReady;
+#endif
     bool bBehaviorStateAsset;
     bool bExpressionOverride;
     bool bTypingActive;
@@ -225,9 +237,11 @@ static void PET_ApplyStateAnimation(
 static uint16_t PET_MascotZoom(const lv_img_header_t *pHeader);
 static void PET_PlayWoodenFishAnimation(const lv_point_t *pPoint);
 static void PET_PlayWoodenFish(lv_event_t *pEvent);
+#ifdef AGENT_PET_BEHAVIOR_ENGINE
 static void PET_HandleMascotEvent(lv_event_t *pEvent);
 static bool PET_PostBehaviorEvent(PET_BEHAVIOR_EVENT_TYPE eType,
                                   uint8_t ucValue);
+#endif
 
 #if defined(AGENT_PET_USING_IMU) && !defined(BSP_USING_PC_SIMULATOR)
 /***************************
@@ -483,14 +497,18 @@ static void PET_MotionSample(lv_timer_t *pTimer)
         PET_MOTION_SAMPLE_MS);
     if (bImpactDetected)
     {
+#ifdef AGENT_PET_BEHAVIOR_ENGINE
         (void)PET_PostBehaviorEvent(PET_BEHAVIOR_EVENT_IMPACT, 0U);
+#endif
         PET_PlayWoodenFishAnimation(NULL);
         rt_kprintf("agent pet: motion wooden fish hit\n");
     }
     else if ((PET_MOTION_STATE_IDLE == ePreviousState) &&
              (PET_MOTION_STATE_SWING == g_pet_ui.tMotionDetector.eState))
     {
+#ifdef AGENT_PET_BEHAVIOR_ENGINE
         (void)PET_PostBehaviorEvent(PET_BEHAVIOR_EVENT_MOTION, 0U);
+#endif
     }
 
     return;
@@ -1040,8 +1058,13 @@ static bool PET_LoadCustomGif(
     lv_obj_add_flag(g_pet_ui.mascot_gif, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(
         g_pet_ui.mascot_gif,
+#ifdef AGENT_PET_BEHAVIOR_ENGINE
         PET_HandleMascotEvent,
         LV_EVENT_ALL,
+#else
+        PET_PlayWoodenFish,
+        LV_EVENT_SHORT_CLICKED,
+#endif
         NULL);
     g_pet_ui.gif_timer = lv_timer_create(
         PET_AdvanceCustomGif,
@@ -1245,6 +1268,7 @@ static uint32_t PET_QuestCurrentDay(void);
 #ifndef BSP_USING_PC_SIMULATOR
 static int32_t PET_QuestPersistedInteger(uint32_t ulValue);
 #endif
+#ifdef AGENT_PET_BEHAVIOR_ENGINE
 static void PET_RefreshBehaviorAsset(
     const AGENTPET_IMAGE_STATUS *pStatus,
     PET_BEHAVIOR_VISUAL_STATE eState);
@@ -1610,6 +1634,7 @@ static void PET_UpdateBehavior(uint8_t ucAgentState,
 
     return;
 }
+#endif /* AGENT_PET_BEHAVIOR_ENGINE */
 
 static const char *PET_StateName(uint8_t ucState)
 {
@@ -1753,6 +1778,7 @@ static void PET_RefreshMascotImage(const AGENTPET_IMAGE_STATUS *pStatus)
  *   - eState: effective visual state selected by the behavior model.
  * Return: none.
  */
+#ifdef AGENT_PET_BEHAVIOR_ENGINE
 static void PET_RefreshBehaviorAsset(
     const AGENTPET_IMAGE_STATUS *pStatus,
     PET_BEHAVIOR_VISUAL_STATE eState)
@@ -1809,6 +1835,7 @@ static void PET_RefreshBehaviorAsset(
 
     return;
 }
+#endif /* AGENT_PET_BEHAVIOR_ENGINE */
 
 /*
  * PET_RefreshImageProgress
@@ -1986,14 +2013,20 @@ static void PET_RefreshStatus(lv_timer_t *pTimer)
     }
     if (!AGENTPETBLE_GetStatus(&tStatus))
     {
+#ifdef AGENT_PET_BEHAVIOR_ENGINE
         PET_UpdateBehavior(AGENTPET_STATE_IDLE, NULL);
+#endif
         return;
     }
     PET_RefreshImageProgress(&tStatus.tImageStatus);
     PET_RefreshExpressionAnimation(tStatus.bConnected);
     ucAgentState = tStatus.bHasSnapshot ?
         tStatus.tSnapshot.ucAggregateState : AGENTPET_STATE_IDLE;
+#ifdef AGENT_PET_BEHAVIOR_ENGINE
     PET_UpdateBehavior(ucAgentState, &tStatus.tImageStatus);
+#else
+    PET_ApplyStateAnimation(ucAgentState, PET_BEHAVIOR_VISUAL_CALM);
+#endif
     ulQuestDay = PET_QuestCurrentDay();
     if (QUESTGARDEN_Rollover(
             &g_pet_ui.tQuestGarden, ulQuestDay, &tQuestResult) &&
@@ -3021,6 +3054,7 @@ static void PET_PlayWoodenFish(lv_event_t *pEvent)
  *   - pEvent: LVGL mascot event.
  * Return: none.
  */
+#ifdef AGENT_PET_BEHAVIOR_ENGINE
 static void PET_HandleMascotEvent(lv_event_t *pEvent)
 {
     lv_event_code_t eCode;
@@ -3042,6 +3076,7 @@ static void PET_HandleMascotEvent(lv_event_t *pEvent)
 
     return;
 }
+#endif /* AGENT_PET_BEHAVIOR_ENGINE */
 
 /*
  * PET_CreateWoodenFish
@@ -3105,6 +3140,7 @@ static void pet_on_start(void)
     lv_obj_set_style_pad_all(g_pet_ui.root, 0, 0);
     lv_obj_clear_flag(g_pet_ui.root, LV_OBJ_FLAG_SCROLLABLE);
 
+#ifdef AGENT_PET_BEHAVIOR_ENGINE
     g_pet_ui.behavior_label = lv_label_create(g_pet_ui.root);
     lv_label_set_text(g_pet_ui.behavior_label, "Agent Pet  |  Calm");
     lv_obj_set_width(g_pet_ui.behavior_label, 160);
@@ -3116,6 +3152,7 @@ static void pet_on_start(void)
     lv_obj_set_style_text_letter_space(g_pet_ui.behavior_label, 1, 0);
     lv_obj_set_style_text_opa(
         g_pet_ui.behavior_label, LV_OPA_COVER, 0);
+#endif
 
     floor = pet_shape(g_pet_ui.root, 40,
                       PET_MASCOT_Y + PET_MASCOT_SIZE - 18,
@@ -3141,8 +3178,13 @@ static void pet_on_start(void)
     lv_obj_add_flag(g_pet_ui.mascot, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(
         g_pet_ui.mascot,
+#ifdef AGENT_PET_BEHAVIOR_ENGINE
         PET_HandleMascotEvent,
         LV_EVENT_ALL,
+#else
+        PET_PlayWoodenFish,
+        LV_EVENT_SHORT_CLICKED,
+#endif
         NULL);
 
     g_pet_ui.typing_scene = lv_obj_create(g_pet_ui.root);
@@ -3359,7 +3401,9 @@ static void pet_on_start(void)
 
     PET_LoadMerit();
     PET_LoadQuestGarden();
+#ifdef AGENT_PET_BEHAVIOR_ENGINE
     PET_LoadBehavior();
+#endif
     PET_UpdateQuestGarden();
     g_pet_ui.wooden_timer = lv_timer_create(
         PET_EndWoodenFish,
@@ -3393,7 +3437,12 @@ static void pet_on_start(void)
         PET_RefreshStatus,
         PET_STATUS_REFRESH_MS,
         NULL);
+#ifdef AGENT_PET_BEHAVIOR_ENGINE
     PET_UpdateBehavior(AGENTPET_STATE_IDLE, NULL);
+#else
+    PET_ApplyStateAnimation(
+        AGENTPET_STATE_IDLE, PET_BEHAVIOR_VISUAL_CALM);
+#endif
     PET_RefreshStatus(g_pet_ui.status_timer);
 }
 
@@ -3423,6 +3472,7 @@ static void pet_on_stop(void)
         g_pet_ui.daily_timer = NULL;
     }
 #ifndef BSP_USING_PC_SIMULATOR
+#ifdef AGENT_PET_BEHAVIOR_ENGINE
     if (NULL != g_pet_ui.pBehaviorPrefs)
     {
         rt_err_t tBehaviorCloseResult;
@@ -3437,6 +3487,7 @@ static void pet_on_stop(void)
         }
         g_pet_ui.pBehaviorPrefs = NULL;
     }
+#endif
     if (NULL != g_pet_ui.pQuestPrefs)
     {
         rt_err_t tQuestCloseResult;
@@ -3468,7 +3519,8 @@ static void pet_on_stop(void)
     rt_memset(&g_pet_ui, 0, sizeof(g_pet_ui));
 }
 
-#ifndef BSP_USING_PC_SIMULATOR
+#if !defined(BSP_USING_PC_SIMULATOR) && \
+    defined(AGENT_PET_BEHAVIOR_ENGINE)
 /*
  * petmood
  * Function: inspect or inject one behavior event from the RT-Thread shell.
@@ -3546,7 +3598,7 @@ static void petmood(int argc, char **argv)
     return;
 }
 MSH_CMD_EXPORT(petmood, inspect or inject agent pet behavior state);
-#endif /* BSP_USING_PC_SIMULATOR */
+#endif /* !BSP_USING_PC_SIMULATOR && AGENT_PET_BEHAVIOR_ENGINE */
 
 #if defined(BSP_USING_PC_SIMULATOR) && defined(AGENT_PET_STANDALONE_PREVIEW)
 /* PC simulator entry: drive the pet UI directly without the GUI app framework.
