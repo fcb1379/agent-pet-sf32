@@ -155,7 +155,7 @@ static lv_obj_t *ALARM_CreateLabel(lv_obj_t *pParent, const char *pText,
 }
 
 static lv_obj_t *ALARM_CreateImage(lv_obj_t *pParent,
-                                   const lv_img_dsc_t *pImage,
+                                   const void *pImage,
                                    lv_coord_t lX, lv_coord_t lY)
 {
     lv_obj_t *pObject;
@@ -177,7 +177,7 @@ static lv_obj_t *ALARM_CreateImage(lv_obj_t *pParent,
 static void ALARM_ActionEvent(lv_event_t *pEvent);
 
 static lv_obj_t *ALARM_CreateImageButton(lv_obj_t *pParent,
-                                         const lv_img_dsc_t *pImage,
+                                         const void *pImage,
                                          lv_coord_t lX, lv_coord_t lY,
                                          ALARM_ACTION eAction)
 {
@@ -195,8 +195,8 @@ static lv_obj_t *ALARM_CreateImageButton(lv_obj_t *pParent,
 }
 
 static lv_obj_t *ALARM_CreatePressedButton(lv_obj_t *pParent,
-                                           const lv_img_dsc_t *pNormal,
-                                           const lv_img_dsc_t *pPressed,
+                                           const void *pNormal,
+                                           const void *pPressed,
                                            lv_coord_t lX, lv_coord_t lY,
                                            ALARM_ACTION eAction)
 {
@@ -287,7 +287,7 @@ static const char *ALARM_RepeatText(uint8_t ucMask)
 
 static void ALARM_CreateBackground(void)
 {
-    (void)ALARM_CreateImage(l_tAlarmUi.pRoot, &alarm_bg_main, 0, 0);
+    (void)ALARM_CreateImage(l_tAlarmUi.pRoot, LV_EXT_IMG_GET(alarm_bg_main), 0, 0);
     return;
 }
 
@@ -299,7 +299,7 @@ static void ALARM_RenderList(const watch_alarm_snapshot_t *pSnapshot)
     (void)ALARM_CreateLabel(l_tAlarmUi.pRoot, "闹钟", 18, 14, 200,
                             lv_color_hex(0xFF9500U), LV_TEXT_ALIGN_LEFT,
                             ALARM_FONT_SUBTITLE);
-    (void)ALARM_CreateImageButton(l_tAlarmUi.pRoot, &alarm_icon_edit,
+    (void)ALARM_CreateImageButton(l_tAlarmUi.pRoot, LV_EXT_IMG_GET(alarm_icon_edit),
                                   LV_HOR_RES_MAX - 90, 0, ALARM_ACTION_ADD);
     if ((NULL == pSnapshot) || (0U == pSnapshot->alarm_present))
     {
@@ -312,7 +312,7 @@ static void ALARM_RenderList(const watch_alarm_snapshot_t *pSnapshot)
 
     ALARM_FormatTime(aTime, sizeof(aTime), pSnapshot->alarm_hour,
                      pSnapshot->alarm_minute);
-    (void)ALARM_CreateImage(l_tAlarmUi.pRoot, &alarm_wakeup_banner, 23, 74);
+    (void)ALARM_CreateImage(l_tAlarmUi.pRoot, LV_EXT_IMG_GET(alarm_wakeup_banner), 23, 74);
     (void)ALARM_CreateLabel(l_tAlarmUi.pRoot, "起床", 38, 88, 120,
                             lv_color_hex(0xFF9500U), LV_TEXT_ALIGN_LEFT,
                             ALARM_FONT_CAPTION);
@@ -326,7 +326,7 @@ static void ALARM_RenderList(const watch_alarm_snapshot_t *pSnapshot)
                             LV_TEXT_ALIGN_LEFT, ALARM_FONT_CAPTION);
     (void)ALARM_CreateImageButton(
         l_tAlarmUi.pRoot,
-        pSnapshot->alarm_enabled ? &alarm_toggle_on : &alarm_toggle_off,
+        pSnapshot->alarm_enabled ? LV_EXT_IMG_GET(alarm_toggle_on) : LV_EXT_IMG_GET(alarm_toggle_off),
         310, 116, ALARM_ACTION_TOGGLE);
     (void)ALARM_CreateHitButton(l_tAlarmUi.pRoot, 23, 74, 270, 134,
                                 ALARM_ACTION_EDIT);
@@ -337,7 +337,7 @@ static void ALARM_RenderEdit(const watch_alarm_snapshot_t *pSnapshot)
     char aTime[12];
 
     ALARM_CreateBackground();
-    (void)ALARM_CreateImageButton(l_tAlarmUi.pRoot, &alarm_icon_close,
+    (void)ALARM_CreateImageButton(l_tAlarmUi.pRoot, LV_EXT_IMG_GET(alarm_icon_close),
                                   0, 0, ALARM_ACTION_BACK);
     (void)ALARM_CreateLabel(l_tAlarmUi.pRoot, "编辑闹钟", 74, 20, 250,
                             lv_color_hex(0xFF9500U), LV_TEXT_ALIGN_LEFT,
@@ -345,7 +345,7 @@ static void ALARM_RenderEdit(const watch_alarm_snapshot_t *pSnapshot)
 
     ALARM_FormatTime(aTime, sizeof(aTime), l_tAlarmUi.ucEditHour,
                      l_tAlarmUi.ucEditMinute);
-    (void)ALARM_CreateImage(l_tAlarmUi.pRoot, &alarm_bg_edit_row, 13, 78);
+    (void)ALARM_CreateImage(l_tAlarmUi.pRoot, LV_EXT_IMG_GET(alarm_bg_edit_row), 13, 78);
     (void)ALARM_CreateLabel(l_tAlarmUi.pRoot, "更改时间", 28, 92, 190,
                             lv_color_white(), LV_TEXT_ALIGN_LEFT,
                             ALARM_FONT_BODY);
@@ -355,7 +355,7 @@ static void ALARM_RenderEdit(const watch_alarm_snapshot_t *pSnapshot)
     (void)ALARM_CreateHitButton(l_tAlarmUi.pRoot, 13, 78, 384, 102,
                                 ALARM_ACTION_OPEN_TIME);
 
-    (void)ALARM_CreateImage(l_tAlarmUi.pRoot, &alarm_bg_edit_row, 13, 188);
+    (void)ALARM_CreateImage(l_tAlarmUi.pRoot, LV_EXT_IMG_GET(alarm_bg_edit_row), 13, 188);
     (void)ALARM_CreateLabel(l_tAlarmUi.pRoot, "重复", 28, 202, 180,
                             lv_color_white(), LV_TEXT_ALIGN_LEFT,
                             ALARM_FONT_BODY);
@@ -366,20 +366,20 @@ static void ALARM_RenderEdit(const watch_alarm_snapshot_t *pSnapshot)
     (void)ALARM_CreateHitButton(l_tAlarmUi.pRoot, 13, 188, 384, 102,
                                 ALARM_ACTION_OPEN_REPEAT);
 
-    (void)ALARM_CreateImage(l_tAlarmUi.pRoot, &alarm_bg_edit_row, 13, 298);
+    (void)ALARM_CreateImage(l_tAlarmUi.pRoot, LV_EXT_IMG_GET(alarm_bg_edit_row), 13, 298);
     (void)ALARM_CreateLabel(l_tAlarmUi.pRoot, "稍后提醒", 28, 312, 220,
                             lv_color_white(), LV_TEXT_ALIGN_LEFT,
                             ALARM_FONT_BODY);
     (void)ALARM_CreateImageButton(
         l_tAlarmUi.pRoot,
-        l_tAlarmUi.bSnoozeEnabled ? &alarm_toggle_on : &alarm_toggle_off,
+        l_tAlarmUi.bSnoozeEnabled ? LV_EXT_IMG_GET(alarm_toggle_on) : LV_EXT_IMG_GET(alarm_toggle_off),
         310, 312, ALARM_ACTION_TOGGLE_SNOOZE);
 
     if ((NULL != pSnapshot) && (0U != pSnapshot->alarm_present))
     {
         (void)ALARM_CreatePressedButton(
-            l_tAlarmUi.pRoot, &alarm_button_delete,
-            &alarm_button_delete_pressed, 23, 387,
+            l_tAlarmUi.pRoot, LV_EXT_IMG_GET(alarm_button_delete),
+            LV_EXT_IMG_GET(alarm_button_delete_pressed), 23, 387,
             ALARM_ACTION_DELETE_REQUEST);
     }
 }
@@ -390,12 +390,12 @@ static void ALARM_RenderTime(void)
     char aMinute[4];
 
     ALARM_CreateBackground();
-    (void)ALARM_CreateImageButton(l_tAlarmUi.pRoot, &alarm_icon_cancel,
+    (void)ALARM_CreateImageButton(l_tAlarmUi.pRoot, LV_EXT_IMG_GET(alarm_icon_cancel),
                                   0, 0, ALARM_ACTION_BACK);
-    (void)ALARM_CreateImageButton(l_tAlarmUi.pRoot, &alarm_icon_confirm,
+    (void)ALARM_CreateImageButton(l_tAlarmUi.pRoot, LV_EXT_IMG_GET(alarm_icon_confirm),
                                   LV_HOR_RES_MAX - 74, 0,
                                   ALARM_ACTION_TIME_CONFIRM);
-    (void)ALARM_CreateImage(l_tAlarmUi.pRoot, &alarm_dial, 31, 82);
+    (void)ALARM_CreateImage(l_tAlarmUi.pRoot, LV_EXT_IMG_GET(alarm_dial), 31, 82);
     (void)rt_snprintf(aHour, sizeof(aHour), "%02u", l_tAlarmUi.ucEditHour);
     (void)rt_snprintf(aMinute, sizeof(aMinute), "%02u",
                       l_tAlarmUi.ucEditMinute);
@@ -441,7 +441,7 @@ static void ALARM_RenderRepeat(void)
     lv_coord_t lY;
 
     ALARM_CreateBackground();
-    (void)ALARM_CreateImageButton(l_tAlarmUi.pRoot, &alarm_icon_back,
+    (void)ALARM_CreateImageButton(l_tAlarmUi.pRoot, LV_EXT_IMG_GET(alarm_icon_back),
                                   0, 0, ALARM_ACTION_BACK);
     (void)ALARM_CreateLabel(l_tAlarmUi.pRoot, "重复", 74, 20, 250,
                             lv_color_hex(0xFF9500U), LV_TEXT_ALIGN_LEFT,
@@ -454,7 +454,7 @@ static void ALARM_RenderRepeat(void)
                                 ALARM_FONT_BODY);
         if (0U != (l_tAlarmUi.ucRepeatMask & (1U << ucDay)))
         {
-            (void)ALARM_CreateImage(l_tAlarmUi.pRoot, &alarm_repeat_check,
+            (void)ALARM_CreateImage(l_tAlarmUi.pRoot, LV_EXT_IMG_GET(alarm_repeat_check),
                                     342, lY - 4);
         }
         (void)ALARM_CreateHitButton(
@@ -466,13 +466,13 @@ static void ALARM_RenderRepeat(void)
 static void ALARM_RenderDeleteConfirm(void)
 {
     ALARM_CreateBackground();
-    (void)ALARM_CreateImageButton(l_tAlarmUi.pRoot, &alarm_icon_close,
+    (void)ALARM_CreateImageButton(l_tAlarmUi.pRoot, LV_EXT_IMG_GET(alarm_icon_close),
                                   0, 0, ALARM_ACTION_BACK);
     (void)ALARM_CreateLabel(l_tAlarmUi.pRoot, "删除闹钟？", 30, 185,
                             LV_HOR_RES_MAX - 60, lv_color_white(),
                             LV_TEXT_ALIGN_CENTER, ALARM_FONT_TITLE);
-    (void)ALARM_CreatePressedButton(l_tAlarmUi.pRoot, &alarm_button_delete,
-                                    &alarm_button_delete_pressed, 23, 350,
+    (void)ALARM_CreatePressedButton(l_tAlarmUi.pRoot, LV_EXT_IMG_GET(alarm_button_delete),
+                                    LV_EXT_IMG_GET(alarm_button_delete_pressed), 23, 350,
                                     ALARM_ACTION_DELETE_CONFIRM);
 }
 
@@ -493,11 +493,11 @@ static void ALARM_RenderRinging(const watch_alarm_snapshot_t *pSnapshot)
     if (l_tAlarmUi.bSnoozeEnabled)
     {
         (void)ALARM_CreatePressedButton(
-            l_tAlarmUi.pRoot, &alarm_button_snooze,
-            &alarm_button_snooze_pressed, 38, 270, ALARM_ACTION_SNOOZE);
+            l_tAlarmUi.pRoot, LV_EXT_IMG_GET(alarm_button_snooze),
+            LV_EXT_IMG_GET(alarm_button_snooze_pressed), 38, 270, ALARM_ACTION_SNOOZE);
     }
-    (void)ALARM_CreatePressedButton(l_tAlarmUi.pRoot, &alarm_button_stop,
-                                    &alarm_button_stop_pressed, 38, 382,
+    (void)ALARM_CreatePressedButton(l_tAlarmUi.pRoot, LV_EXT_IMG_GET(alarm_button_stop),
+                                    LV_EXT_IMG_GET(alarm_button_stop_pressed), 38, 382,
                                     ALARM_ACTION_STOP);
 }
 

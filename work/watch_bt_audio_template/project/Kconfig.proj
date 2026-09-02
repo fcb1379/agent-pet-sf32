@@ -12,6 +12,15 @@ config FREETYPE_TINY_FONT_FULL
     bool
     default y
 
+config AGENT_PET_EXTERNAL_RESOURCES
+    bool "Store GUI images and fonts in the file-system resource partition"
+    depends on !BSP_USING_PC_SIMULATOR
+    default y
+    help
+        Keep large LVGL images and the FreeType library out of main.bin.
+        The initial fs_root image contains the complete resource set; later
+        releases can transfer only files whose SHA-256 value changed.
+
 config AGENT_PET_DISABLE_CLASSIC_BT_AUDIO
     bool "Disable classic Bluetooth audio for Agent Pet BLE image sync"
     default n
@@ -37,6 +46,14 @@ config AGENT_PET_USING_TF_CARD
     help
         Enable the Huangshan board SPI1 TF card and PA27 card-detect input.
         The PC simulator never builds the TF driver or file-manager app.
+
+config ENABLE_DFU
+    bool "Enable SiFli NOR offline DFU sub-project"
+    depends on !BSP_USING_PC_SIMULATOR
+    default n
+    help
+        Build the SiFli DFU installer image used to install an
+        offline_install.bin package received over BLE.
 
 config FRAME_BUFFER_IN_PSRAM
     bool

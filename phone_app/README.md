@@ -47,3 +47,8 @@ Run the protocol-only checks without a Bluetooth device:
 ```sh
 node test_protocol.mjs
 ```
+
+The native Android client also provides SiFli NOR Offline firmware OTA. OTA is
+not exposed by the browser/PWA because the official SiFli transfer library is a
+native mobile SDK. See `android/README.md` for dependency credentials, package
+generation, size limits, and the upgrade procedure.

@@ -28,6 +28,8 @@ LV_IMG_DECLARE(agent_pet_merit_plus_one);
 #define PET_IMAGE_PROGRESS_STALE_MS (3000U)
 #define PET_MAX_REMOTE_HITS_PER_REFRESH (4U)
 #define PET_MASCOT_SIZE (192)
+#define PET_DEFAULT_MASCOT_WIDTH (336U)
+#define PET_DEFAULT_MASCOT_HEIGHT (336U)
 #define PET_MASCOT_X ((LV_HOR_RES_MAX - PET_MASCOT_SIZE) / 2)
 #define PET_MASCOT_Y (((LV_VER_RES_MAX - PET_MASCOT_SIZE) / 2) - 12)
 #define PET_GIF_MIN_FRAME_MS (50U)
@@ -1138,6 +1140,20 @@ static uint16_t PET_MascotZoom(const lv_img_header_t *pHeader)
         LV_IMG_ZOOM_NONE,
         LV_MIN(ulZoomWidth, ulZoomHeight));
 }
+
+static uint16_t PET_DefaultMascotZoom(void)
+{
+#ifdef LV_USING_FILE_RESOURCE
+    lv_img_header_t tHeader;
+
+    memset(&tHeader, 0, sizeof(tHeader));
+    tHeader.w = PET_DEFAULT_MASCOT_WIDTH;
+    tHeader.h = PET_DEFAULT_MASCOT_HEIGHT;
+    return PET_MascotZoom(&tHeader);
+#else
+    return PET_MascotZoom(&agent_pet_mascot.header);
+#endif
+}
 static void PET_UpdateQuestGarden(void);
 static void PET_SaveQuestGarden(void);
 static uint32_t PET_QuestCurrentDay(void);
@@ -1245,8 +1261,8 @@ static void PET_RefreshMascotImage(const AGENTPET_IMAGE_STATUS *pStatus)
 #if LV_USE_GIF
     PET_ReleaseCustomGif();
 #endif
-    lv_img_set_src(g_pet_ui.mascot, &agent_pet_mascot);
-    lv_img_set_zoom(g_pet_ui.mascot, PET_MascotZoom(&agent_pet_mascot.header));
+    lv_img_set_src(g_pet_ui.mascot, LV_EXT_IMG_GET(agent_pet_mascot));
+    lv_img_set_zoom(g_pet_ui.mascot, PET_DefaultMascotZoom());
     lv_obj_clear_flag(g_pet_ui.mascot, LV_OBJ_FLAG_HIDDEN);
     PET_ReleaseCustomMascot();
     pLvglPath = AGENTPETIMAGE_GetLvglPath(pStatus->ucSlot);
@@ -2442,11 +2458,11 @@ static void PET_CreateWoodenFish(void)
         NULL);
 
     g_pet_ui.fish_body = lv_img_create(g_pet_ui.wooden_fish);
-    lv_img_set_src(g_pet_ui.fish_body, &agent_pet_wooden_fish);
+    lv_img_set_src(g_pet_ui.fish_body, LV_EXT_IMG_GET(agent_pet_wooden_fish));
     lv_obj_set_pos(g_pet_ui.fish_body, 20, 50);
 
     g_pet_ui.mallet = lv_img_create(g_pet_ui.wooden_fish);
-    lv_img_set_src(g_pet_ui.mallet, &agent_pet_wooden_fish_mallet);
+    lv_img_set_src(g_pet_ui.mallet, LV_EXT_IMG_GET(agent_pet_wooden_fish_mallet));
     lv_obj_set_pos(
         g_pet_ui.mallet,
         PET_WOODEN_FISH_MALLET_X,
@@ -2455,7 +2471,7 @@ static void PET_CreateWoodenFish(void)
     lv_img_set_angle(g_pet_ui.mallet, 140);
 
     g_pet_ui.merit_image = lv_img_create(g_pet_ui.wooden_fish);
-    lv_img_set_src(g_pet_ui.merit_image, &agent_pet_merit_plus_one);
+    lv_img_set_src(g_pet_ui.merit_image, LV_EXT_IMG_GET(agent_pet_merit_plus_one));
     lv_obj_set_pos(g_pet_ui.merit_image, 15, 0);
 
     return;
@@ -2506,8 +2522,8 @@ static void pet_on_start(void)
     lv_obj_clear_flag(g_pet_ui.stage, LV_OBJ_FLAG_SCROLLABLE);
 
     g_pet_ui.mascot = lv_img_create(g_pet_ui.stage);
-    lv_img_set_src(g_pet_ui.mascot, &agent_pet_mascot);
-    lv_img_set_zoom(g_pet_ui.mascot, PET_MascotZoom(&agent_pet_mascot.header));
+    lv_img_set_src(g_pet_ui.mascot, LV_EXT_IMG_GET(agent_pet_mascot));
+    lv_img_set_zoom(g_pet_ui.mascot, PET_DefaultMascotZoom());
     lv_img_set_antialias(g_pet_ui.mascot, false);
     lv_obj_center(g_pet_ui.mascot);
     lv_obj_add_flag(g_pet_ui.mascot, LV_OBJ_FLAG_CLICKABLE);
@@ -2816,7 +2832,7 @@ static void pet_on_stop(void)
 #endif
         if (NULL != g_pet_ui.mascot)
         {
-            lv_img_set_src(g_pet_ui.mascot, &agent_pet_mascot);
+            lv_img_set_src(g_pet_ui.mascot, LV_EXT_IMG_GET(agent_pet_mascot));
         }
         PET_ReleaseCustomMascot();
         lv_obj_del(g_pet_ui.root);

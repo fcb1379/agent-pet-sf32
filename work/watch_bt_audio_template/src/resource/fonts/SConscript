@@ -21,9 +21,11 @@ else:
 
 CPPDEFINES += ["FREETYPE_FONT_NAME={}".format(font_name)]
 
-objs = Glob('freetype/{}.ttf'.format(font_name))
-
-objs = Env.FontFile(objs)
+if GetDepend('AGENT_PET_EXTERNAL_RESOURCES'):
+    objs = Glob('resource_file_font.c')
+else:
+    objs = Glob('freetype/{}.ttf'.format(font_name))
+    objs = Env.FontFile(objs)
 
 if GetOption('no_cc'):
     objs = []

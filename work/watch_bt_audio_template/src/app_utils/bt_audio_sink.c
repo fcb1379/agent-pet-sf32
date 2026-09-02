@@ -10,6 +10,7 @@
 #include <stdlib.h>
 
 #include "bf0_sibles.h"
+#include "ble_watch_link.h"
 #include "bt_connection_manager.h"
 #include "bts2_app_inc.h"
 #include "bt_audio_sink.h"
@@ -54,6 +55,7 @@ static int watch_bt_audio_event_handle(uint16_t type, uint16_t event_id, uint8_t
     {
         if (event_id == BT_NOTIFY_COMMON_BT_STACK_READY)
         {
+            BLELINK_NotifyStackReady();
             rt_mb_send(g_watch_bt_audio_mb, BT_AUDIO_READY);
         }
     }
@@ -157,8 +159,6 @@ static void watch_bt_audio_thread(void *parameter)
 
     bt_interface_register_bt_event_notify_callback(watch_bt_audio_event_handle);
 
-    sifli_ble_enable();
-
     while (1)
     {
         rt_err_t ret = rt_mb_recv(g_watch_bt_audio_mb,
@@ -193,8 +193,7 @@ static void watch_bt_audio_thread(void *parameter)
             bt_av_snk_open();
             bt_interface_open_avrcp();
             watch_settings_apply_audio();
-            (void)bt_open_bt_request();
-            LOG_I("watch bt audio: stack ready, name=%s", local_name);
+            LOG_I("watch bt audio: stack ready, name=%s, auto reconnect deferred", local_name);
 #endif
         }
 #ifndef AGENT_PET_DISABLE_CLASSIC_BT_AUDIO

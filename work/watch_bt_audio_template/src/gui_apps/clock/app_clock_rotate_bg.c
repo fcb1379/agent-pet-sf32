@@ -78,9 +78,10 @@ static void app_clock_rotate_bg_redraw(lv_timer_t *task)
         scale = LV_MIN(scale_up_max, scale);
         scale = LV_MAX(scale_down_min, scale);
 
-        int16_t l = (ROTATE_BG_IMG_VARIABLE.header.w * 256 / scale) * 3 /* PI */;
+        int16_t l = (lv_obj_get_self_width(p_clk_rotate_bg->bg) * 256 /
+                     scale) * 3 /* PI */;
 
-        int16_t d_angle = 3600 / l;
+        int16_t d_angle = (0 != l) ? (3600 / l) : 0;
 
 
         bg_angle = (bg_angle + d_angle) % 3600;

@@ -44,6 +44,9 @@ else:
     if GetDepend('BSP_BLE_WATCH_FACE'):
         src += ['badge_transfer.c']
 
+        if GetDepend('AGENT_PET_EXTERNAL_RESOURCES'):
+            src += ['resource_update.c', 'resource_sha256_backend.c']
+
     if GetDepend('BSP_USING_DATA_SVC'):
         src += ['ble_ios_services.c']
 

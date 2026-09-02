@@ -42,7 +42,11 @@ if GetDepend('LV_FB_LINE_NUM'):
 else:
     ers_v = '128'
 
-if GetDepend('BSP_USING_PC_SIMULATOR'):
+if GetDepend('AGENT_PET_EXTERNAL_RESOURCES'):
+    # Images are generated into disk/ex/resource by tools/resource_bundle.py.
+    # LV_EXT_IMG_GET resolves the same identifiers to file paths in this mode.
+    objs = []
+elif GetDepend('BSP_USING_PC_SIMULATOR'):
     objs = Env.ImgResource(objs_no_ezip + objs_ezip + objs_large_ezip, img_flags+' -cfile 1 -simu')
 else:
     objs = Env.ImgResource(objs_no_ezip, img_flags+' -cfile 1 -dpt 1')

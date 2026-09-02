@@ -21,7 +21,7 @@
     #include "drv_gpio.h"
 #endif /* BSP_USING_PM */
 
-#define APP_WATCH_GUI_TASK_STACK_SIZE 16*1024
+#define APP_WATCH_GUI_TASK_STACK_SIZE (8U * 1024U)
 
 #define SLEEP_CTRL_PIN   (BSP_KEY1_PIN)
 #define LCD_DEVICE_NAME  "lcd"
@@ -396,82 +396,121 @@ static void pm_event_handler(gui_pm_event_type_t event)
 #endif /* BSP_USING_PM */
 
 #ifdef BSP_USING_DFU
-#include "bf0_ble_dfu.h"
+#include "dfu_service.h"
+#include "dfu_internal.h"
 
-static void dfu_btn_event_cb(lv_obj_t *obj, lv_event_t evt)
+static void dfu_btn_event_cb(lv_event_t *event)
 {
-    if ((evt == LV_EVENT_DELETE) && (obj == mbox))
+    lv_obj_t *pDfuMessageBox;
+    lv_obj_t *pDfuBackdrop;
+    uint16_t usButtonIndex;
+
+    pDfuMessageBox = lv_event_get_user_data(event);
+    if ((NULL == pDfuMessageBox) ||
+            (LV_EVENT_VALUE_CHANGED != lv_event_get_code(event)))
     {
-        /* Delete the parent modal background */
-        lv_obj_del_async(lv_obj_get_parent(mbox));
-        mbox = NULL; /* happens before object is actually deleted! */
-        //lv_label_set_text(info, welcome_info);
+        return;
     }
-    else if (evt == LV_EVENT_VALUE_CHANGED)
+
+    usButtonIndex = lv_msgbox_get_active_btn(pDfuMessageBox);
+    if (0U == usButtonIndex)
     {
-        uint16_t btn_idx = lv_msgbox_get_active_btn(obj);
-        if (0 == btn_idx)
+        if (NULL != lcd_device)
         {
             rt_device_control(lcd_device, RTGRAPHIC_CTRL_POWEROFF, NULL);
-            rt_hw_cpu_reset();
         }
-        else
-        {
-            /* A button was clicked */
-            lv_msgbox_start_auto_close(mbox, 0);
-        }
+        rt_hw_cpu_reset();
+        return;
     }
+
+    pDfuBackdrop = lv_obj_get_parent(pDfuMessageBox);
+    mbox = NULL;
+    if (NULL != pDfuBackdrop)
+    {
+        lv_obj_del_async(pDfuBackdrop);
+    }
+
+    return;
 }
 
-static void opa_anim(void *bg, lv_anim_value_t v)
+static void dfu_opa_anim(void *pBackdrop, int32_t lOpacity)
 {
-    lv_obj_set_style_local_bg_opa(bg, LV_OBJ_PART_MAIN, LV_STATE_DEFAULT, v);
+    lv_obj_set_style_bg_opa(pBackdrop, (lv_opa_t)lOpacity,
+                            LV_PART_MAIN | LV_STATE_DEFAULT);
+
+    return;
 }
 
-
-static void show_dfu_reboot_msgbox(void)
+static void show_dfu_reboot_msgbox(void *pUserData)
 {
+    lv_obj_t *pDfuBackdrop;
+    lv_anim_t tAnimation;
+    static const char *l_aDfuButtons[] = {"Ok", "Cancel", ""};
+
+    (void)pUserData;
+    if (NULL != mbox)
+    {
+        return;
+    }
+
     /* Create a base object for the modal background */
-    lv_obj_t *obj = lv_obj_create(lv_scr_act(), NULL);
-    _lv_obj_set_style_local_color(obj, LV_OBJ_PART_MAIN, LV_STYLE_BG_COLOR, LV_COLOR_BLACK);
-    lv_obj_set_pos(obj, 0, 0);
-    lv_obj_set_size(obj, LV_HOR_RES, LV_VER_RES);
-
-    static const char *btns2[] = {"Ok", "Cancel", ""};
+    pDfuBackdrop = lv_obj_create(lv_scr_act());
+    if (NULL == pDfuBackdrop)
+    {
+        return;
+    }
+    lv_obj_set_style_bg_color(pDfuBackdrop, LV_COLOR_BLACK,
+                              LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_pos(pDfuBackdrop, 0, 0);
+    lv_obj_set_size(pDfuBackdrop, LV_HOR_RES, LV_VER_RES);
 
     /* Create the message box as a child of the modal background */
-    mbox = lv_msgbox_create(obj, NULL);
-    lv_msgbox_add_btns(mbox, btns2);
-    lv_msgbox_set_text(mbox, "Upgrade firmware is ready! Do you want to update?");
-    lv_obj_align(mbox, NULL, LV_ALIGN_CENTER, 0, 0);
-    lv_obj_set_event_cb(mbox, dfu_btn_event_cb);
+    mbox = lv_msgbox_create(pDfuBackdrop, "Firmware upgrade",
+                            "The package is ready. Restart and install now?",
+                            l_aDfuButtons, false);
+    if (NULL == mbox)
+    {
+        lv_obj_del_async(pDfuBackdrop);
+        return;
+    }
+    lv_obj_align(mbox, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_add_event_cb(mbox, dfu_btn_event_cb, LV_EVENT_VALUE_CHANGED, mbox);
 
     /* Fade the message box in with an animation */
-    lv_anim_t a;
-    lv_anim_init(&a);
-    lv_anim_set_var(&a, obj);
-    lv_anim_set_time(&a, 500);
-    lv_anim_set_values(&a, LV_OPA_TRANSP, LV_OPA_50);
-    lv_anim_set_exec_cb(&a, (lv_anim_exec_xcb_t)opa_anim);
-    lv_anim_start(&a);
+    lv_anim_init(&tAnimation);
+    lv_anim_set_var(&tAnimation, pDfuBackdrop);
+    lv_anim_set_time(&tAnimation, 500U);
+    lv_anim_set_values(&tAnimation, LV_OPA_TRANSP, LV_OPA_50);
+    lv_anim_set_exec_cb(&tAnimation, (lv_anim_exec_xcb_t)dfu_opa_anim);
+    lv_anim_start(&tAnimation);
 
-    //lv_label_set_text(info, in_msg_info);
-    //lv_obj_align(info, NULL, LV_ALIGN_IN_BOTTOM_LEFT, 5, -5);
+    return;
 }
 
 
 
-uint8_t app_dfu_callback(uint16_t event, void *param)
+static dfu_event_ack_t app_dfu_callback(uint16_t event, void *param)
 {
-    uint8_t ret = BLE_DFU_EVENT_SUCCESSED;
+    dfu_event_ack_t eRetVal;
+
+    eRetVal = DFU_EVENT_SUCCESSED;
     switch (event)
     {
-    case BLE_DFU_END:
+    case DFU_APP_INSTALL_COMPLETD_IND:
     {
-        ble_dfu_end_t *ret = (ble_dfu_end_t *)param;
-        LOG_I("app dfu reset start %d", ret->result);
-        if (ret->result == 0)
-            show_dfu_reboot_msgbox();
+        dfu_app_img_install_completed_ind_t *pDfuResult;
+
+        pDfuResult = (dfu_app_img_install_completed_ind_t *)param;
+        if (NULL == pDfuResult)
+        {
+            eRetVal = DFU_EVENT_FAILED;
+            break;
+        }
+        LOG_I("app dfu reset start %d", pDfuResult->result);
+        if (DFU_APP_SUCCESSED == pDfuResult->result)
+        {
+            lv_async_call(show_dfu_reboot_msgbox, NULL);
+        }
         break;
     }
     default:
@@ -479,10 +518,10 @@ uint8_t app_dfu_callback(uint16_t event, void *param)
     }
 
 
-    return ret;
+    return eRetVal;
 }
 #else
-#define ble_dfu_register(cbk)
+#define dfu_register(callback)
 #endif
 
 void app_watch_entry(void *parameter)
@@ -535,6 +574,9 @@ void app_watch_entry(void *parameter)
     lv_freetype_open_font(true);                                /* open freetype */
 #endif
     gui_app_init();
+#ifdef BSP_USING_DFU
+    dfu_register(app_dfu_callback);
+#endif /* BSP_USING_DFU */
 
 #ifdef BSP_USING_PM
     button_event_task = lv_timer_create(button_event_task_entry, 30, 0);

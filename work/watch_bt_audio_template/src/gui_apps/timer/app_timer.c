@@ -159,7 +159,7 @@ static lv_obj_t *TIMER_CreateLabel(lv_obj_t *pParent, const char *pText,
 }
 
 static lv_obj_t *TIMER_CreateImage(lv_obj_t *pParent,
-                                   const lv_img_dsc_t *pImage,
+                                   const void *pImage,
                                    lv_coord_t lX, lv_coord_t lY)
 {
     lv_obj_t *pObject;
@@ -181,7 +181,7 @@ static lv_obj_t *TIMER_CreateImage(lv_obj_t *pParent,
 static void TIMER_ActionEvent(lv_event_t *pEvent);
 
 static lv_obj_t *TIMER_CreateImageButton(lv_obj_t *pParent,
-                                         const lv_img_dsc_t *pImage,
+                                         const void *pImage,
                                          lv_coord_t lX, lv_coord_t lY,
                                          TIMER_ACTION eAction)
 {
@@ -199,8 +199,8 @@ static lv_obj_t *TIMER_CreateImageButton(lv_obj_t *pParent,
 }
 
 static lv_obj_t *TIMER_CreatePressedButton(lv_obj_t *pParent,
-                                           const lv_img_dsc_t *pNormal,
-                                           const lv_img_dsc_t *pPressed,
+                                           const void *pNormal,
+                                           const void *pPressed,
                                            lv_coord_t lX, lv_coord_t lY,
                                            TIMER_ACTION eAction)
 {
@@ -293,7 +293,7 @@ static uint32_t TIMER_GetPickerSeconds(void)
 static void TIMER_RenderPreset(lv_coord_t lX, lv_coord_t lY,
                                const char *pText, TIMER_ACTION eAction)
 {
-    (void)TIMER_CreateImageButton(l_tTimerUi.pRoot, &timer_icon_preset,
+    (void)TIMER_CreateImageButton(l_tTimerUi.pRoot, LV_EXT_IMG_GET(timer_icon_preset),
                                   lX, lY, eAction);
     (void)TIMER_CreateLabel(l_tTimerUi.pRoot, pText, lX + 20, lY + 65,
                             136, lv_color_hex(0x242124U),
@@ -309,7 +309,7 @@ static void TIMER_RenderHome(void)
     (void)TIMER_CreateLabel(l_tTimerUi.pRoot, "计时器", 18, 14, 230,
                             lv_color_hex(0xFF9500U), LV_TEXT_ALIGN_LEFT,
                             TIMER_FONT_SUBTITLE);
-    (void)TIMER_CreateImageButton(l_tTimerUi.pRoot, &timer_icon_add,
+    (void)TIMER_CreateImageButton(l_tTimerUi.pRoot, LV_EXT_IMG_GET(timer_icon_add),
                                   LV_HOR_RES_MAX - 74, 0,
                                   TIMER_ACTION_ADD);
     if (l_tTimerUi.bHistory)
@@ -321,7 +321,7 @@ static void TIMER_RenderHome(void)
         if (l_tTimerUi.bEditHistory)
         {
             (void)TIMER_CreateImageButton(l_tTimerUi.pRoot,
-                                          &timer_icon_remove_badge,
+                                          LV_EXT_IMG_GET(timer_icon_remove_badge),
                                           18, 92,
                                           TIMER_ACTION_DELETE_HISTORY);
         }
@@ -337,7 +337,7 @@ static void TIMER_RenderHome(void)
     (void)TIMER_CreateLabel(l_tTimerUi.pRoot, "所有计时器", 18, 282, 200,
                             lv_color_white(), LV_TEXT_ALIGN_LEFT,
                             TIMER_FONT_CAPTION);
-    (void)TIMER_CreateImageButton(l_tTimerUi.pRoot, &timer_icon_preset_add,
+    (void)TIMER_CreateImageButton(l_tTimerUi.pRoot, LV_EXT_IMG_GET(timer_icon_preset_add),
                                   18, 304, TIMER_ACTION_ADD);
     TIMER_RenderPreset(216, 304, "01:00", TIMER_ACTION_PRESET_ONE);
     TIMER_RenderPreset(18, 494, "03:00", TIMER_ACTION_PRESET_THREE);
@@ -360,7 +360,7 @@ static void TIMER_RenderPickerColumn(lv_coord_t lX, const char *pValue,
                                      bool bSelected)
 {
     (void)TIMER_CreateImage(l_tTimerUi.pRoot,
-                            bSelected ? &timer_picker_on : &timer_picker_off,
+                            bSelected ? LV_EXT_IMG_GET(timer_picker_on) : LV_EXT_IMG_GET(timer_picker_off),
                             lX, 130);
     (void)TIMER_CreateLabel(l_tTimerUi.pRoot, "+", lX + 32, 142, 45,
                             lv_color_hex(0x8E8E93U), LV_TEXT_ALIGN_CENTER,
@@ -384,7 +384,7 @@ static void TIMER_RenderSet(void)
     char aMinute[4];
     char aSecond[4];
 
-    (void)TIMER_CreateImageButton(l_tTimerUi.pRoot, &timer_icon_cancel,
+    (void)TIMER_CreateImageButton(l_tTimerUi.pRoot, LV_EXT_IMG_GET(timer_icon_cancel),
                                   0, 0, TIMER_ACTION_BACK);
     (void)TIMER_CreateLabel(l_tTimerUi.pRoot, "计时器", 74, 20, 220,
                             lv_color_hex(0xFF9500U), LV_TEXT_ALIGN_LEFT,
@@ -398,8 +398,8 @@ static void TIMER_RenderSet(void)
                              TIMER_ACTION_MINUTE_DOWN, true);
     TIMER_RenderPickerColumn(276, aSecond, "秒", TIMER_ACTION_SECOND_UP,
                              TIMER_ACTION_SECOND_DOWN, false);
-    (void)TIMER_CreatePressedButton(l_tTimerUi.pRoot, &timer_button_start,
-                                    &timer_button_start_pressed, 34, 378,
+    (void)TIMER_CreatePressedButton(l_tTimerUi.pRoot, LV_EXT_IMG_GET(timer_button_start),
+                                    LV_EXT_IMG_GET(timer_button_start_pressed), 34, 378,
                                     TIMER_ACTION_START);
 }
 
@@ -407,10 +407,10 @@ static void TIMER_RenderRunning(const watch_alarm_snapshot_t *pSnapshot)
 {
     char aTime[16];
 
-    (void)TIMER_CreateImageButton(l_tTimerUi.pRoot, &timer_icon_add,
+    (void)TIMER_CreateImageButton(l_tTimerUi.pRoot, LV_EXT_IMG_GET(timer_icon_add),
                                   LV_HOR_RES_MAX - 74, 0,
                                   TIMER_ACTION_OPEN_LIST);
-    (void)TIMER_CreateImage(l_tTimerUi.pRoot, &timer_ring, 35, 78);
+    (void)TIMER_CreateImage(l_tTimerUi.pRoot, LV_EXT_IMG_GET(timer_ring), 35, 78);
     TIMER_FormatTime(aTime, sizeof(aTime), pSnapshot->timer_remaining_seconds);
     l_tTimerUi.pValue = TIMER_CreateLabel(l_tTimerUi.pRoot, aTime, 45, 188,
                                           320, lv_color_white(),
@@ -421,12 +421,12 @@ static void TIMER_RenderRunning(const watch_alarm_snapshot_t *pSnapshot)
         pSnapshot->timer_running ? "倒计时" : "已暂停",
         55, 270, 300, lv_color_hex(0x8E8E93U), LV_TEXT_ALIGN_CENTER,
         TIMER_FONT_CAPTION);
-    (void)TIMER_CreateImageButton(l_tTimerUi.pRoot, &timer_icon_cancel,
+    (void)TIMER_CreateImageButton(l_tTimerUi.pRoot, LV_EXT_IMG_GET(timer_icon_cancel),
                                   24, 414, TIMER_ACTION_CANCEL);
     l_tTimerUi.pControl = TIMER_CreateImageButton(
         l_tTimerUi.pRoot,
-        pSnapshot->timer_running ? &timer_icon_pause_big :
-                                   &timer_icon_start_big,
+        pSnapshot->timer_running ? LV_EXT_IMG_GET(timer_icon_pause_big) :
+                                   LV_EXT_IMG_GET(timer_icon_start_big),
         LV_HOR_RES_MAX - 98, 414, TIMER_ACTION_TOGGLE);
 }
 
@@ -434,15 +434,15 @@ static void TIMER_RenderList(const watch_alarm_snapshot_t *pSnapshot)
 {
     char aTime[16];
 
-    (void)TIMER_CreateImageButton(l_tTimerUi.pRoot, &timer_icon_cancel,
+    (void)TIMER_CreateImageButton(l_tTimerUi.pRoot, LV_EXT_IMG_GET(timer_icon_cancel),
                                   0, 0, TIMER_ACTION_BACK);
     (void)TIMER_CreateLabel(l_tTimerUi.pRoot, "计时器", 74, 20, 220,
                             lv_color_hex(0xFF9500U), LV_TEXT_ALIGN_LEFT,
                             TIMER_FONT_SUBTITLE);
-    (void)TIMER_CreateImageButton(l_tTimerUi.pRoot, &timer_icon_add,
+    (void)TIMER_CreateImageButton(l_tTimerUi.pRoot, LV_EXT_IMG_GET(timer_icon_add),
                                   LV_HOR_RES_MAX - 74, 0,
                                   TIMER_ACTION_ADD);
-    (void)TIMER_CreateImage(l_tTimerUi.pRoot, &timer_bg_row, 11, 92);
+    (void)TIMER_CreateImage(l_tTimerUi.pRoot, LV_EXT_IMG_GET(timer_bg_row), 11, 92);
     TIMER_FormatTime(aTime, sizeof(aTime), pSnapshot->timer_remaining_seconds);
     l_tTimerUi.pValue = TIMER_CreateLabel(l_tTimerUi.pRoot, aTime, 30, 110,
                                           230, lv_color_white(),
@@ -455,8 +455,8 @@ static void TIMER_RenderList(const watch_alarm_snapshot_t *pSnapshot)
         TIMER_FONT_CAPTION);
     l_tTimerUi.pControl = TIMER_CreateImageButton(
         l_tTimerUi.pRoot,
-        pSnapshot->timer_running ? &timer_icon_pause_small :
-                                   &timer_icon_start_small,
+        pSnapshot->timer_running ? LV_EXT_IMG_GET(timer_icon_pause_small) :
+                                   LV_EXT_IMG_GET(timer_icon_start_small),
         320, 106, TIMER_ACTION_TOGGLE);
 }
 
@@ -464,8 +464,8 @@ static void TIMER_RenderDone(void)
 {
     char aConfigured[16];
 
-    (void)TIMER_CreateImage(l_tTimerUi.pRoot, &timer_bg_done, 0, 0);
-    (void)TIMER_CreateImage(l_tTimerUi.pRoot, &timer_ring_done, 35, 78);
+    (void)TIMER_CreateImage(l_tTimerUi.pRoot, LV_EXT_IMG_GET(timer_bg_done), 0, 0);
+    (void)TIMER_CreateImage(l_tTimerUi.pRoot, LV_EXT_IMG_GET(timer_ring_done), 35, 78);
     (void)TIMER_CreateLabel(l_tTimerUi.pRoot, "结束", 55, 170, 300,
                             lv_color_white(), LV_TEXT_ALIGN_CENTER,
                             TIMER_FONT_DONE);
@@ -474,9 +474,9 @@ static void TIMER_RenderDone(void)
     (void)TIMER_CreateLabel(l_tTimerUi.pRoot, aConfigured, 55, 275, 300,
                             lv_color_white(), LV_TEXT_ALIGN_CENTER,
                             TIMER_FONT_CAPTION);
-    (void)TIMER_CreateImageButton(l_tTimerUi.pRoot, &timer_icon_cancel_done,
+    (void)TIMER_CreateImageButton(l_tTimerUi.pRoot, LV_EXT_IMG_GET(timer_icon_cancel_done),
                                   24, 414, TIMER_ACTION_CANCEL);
-    (void)TIMER_CreateImageButton(l_tTimerUi.pRoot, &timer_icon_retry_done,
+    (void)TIMER_CreateImageButton(l_tTimerUi.pRoot, LV_EXT_IMG_GET(timer_icon_retry_done),
                                   LV_HOR_RES_MAX - 98, 414,
                                   TIMER_ACTION_RETRY);
 }
@@ -741,9 +741,9 @@ static void TIMER_RefreshTimer(lv_timer_t *pTimer)
                 l_tTimerUi.pControl,
                 tSnapshot.timer_running ?
                     ((TIMER_PAGE_LIST == l_tTimerUi.ePage) ?
-                        &timer_icon_pause_small : &timer_icon_pause_big) :
+                        LV_EXT_IMG_GET(timer_icon_pause_small) : LV_EXT_IMG_GET(timer_icon_pause_big)) :
                     ((TIMER_PAGE_LIST == l_tTimerUi.ePage) ?
-                        &timer_icon_start_small : &timer_icon_start_big));
+                        LV_EXT_IMG_GET(timer_icon_start_small) : LV_EXT_IMG_GET(timer_icon_start_big)));
         }
         l_tTimerUi.tRendered = tSnapshot;
     }

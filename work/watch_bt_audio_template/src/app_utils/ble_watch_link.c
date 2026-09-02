@@ -32,6 +32,7 @@
 
 #define BLE_LINK_ADV_NAME "AgentPet-HS52"
 #define BLE_LINK_NOTIFY_INTERVAL_MS 5000
+#define BLE_LINK_STACK_READY_MSG (0xB1E0U)
 
 enum ble_link_att_list
 {
@@ -106,6 +107,31 @@ static uint8_t g_agent_pet_adv_uuid_storage[AGENTPET_ADV_UUID_STORAGE_SIZE];
 static ble_link_env_t *ble_link_env(void)
 {
     return &g_ble_link_env;
+}
+
+/***************************
+ * BLELINK_NotifyStackReady: notify the BLE link worker that the Bluetooth stack is ready
+ * Function: queues an idempotent startup message so the GATT services and advertising can start
+ * Return: none
+ ***************************/
+void BLELINK_NotifyStackReady(void)
+{
+    ble_link_env_t *pEnv = ble_link_env();
+    rt_err_t ulRetVal;
+
+    if (RT_NULL == pEnv->mb_handle)
+    {
+        LOG_W("BLE link stack-ready ignored: mailbox unavailable");
+        return;
+    }
+
+    ulRetVal = rt_mb_send(pEnv->mb_handle, BLE_LINK_STACK_READY_MSG);
+    if (RT_EOK != ulRetVal)
+    {
+        LOG_W("BLE link stack-ready queue failed=%d", ulRetVal);
+    }
+
+    return;
 }
 
 static uint8_t ble_link_adv_event(uint8_t event, void *context, void *data)
@@ -549,10 +575,7 @@ static int ble_link_event_handler(uint16_t event_id, uint8_t *data, uint16_t len
     switch (event_id)
     {
     case BLE_POWER_ON_IND:
-        if (env->mb_handle)
-        {
-            rt_mb_send(env->mb_handle, BLE_POWER_ON_IND);
-        }
+        BLELINK_NotifyStackReady();
         break;
     case BLE_GAP_CONNECTED_IND:
     {
@@ -607,7 +630,7 @@ static void ble_link_thread(void *parameter)
     {
         uint32_t value;
         rt_mb_recv(env->mb_handle, (rt_uint32_t *)&value, RT_WAITING_FOREVER);
-        if (value == BLE_POWER_ON_IND && !env->is_power_on)
+        if ((BLE_LINK_STACK_READY_MSG == value) && (0U == env->is_power_on))
         {
             env->is_power_on = 1;
             env->mtu = 23;
@@ -651,6 +674,7 @@ static int ble_link_init(void)
     if (tid)
     {
         rt_thread_startup(tid);
+        sifli_ble_enable();
         return RT_EOK;
     }
 

@@ -29,17 +29,23 @@ import java.io.InputStream;
 import java.util.List;
 import java.util.Calendar;
 
-public final class MainActivity extends Activity implements WatchBleClient.Listener {
+public final class MainActivity extends Activity implements WatchBleClient.Listener, SifliOtaClient.Listener {
     private static final int REQUEST_BLUETOOTH = 100;
     private static final int REQUEST_IMAGE = 101;
+    private static final int REQUEST_OTA_PACKAGE = 102;
+    private static final int REQUEST_RESOURCE_PACKAGE = 103;
 
     private WatchBleClient watch;
+    private SifliOtaClient otaClient;
     private ImageView preview;
     private TextView deviceValue;
     private TextView imageValue;
     private TextView transferValue;
     private TextView timeValue;
     private TextView alarmValue;
+    private TextView otaPackageValue;
+    private TextView otaStatusValue;
+    private TextView resourcePackageValue;
     private TextView progressValue;
     private ProgressBar progress;
     private LinearLayout deviceList;
@@ -50,17 +56,24 @@ public final class MainActivity extends Activity implements WatchBleClient.Liste
     private Button clearButton;
     private Button alarmButton;
     private Button alarmOffButton;
+    private Button otaSelectButton;
+    private Button otaStartButton;
+    private Button resourceSelectButton;
+    private Button resourceStartButton;
     private byte[] preparedJpeg;
+    private ResourceUpdatePackage resourceUpdatePackage;
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
         watch = new WatchBleClient(this, this);
         setContentView(buildContent());
+        otaClient = new SifliOtaClient(this, this);
         updateControls();
         if (hasBluetoothPermission() && !watch.reconnectLastWatch()) beginScan();
     }
 
     @Override protected void onDestroy() {
+        otaClient.close();
         watch.close();
         super.onDestroy();
     }
@@ -136,11 +149,42 @@ public final class MainActivity extends Activity implements WatchBleClient.Liste
         root.addView(maintenance, params(-1, -2, 8));
 
         root.addView(divider(), params(-1, dp(1), 20));
+        TextView resourceTitle = text("资源差分升级", 18, color("app_text"));
+        root.addView(resourceTitle, params(-1, -2, 16));
+
+        LinearLayout resourceActions = new LinearLayout(this);
+        resourceActions.setOrientation(LinearLayout.HORIZONTAL);
+        resourceSelectButton = smallButton("选择差分包");
+        resourceSelectButton.setOnClickListener(view -> selectResourcePackage());
+        resourceStartButton = smallButton("更新资源");
+        resourceStartButton.setOnClickListener(view -> startResourceUpdate());
+        resourceActions.addView(resourceSelectButton, weightParams(0, -2, 1, 8));
+        resourceActions.addView(resourceStartButton, weightParams(0, -2, 1, 0));
+        root.addView(resourceActions, params(-1, -2, 8));
+        resourcePackageValue = statusRow(root, "资源包", "尚未选择");
+
+        root.addView(divider(), params(-1, dp(1), 20));
+        TextView otaTitle = text("固件升级", 18, color("app_text"));
+        root.addView(otaTitle, params(-1, -2, 16));
+
+        LinearLayout otaActions = new LinearLayout(this);
+        otaActions.setOrientation(LinearLayout.HORIZONTAL);
+        otaSelectButton = smallButton("选择升级包");
+        otaSelectButton.setOnClickListener(view -> selectOtaPackage());
+        otaStartButton = smallButton("开始 OTA");
+        otaStartButton.setOnClickListener(view -> startOta());
+        otaActions.addView(otaSelectButton, weightParams(0, -2, 1, 8));
+        otaActions.addView(otaStartButton, weightParams(0, -2, 1, 0));
+        root.addView(otaActions, params(-1, -2, 8));
+
+        root.addView(divider(), params(-1, dp(1), 20));
         deviceValue = statusRow(root, "设备", "未连接");
         imageValue = statusRow(root, "图片", "尚未选择");
         transferValue = statusRow(root, "传输", "等待连接");
         timeValue = statusRow(root, "时间", "等待同步");
         alarmValue = statusRow(root, "闹钟", "等待连接");
+        otaPackageValue = statusRow(root, "OTA包", "尚未选择");
+        otaStatusValue = statusRow(root, "OTA", "等待升级");
 
         LinearLayout alarmActions = new LinearLayout(this);
         alarmActions.setOrientation(LinearLayout.HORIZONTAL);
@@ -173,6 +217,42 @@ public final class MainActivity extends Activity implements WatchBleClient.Liste
         startActivityForResult(intent, REQUEST_IMAGE);
     }
 
+    private void selectOtaPackage() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("application/octet-stream");
+        startActivityForResult(intent, REQUEST_OTA_PACKAGE);
+    }
+
+    private void selectResourcePackage() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        startActivityForResult(intent, REQUEST_RESOURCE_PACKAGE);
+    }
+
+    private void startResourceUpdate() {
+        if (resourceUpdatePackage == null) {
+            onError("请先选择资源差分包");
+            return;
+        }
+        progress.setProgress(0);
+        progressValue.setText("0%");
+        watch.uploadResources(resourceUpdatePackage);
+    }
+
+    private void startOta() {
+        String address = watch.disconnectForOta();
+        if (address == null) {
+            onOtaError("请先连接手表");
+            return;
+        }
+        progress.setProgress(0);
+        progressValue.setText("0%");
+        otaClient.start(address);
+        updateControls();
+    }
+
     private void selectAlarmTime() {
         Calendar now = Calendar.getInstance();
         new TimePickerDialog(this, (view, hour, minute) -> watch.setAlarm(hour, minute),
@@ -181,11 +261,32 @@ public final class MainActivity extends Activity implements WatchBleClient.Liste
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode != REQUEST_IMAGE || resultCode != RESULT_OK || data == null || data.getData() == null) return;
-        try {
-            prepareImage(data.getData());
-        } catch (Exception error) {
-            onError("无法处理这张图片");
+        if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
+        if (requestCode == REQUEST_IMAGE) {
+            try {
+                prepareImage(data.getData());
+            } catch (Exception error) {
+                onError("无法处理这张图片");
+            }
+        } else if (requestCode == REQUEST_OTA_PACKAGE) {
+            try {
+                otaClient.importPackage(data.getData());
+            } catch (Exception error) {
+                onOtaError(error.getMessage() == null ? "无法读取升级包" : error.getMessage());
+            }
+        } else if (requestCode == REQUEST_RESOURCE_PACKAGE) {
+            try {
+                resourceUpdatePackage = ResourceUpdatePackage.read(getContentResolver(), data.getData());
+                resourcePackageValue.setText(resourceUpdatePackage.displayName + "（"
+                        + resourceUpdatePackage.baseVersion + " → "
+                        + resourceUpdatePackage.targetVersion + "，"
+                        + resourceUpdatePackage.payloadBytes / 1024 + " KiB）");
+                transferValue.setText("资源差分包校验完成");
+                updateControls();
+            } catch (Exception error) {
+                resourceUpdatePackage = null;
+                onError(error.getMessage() == null ? "无法读取资源差分包" : error.getMessage());
+            }
         }
     }
 
@@ -269,15 +370,45 @@ public final class MainActivity extends Activity implements WatchBleClient.Liste
         updateControls();
     }
 
+    @Override public void onOtaPackagePrepared(String name, long bytes) {
+        otaPackageValue.setText(name + "（" + (bytes / 1024L) + " KiB）");
+        otaStatusValue.setText("升级包校验完成");
+        updateControls();
+    }
+
+    @Override public void onOtaProgress(int percent, int stage) {
+        progress.setProgress(percent);
+        progressValue.setText(percent + "%");
+        otaStatusValue.setText("正在升级 " + percent + "%（阶段 " + stage + "）");
+        updateControls();
+    }
+
+    @Override public void onOtaState(String text) {
+        otaStatusValue.setText(text);
+        updateControls();
+    }
+
+    @Override public void onOtaError(String text) {
+        otaStatusValue.setText(text);
+        Toast.makeText(this, text, Toast.LENGTH_LONG).show();
+        updateControls();
+    }
+
     private void updateControls() {
         boolean connected = watch != null && watch.isReady();
-        if (sendButton != null) sendButton.setEnabled(connected && preparedJpeg != null);
-        if (syncButton != null) syncButton.setEnabled(connected);
-        if (refreshButton != null) refreshButton.setEnabled(connected);
-        if (cancelButton != null) cancelButton.setEnabled(connected);
-        if (clearButton != null) clearButton.setEnabled(connected);
-        if (alarmButton != null) alarmButton.setEnabled(connected);
-        if (alarmOffButton != null) alarmOffButton.setEnabled(connected);
+        boolean otaBusy = otaClient != null && otaClient.isBusy();
+        if (sendButton != null) sendButton.setEnabled(connected && preparedJpeg != null && !otaBusy);
+        if (syncButton != null) syncButton.setEnabled(connected && !otaBusy);
+        if (refreshButton != null) refreshButton.setEnabled(connected && !otaBusy);
+        if (cancelButton != null) cancelButton.setEnabled(connected && !otaBusy);
+        if (clearButton != null) clearButton.setEnabled(connected && !otaBusy);
+        if (alarmButton != null) alarmButton.setEnabled(connected && !otaBusy);
+        if (alarmOffButton != null) alarmOffButton.setEnabled(connected && !otaBusy);
+        if (otaSelectButton != null) otaSelectButton.setEnabled(!otaBusy);
+        if (otaStartButton != null) otaStartButton.setEnabled(connected && otaClient.hasPackage() && !otaBusy);
+        if (resourceSelectButton != null) resourceSelectButton.setEnabled(!otaBusy);
+        if (resourceStartButton != null) resourceStartButton.setEnabled(
+                connected && resourceUpdatePackage != null && !otaBusy);
     }
 
     private TextView statusRow(LinearLayout root, String label, String value) {

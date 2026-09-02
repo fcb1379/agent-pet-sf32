@@ -26,3 +26,9 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
 }
+
+dependencies {
+    implementation 'androidx.localbroadcastmanager:localbroadcastmanager:1.1.0'
+    implementation 'com.sifli:siflicore:1.2.16'
+    implementation 'com.sifli:siflidfu:1.1.36'
+}
