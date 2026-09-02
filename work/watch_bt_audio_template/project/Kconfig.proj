@@ -28,6 +28,23 @@ config AGENT_PET_USING_IMU
         Enable the I2C driver for the board-mounted LSM6DSL/LSM6DS3TR-C
         accelerometer and gyroscope. The PC simulator never builds this driver.
 
+config AGENT_PET_BEHAVIOR_ENGINE
+    bool "Enable autonomous Agent Pet behavior states"
+    default y
+    help
+        Enable the fixed-memory autonomous behavior state machine, local touch
+        and IMU reactions, optional per-state GIF lookup, and versioned mood
+        persistence. Disable this option to retain the original Agent state,
+        multi-GIF, typing, image-transfer, audio, and wooden-fish behavior.
+
+config AGENT_PET_USING_MEMORY_CALENDAR
+    bool "Enable the local 30-day Momo memory calendar"
+    default y
+    help
+        Record three privacy-preserving daily bits for local meetings, physical
+        play and collected Agent achievements. The feature uses fixed memory,
+        no external assets, no network service and no additional thread/timer.
+
 config AGENT_PET_USING_TF_CARD
     bool "Enable the Huangshan board SPI TF card and file manager"
     depends on !BSP_USING_PC_SIMULATOR
