@@ -1,0 +1,29 @@
+work/watch_bt_audio_template/src/gui_apps/pet/SConscript
+  s_b991e4ff93e87f::t_326c71cd19af6c 9-12
+work/watch_bt_audio_template/project/Kconfig.proj
+  s_b991e4ff93e87f::t_326c71cd19af6c 31-39
+work/watch_bt_audio_template/src/app_utils/SConscript
+  s_b991e4ff93e87f::t_326c71cd19af6c 8-11
+work/watch_bt_audio_template/src/gui_apps/pet/app_pet.c
+  s_b991e4ff93e87f::t_326c71cd19af6c 84,86,97,106,181,183,186,188,196,198,218,220,240,244,500,502,509,511,1061,1064-1067,1271,1781,1838,2016,2018,2025,2027-2029,3057,3079,3143,3155,3181,3184-3187,3404,3406,3440,3442-3445,3475,3490,3522-3523,3601
+  s_b991e4ff93e87f::t_b88ebb1153bb20 1637
+docs/2026-09-02-pet-behavior-engine-integration.md
+  s_b991e4ff93e87f::t_d3ddad265dc7a6 43,53
+  s_b991e4ff93e87f::t_23356386e8d525 1-42,44-52,54-65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "e1a5a69549b3576307a14ebc47fbad3b47665899",
+  "prompts": {},
+  "sessions": {
+    "s_b991e4ff93e87f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd60c-817e-7cf2-aadd-448c400c6b83",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}
