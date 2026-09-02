@@ -10,6 +10,7 @@
 #include "agent_quest_garden.h"
 #include "agent_pet_merit.h"
 #include "local_music_player.h"
+#include "pet_interaction_arbiter.h"
 #include "pet_behavior.h"
 #include "pet_state_assets.h"
 #if defined(AGENT_PET_USING_MEMORY_CALENDAR)
@@ -350,6 +351,8 @@ static void PET_ApplyStateAnimation(
 static uint16_t PET_MascotZoom(const lv_img_header_t *pHeader);
 static void PET_PlayWoodenFishAnimation(const lv_point_t *pPoint);
 static void PET_PlayWoodenFish(lv_event_t *pEvent);
+static void PET_ResolveInteraction(bool bHighPriorityRemote,
+                                   PET_INTERACTION_DECISION *pDecision);
 #ifdef AGENT_PET_BEHAVIOR_ENGINE
 static void PET_HandleMascotEvent(lv_event_t *pEvent);
 static bool PET_PostBehaviorEvent(PET_BEHAVIOR_EVENT_TYPE eType,
@@ -368,6 +371,35 @@ static bool PET_CreateMemoryPanel(void);
 static void PET_StrokeInputEvent(lv_event_t *pEvent);
 static void PET_CancelStroke(void);
 #endif
+
+/*
+ * PET_ResolveInteraction
+ * 功能：采集当前四方互动所有权并调用纯状态仲裁器。
+ */
+static void PET_ResolveInteraction(bool bHighPriorityRemote,
+                                   PET_INTERACTION_DECISION *pDecision)
+{
+    PET_INTERACTION_INPUT tInput;
+
+    tInput.bHighPriorityRemote = bHighPriorityRemote;
+    tInput.bMemoryPanelOpen = false;
+    tInput.bStrokeOwnsTouch = false;
+    tInput.bBallOwnsVisual = false;
+#if defined(AGENT_PET_USING_MEMORY_CALENDAR)
+    tInput.bMemoryPanelOpen = g_pet_ui.bMemoryPanelOpen;
+#endif
+#if defined(AGENT_PET_USING_STROKE)
+    tInput.bStrokeOwnsTouch = g_pet_ui.bStrokeVisualActive;
+#endif
+#if defined(AGENT_PET_MOMO_PLAY_BALL)
+    tInput.bBallOwnsVisual =
+        (MOMO_PLAY_BALL_STATE_DRAGGING == g_pet_ui.tPlayBall.eState) ||
+        (MOMO_PLAY_BALL_STATE_MOVING == g_pet_ui.tPlayBall.eState) ||
+        (MOMO_PLAY_BALL_STATE_FEEDBACK == g_pet_ui.tPlayBall.eState);
+#endif
+    PETINTERACTION_Resolve(&tInput, pDecision);
+    return;
+}
 
 #if defined(AGENT_PET_USING_IMU) && !defined(BSP_USING_PC_SIMULATOR)
 /***************************
@@ -1022,6 +1054,8 @@ static void PET_StrokeSwitchChanged(lv_event_t *pEvent)
 
 static bool PET_StrokeCanShow(const AGENTPET_BLE_STATUS *pStatus)
 {
+    PET_INTERACTION_DECISION tDecision;
+
     if ((NULL == pStatus) || !g_pet_ui.bStrokeEnabled ||
         !g_pet_ui.bStrokeInputEnabled ||
         (NULL == g_pet_ui.stroke_switch) ||
@@ -1048,6 +1082,11 @@ static bool PET_StrokeCanShow(const AGENTPET_BLE_STATUS *pStatus)
         return false;
     }
 #endif
+    PET_ResolveInteraction(false, &tDecision);
+    if (!tDecision.bAllowStroke)
+    {
+        return false;
+    }
 
     return true;
 }
@@ -2189,6 +2228,12 @@ static void PET_UpdateBehavior(uint8_t ucAgentState,
 #if defined(AGENT_PET_USING_STROKE)
     bVisualBlocked = bVisualBlocked || g_pet_ui.bStrokeVisualActive;
 #endif
+#if defined(AGENT_PET_MOMO_PLAY_BALL)
+    bVisualBlocked = bVisualBlocked ||
+        (MOMO_PLAY_BALL_STATE_DRAGGING == g_pet_ui.tPlayBall.eState) ||
+        (MOMO_PLAY_BALL_STATE_MOVING == g_pet_ui.tPlayBall.eState) ||
+        (MOMO_PLAY_BALL_STATE_FEEDBACK == g_pet_ui.tPlayBall.eState);
+#endif
     if (!bVisualBlocked &&
         (g_pet_ui.ucRenderedBehaviorState !=
          (uint8_t)tSnapshot.eVisualState) &&
@@ -2446,7 +2491,8 @@ static void PET_PlayBallTimer(lv_timer_t *pTimer)
         lv_obj_set_style_bg_color(
             g_pet_ui.play_ball, lv_color_hex(0xFFB347U), 0);
         g_pet_ui.ucRenderedState = 0xFFU;
-        PET_ApplyStateAnimation(AGENTPET_STATE_IDLE);
+        PET_ApplyStateAnimation(
+            AGENTPET_STATE_IDLE, PET_BEHAVIOR_VISUAL_CALM);
     }
     return;
 }
@@ -2459,6 +2505,7 @@ static void PET_PlayBallTimer(lv_timer_t *pTimer)
  ***************************/
 static void PET_PlayBallInput(lv_event_t *pEvent)
 {
+    PET_INTERACTION_DECISION tDecision;
     lv_indev_t *pInput;
     lv_point_t tPoint;
     lv_event_code_t eCode;
@@ -2467,6 +2514,12 @@ static void PET_PlayBallInput(lv_event_t *pEvent)
 
     if ((NULL == pEvent) || !g_pet_ui.bPlayBallAvailable)
     {
+        return;
+    }
+    PET_ResolveInteraction(false, &tDecision);
+    if (!tDecision.bAllowBall)
+    {
+        PET_CancelPlayBall();
         return;
     }
     eCode = lv_event_get_code(pEvent);
@@ -2521,13 +2574,15 @@ static void PET_PlayBallInput(lv_event_t *pEvent)
         else
         {
             g_pet_ui.ucRenderedState = 0xFFU;
-            PET_ApplyStateAnimation(AGENTPET_STATE_IDLE);
+            PET_ApplyStateAnimation(
+                AGENTPET_STATE_IDLE, PET_BEHAVIOR_VISUAL_CALM);
         }
     }
     else if (LV_EVENT_PRESS_LOST == eCode)
     {
         PET_CancelPlayBall();
-        PET_ApplyStateAnimation(AGENTPET_STATE_IDLE);
+        PET_ApplyStateAnimation(
+            AGENTPET_STATE_IDLE, PET_BEHAVIOR_VISUAL_CALM);
     }
     return;
 }
@@ -2845,8 +2900,10 @@ static void PET_RefreshExpressionAnimation(bool bConnected)
     uint8_t ucSlot;
     bool bHasEvent;
     bool bPresentationChanged;
+    bool bHighPriorityEvent;
 
     bPresentationChanged = false;
+    bHighPriorityEvent = false;
     rt_enter_critical();
     bHasEvent = AGENTPET_GetAnimationEvent(&tEvent, &ulGeneration);
     rt_exit_critical();
@@ -2864,15 +2921,13 @@ static void PET_RefreshExpressionAnimation(bool bConnected)
     else if (bHasEvent &&
         (g_pet_ui.ulRenderedAnimationGeneration != ulGeneration))
     {
-#if defined(AGENT_PET_MOMO_PLAY_BALL)
-        PET_CancelPlayBall();
-#endif
         g_pet_ui.ulRenderedAnimationGeneration = ulGeneration;
         if (AGENTPET_ANIMATION_ACTION_PLAY == tEvent.ucAction)
         {
             g_pet_ui.ucRequestedImageSlot = tEvent.ucSlot;
             g_pet_ui.bExpressionOverride = true;
             bPresentationChanged = true;
+            bHighPriorityEvent = true;
         }
         else if (AGENTPET_ANIMATION_ACTION_RESTORE == tEvent.ucAction)
         {
@@ -2884,12 +2939,27 @@ static void PET_RefreshExpressionAnimation(bool bConnected)
         {
             g_pet_ui.bTypingActive = true;
             bPresentationChanged = true;
+            bHighPriorityEvent = true;
         }
         else if (AGENTPET_ANIMATION_ACTION_TYPING_STOP == tEvent.ucAction)
         {
             g_pet_ui.bTypingActive = false;
             bPresentationChanged = true;
         }
+    }
+
+    if (bHighPriorityEvent)
+    {
+#if defined(AGENT_PET_USING_STROKE)
+        g_pet_ui.bStrokeAllowed = false;
+        PET_CancelStroke();
+#endif
+#if defined(AGENT_PET_MOMO_PLAY_BALL)
+        PET_SetPlayBallAllowed(false);
+#endif
+#if defined(AGENT_PET_USING_MEMORY_CALENDAR)
+        PET_CloseMemoryPanel();
+#endif
     }
 
     if (bPresentationChanged)
@@ -2927,6 +2997,8 @@ static void PET_RefreshStatus(lv_timer_t *pTimer)
     uint32_t ulPendingHitCount;
     uint8_t ucHitIndex;
     uint8_t ucAgentState;
+    PET_INTERACTION_DECISION tInteractionDecision;
+    bool bHighPriorityRemote;
 
     (void)pTimer;
     if (AGENTPETMERIT_GetSnapshot(&tMeritSnapshot) &&
@@ -2951,6 +3023,12 @@ static void PET_RefreshStatus(lv_timer_t *pTimer)
         g_pet_ui.bStrokeAllowed = false;
         PET_CancelStroke();
 #endif
+#if defined(AGENT_PET_MOMO_PLAY_BALL)
+        PET_SetPlayBallAllowed(false);
+#endif
+#if defined(AGENT_PET_USING_MEMORY_CALENDAR)
+        PET_CloseMemoryPanel();
+#endif
 #ifdef AGENT_PET_BEHAVIOR_ENGINE
         PET_UpdateBehavior(AGENTPET_STATE_IDLE, NULL);
 #endif
@@ -2960,26 +3038,27 @@ static void PET_RefreshStatus(lv_timer_t *pTimer)
     PET_RefreshExpressionAnimation(tStatus.bConnected);
     ucAgentState = tStatus.bHasSnapshot ?
         tStatus.tSnapshot.ucAggregateState : AGENTPET_STATE_IDLE;
+    bHighPriorityRemote =
+        (AGENTPET_STATE_IDLE != ucAgentState) ||
+        (AGENTPET_IMAGE_RECEIVING == tStatus.tImageStatus.eState) ||
+        g_pet_ui.bTypingActive || g_pet_ui.bExpressionOverride ||
+        (AGENTPET_IMAGE_BASE_SLOT != g_pet_ui.ucRequestedImageSlot);
 #if defined(AGENT_PET_USING_MEMORY_CALENDAR)
     PET_ArbitrateMemoryPanel(&tStatus);
 #endif
-#if defined(AGENT_PET_MOMO_PLAY_BALL)
-    PET_SetPlayBallAllowed(
-        (AGENTPET_STATE_IDLE == ucAgentState) &&
-        (AGENTPET_IMAGE_RECEIVING != tStatus.tImageStatus.eState) &&
-        !g_pet_ui.bTypingActive &&
-        !g_pet_ui.bExpressionOverride &&
-        (AGENTPET_IMAGE_BASE_SLOT == g_pet_ui.ucRequestedImageSlot)
+    PET_ResolveInteraction(bHighPriorityRemote, &tInteractionDecision);
 #if defined(AGENT_PET_USING_MEMORY_CALENDAR)
-        && !g_pet_ui.bMemoryPanelOpen
+    if (tInteractionDecision.bCloseMemoryPanel)
+    {
+        PET_CloseMemoryPanel();
+    }
+#endif
+#if defined(AGENT_PET_MOMO_PLAY_BALL)
+    PET_SetPlayBallAllowed(tInteractionDecision.bAllowBall);
 #endif
 #if defined(AGENT_PET_USING_STROKE)
-        && !g_pet_ui.bStrokeVisualActive
-#endif
-        );
-#endif
-#if defined(AGENT_PET_USING_STROKE)
-    g_pet_ui.bStrokeAllowed = PET_StrokeCanShow(&tStatus);
+    g_pet_ui.bStrokeAllowed = tInteractionDecision.bAllowStroke &&
+        PET_StrokeCanShow(&tStatus);
     if (!g_pet_ui.bStrokeAllowed)
     {
         PET_CancelStroke();
@@ -3950,6 +4029,9 @@ static void PET_MemoryEntryClicked(lv_event_t *pEvent)
     g_pet_ui.bStrokeAllowed = false;
     PET_CancelStroke();
 #endif
+#if defined(AGENT_PET_MOMO_PLAY_BALL)
+    PET_SetPlayBallAllowed(false);
+#endif
     g_pet_ui.bMemoryPanelOpen = true;
     g_pet_ui.bMemoryClearConfirm = false;
     PET_UpdateMemoryCalendar();
@@ -4212,7 +4294,7 @@ static bool PET_MemoryStatusBlocksPanel(
         pStatus->tSnapshot.ucAggregateState : AGENTPET_STATE_IDLE;
 
     return (AGENTPET_IMAGE_RECEIVING == pStatus->tImageStatus.eState) ||
-        g_pet_ui.bTypingActive ||
+        g_pet_ui.bTypingActive || g_pet_ui.bExpressionOverride ||
         (AGENTPET_IMAGE_BASE_SLOT != g_pet_ui.ucRequestedImageSlot) ||
         (AGENTPET_STATE_IDLE != ucState);
 }
@@ -5283,13 +5365,14 @@ static void pet_on_stop(void)
 #if defined(AGENT_PET_USING_STROKE)
     g_pet_ui.bStrokeInputEnabled = false;
     g_pet_ui.bStrokeAllowed = false;
-    PET_CancelStroke();
-#endif
-#if defined(AGENT_PET_USING_IMU) && !defined(BSP_USING_PC_SIMULATOR)
-    PET_StopMotionDetection();
 #endif
 #if defined(AGENT_PET_MOMO_PLAY_BALL)
     g_pet_ui.bPlayBallAvailable = false;
+#endif
+#if defined(AGENT_PET_USING_STROKE)
+    PET_CancelStroke();
+#endif
+#if defined(AGENT_PET_MOMO_PLAY_BALL)
     PET_CancelPlayBall();
     if (NULL != g_pet_ui.play_ball_timer)
     {
@@ -5298,6 +5381,9 @@ static void pet_on_stop(void)
     }
     g_pet_ui.play_ball = NULL;
     g_pet_ui.play_ball_feedback = NULL;
+#endif
+#if defined(AGENT_PET_USING_IMU) && !defined(BSP_USING_PC_SIMULATOR)
+    PET_StopMotionDetection();
 #endif
     if (g_pet_ui.motion_timer)
     {
