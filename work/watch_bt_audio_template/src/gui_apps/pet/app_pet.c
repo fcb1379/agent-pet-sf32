@@ -5,6 +5,9 @@
 #include "agent_pet_ble_service.h"
 #include "agent_quest_garden.h"
 #include "agent_pet_merit.h"
+#if defined(MOMO_AGENT_SQUAD)
+    #include "momo_agent_squad.h"
+#endif
 #include "local_music_player.h"
 #if !defined(BSP_USING_PC_SIMULATOR) || !defined(AGENT_PET_STANDALONE_PREVIEW)
     #include "lv_ext_resource_manager.h"
@@ -79,6 +82,15 @@ LV_IMG_DECLARE(agent_pet_merit_plus_one);
 #define PET_MOTION_SWITCH_HEIGHT (26)
 #define PET_QUEST_GARDEN_ENABLED (1U)
 #define PET_QUEST_GARDEN_WIDTH (76)
+#if defined(MOMO_AGENT_SQUAD)
+    #define PET_SQUAD_ROTATE_MS (3000U)
+    #define PET_SQUAD_DOT_SIZE (10)
+    #define PET_SQUAD_DOT_GAP (8)
+    #define PET_SQUAD_OVERFLOW_WIDTH (38)
+    #define PET_SQUAD_STATUS_Y (LV_VER_RES_MAX - 82)
+    #define PET_SQUAD_DOT_Y (LV_VER_RES_MAX - 55)
+    #define PET_SQUAD_DETAIL_Y (LV_VER_RES_MAX - 32)
+#endif
 #ifndef BSP_USING_PC_SIMULATOR
     #define PET_QUEST_PREF_NAME "agent_pet_quest_garden_pref_v1_"
     #define PET_QUEST_PREF_VERSION_KEY "q_ver"
@@ -151,6 +163,10 @@ typedef struct
     lv_obj_t *seed_label;
     lv_obj_t *status_label;
     lv_obj_t *task_label;
+#if defined(MOMO_AGENT_SQUAD)
+    lv_obj_t *aSquadDots[MOMO_AGENT_SQUAD_VISIBLE_MAX];
+    lv_obj_t *squad_overflow_label;
+#endif
     lv_obj_t *image_progress_panel;
     lv_obj_t *image_progress_label;
     lv_obj_t *image_progress_bar;
@@ -190,6 +206,11 @@ typedef struct
     bool bRenderedCustomImage;
     bool bTypingActive;
     bool bRenderedTypingActive;
+#if defined(MOMO_AGENT_SQUAD)
+    MOMO_AGENT_SQUAD_VIEW tSquadView;
+    MOMO_AGENT_SQUAD_IDENTITY tSquadIdentity;
+    uint32_t ulSquadLastRotateTick;
+#endif
 #if defined(AGENT_PET_USING_IMU) && !defined(BSP_USING_PC_SIMULATOR)
     PET_MOTION_DETECTOR tMotionDetector;
     uint8_t ucMotionReadErrors;
@@ -1142,6 +1163,7 @@ static void PET_UpdateQuestGarden(void);
 static void PET_SaveQuestGarden(void);
 static uint32_t PET_QuestCurrentDay(void);
 
+#if !defined(MOMO_AGENT_SQUAD)
 static const char *PET_StateName(uint8_t ucState)
 {
     static const char *l_aStateNames[] =
@@ -1160,6 +1182,7 @@ static const char *PET_StateName(uint8_t ucState)
 
     return l_aStateNames[ucState];
 }
+#endif
 
 static lv_color_t PET_StateColor(uint8_t ucState)
 {
@@ -1180,6 +1203,7 @@ static lv_color_t PET_StateColor(uint8_t ucState)
     return lv_color_hex(l_aStateColors[ucState]);
 }
 
+#if !defined(MOMO_AGENT_SQUAD)
 static const AGENTPET_SESSION *PET_SelectSession(
     const AGENTPET_SNAPSHOT *pSnapshot)
 {
@@ -1212,6 +1236,277 @@ static const char *PET_ProviderName(uint8_t ucProvider)
 
     return l_aProviderNames[ucProvider];
 }
+#endif
+
+#if defined(MOMO_AGENT_SQUAD)
+/***************************
+ * PET_HideAgentSquadDots: 隐藏全部小队状态点和溢出标签
+ * 参数：无
+ * 返回值：无
+ ***************************/
+static void PET_HideAgentSquadDots(void)
+{
+    uint8_t ucIndex;
+
+    for (ucIndex = 0U;
+         ucIndex < MOMO_AGENT_SQUAD_VISIBLE_MAX;
+         ucIndex++)
+    {
+        if (NULL != g_pet_ui.aSquadDots[ucIndex])
+        {
+            lv_obj_add_flag(
+                g_pet_ui.aSquadDots[ucIndex], LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+    if (NULL != g_pet_ui.squad_overflow_label)
+    {
+        lv_obj_add_flag(
+            g_pet_ui.squad_overflow_label, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    return;
+}
+
+/***************************
+ * PET_RenderAgentSquadDots: 刷新最多五个代表会话状态点和+N
+ * 参数：
+ *   - pSnapshot: 当前只读快照
+ * 返回值：无
+ ***************************/
+static void PET_RenderAgentSquadDots(const AGENTPET_SNAPSHOT *pSnapshot)
+{
+    const AGENTPET_SESSION *pSession;
+    lv_coord_t lContentWidth;
+    lv_coord_t lCurrentX;
+    uint8_t ucIndex;
+
+    PET_HideAgentSquadDots();
+    if ((NULL == pSnapshot) || (0U == g_pet_ui.tSquadView.ucVisibleCount))
+    {
+        return;
+    }
+    lContentWidth =
+        ((lv_coord_t)g_pet_ui.tSquadView.ucVisibleCount *
+         PET_SQUAD_DOT_SIZE) +
+        ((lv_coord_t)(g_pet_ui.tSquadView.ucVisibleCount - 1U) *
+         PET_SQUAD_DOT_GAP);
+    if (0U != g_pet_ui.tSquadView.ucHiddenCount)
+    {
+        lContentWidth += PET_SQUAD_DOT_GAP + PET_SQUAD_OVERFLOW_WIDTH;
+    }
+    lCurrentX = (LV_HOR_RES_MAX - lContentWidth) / 2;
+    for (ucIndex = 0U;
+         ucIndex < g_pet_ui.tSquadView.ucVisibleCount;
+         ucIndex++)
+    {
+        pSession = MOMOAGENTSQUAD_GetSession(
+            pSnapshot, &g_pet_ui.tSquadView, ucIndex);
+        if ((NULL == pSession) ||
+            (NULL == g_pet_ui.aSquadDots[ucIndex]))
+        {
+            continue;
+        }
+        lv_obj_set_pos(
+            g_pet_ui.aSquadDots[ucIndex], lCurrentX, PET_SQUAD_DOT_Y);
+        lv_obj_set_style_bg_color(
+            g_pet_ui.aSquadDots[ucIndex],
+            PET_StateColor(pSession->ucState),
+            0);
+        lv_obj_clear_flag(
+            g_pet_ui.aSquadDots[ucIndex], LV_OBJ_FLAG_HIDDEN);
+        lCurrentX += PET_SQUAD_DOT_SIZE + PET_SQUAD_DOT_GAP;
+    }
+    if ((0U != g_pet_ui.tSquadView.ucHiddenCount) &&
+        (NULL != g_pet_ui.squad_overflow_label))
+    {
+        lv_obj_set_pos(
+            g_pet_ui.squad_overflow_label,
+            lCurrentX,
+            PET_SQUAD_DOT_Y - 5);
+        lv_label_set_text_fmt(
+            g_pet_ui.squad_overflow_label,
+            "+%u",
+            g_pet_ui.tSquadView.ucHiddenCount);
+        lv_obj_clear_flag(
+            g_pet_ui.squad_overflow_label, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    return;
+}
+
+/***************************
+ * PET_RenderAgentSquadDetail: 刷新当前轮播会话的匿名详情
+ * 参数：
+ *   - pSnapshot: 当前只读快照
+ * 返回值：无
+ ***************************/
+static void PET_RenderAgentSquadDetail(const AGENTPET_SNAPSHOT *pSnapshot)
+{
+    const AGENTPET_SESSION *pSession;
+    char aDetail[48];
+
+    pSession = MOMOAGENTSQUAD_GetSession(
+        pSnapshot,
+        &g_pet_ui.tSquadView,
+        g_pet_ui.tSquadView.ucSelectedPosition);
+    if (NULL == pSession)
+    {
+        (void)MOMOAGENTSQUAD_GetIdentity(NULL, &g_pet_ui.tSquadIdentity);
+        lv_label_set_text(g_pet_ui.task_label, "Agent is ready");
+        return;
+    }
+    if (!MOMOAGENTSQUAD_FormatDetail(
+            pSession, aDetail, sizeof(aDetail)))
+    {
+        lv_label_set_text(g_pet_ui.task_label, "Agent state unavailable");
+        return;
+    }
+    lv_label_set_text(g_pet_ui.task_label, aDetail);
+    (void)MOMOAGENTSQUAD_GetIdentity(
+        pSession, &g_pet_ui.tSquadIdentity);
+
+    return;
+}
+
+/***************************
+ * PET_RefreshAgentSquad: 复用状态定时器刷新摘要并驱动自动轮播
+ * 参数：
+ *   - pStatus: BLE连接状态和一致快照副本
+ *   - bSnapshotChanged: 快照代数或连接状态是否变化
+ * 返回值：无
+ ***************************/
+static void PET_RefreshAgentSquad(
+    const AGENTPET_BLE_STATUS *pStatus,
+    bool bSnapshotChanged)
+{
+    const MOMO_AGENT_SQUAD_IDENTITY *pPreviousIdentity;
+    char aSummary[32];
+    uint32_t ulNow;
+
+    if ((NULL == pStatus) || (NULL == g_pet_ui.status_label) ||
+        (NULL == g_pet_ui.task_label))
+    {
+        return;
+    }
+    ulNow = rt_tick_get_millisecond();
+    if (!pStatus->bHasSnapshot)
+    {
+        (void)rt_memset(
+            &g_pet_ui.tSquadView, 0, sizeof(g_pet_ui.tSquadView));
+        (void)MOMOAGENTSQUAD_GetIdentity(NULL, &g_pet_ui.tSquadIdentity);
+        PET_HideAgentSquadDots();
+        lv_label_set_text(
+            g_pet_ui.status_label,
+            pStatus->bConnected ?
+                "BLE connected - waiting" : "BLE disconnected");
+        lv_label_set_text(g_pet_ui.task_label, "No Agent snapshot");
+        g_pet_ui.ulSquadLastRotateTick = ulNow;
+        return;
+    }
+    if (bSnapshotChanged)
+    {
+        pPreviousIdentity = g_pet_ui.tSquadIdentity.bValid ?
+            &g_pet_ui.tSquadIdentity : NULL;
+        if (!MOMOAGENTSQUAD_BuildView(
+                &pStatus->tSnapshot,
+                pPreviousIdentity,
+                &g_pet_ui.tSquadView))
+        {
+            PET_HideAgentSquadDots();
+            lv_label_set_text(g_pet_ui.status_label, "Agent snapshot invalid");
+            lv_label_set_text(g_pet_ui.task_label, "Agent state unavailable");
+            (void)MOMOAGENTSQUAD_GetIdentity(
+                NULL, &g_pet_ui.tSquadIdentity);
+            return;
+        }
+        if (!MOMOAGENTSQUAD_FormatSummary(
+                &g_pet_ui.tSquadView,
+                pStatus->bConnected,
+                aSummary,
+                sizeof(aSummary)))
+        {
+            lv_label_set_text(g_pet_ui.status_label, "Agent summary unavailable");
+        }
+        else
+        {
+            lv_label_set_text(g_pet_ui.status_label, aSummary);
+        }
+        lv_obj_set_style_text_color(
+            g_pet_ui.status_label,
+            PET_StateColor(pStatus->tSnapshot.ucAggregateState),
+            0);
+        PET_RenderAgentSquadDots(&pStatus->tSnapshot);
+        PET_RenderAgentSquadDetail(&pStatus->tSnapshot);
+        g_pet_ui.ulSquadLastRotateTick = ulNow;
+    }
+    else if ((1U < g_pet_ui.tSquadView.ucVisibleCount) &&
+        (PET_SQUAD_ROTATE_MS <=
+         (uint32_t)(ulNow - g_pet_ui.ulSquadLastRotateTick)))
+    {
+        g_pet_ui.tSquadView.ucSelectedPosition =
+            MOMOAGENTSQUAD_Next(&g_pet_ui.tSquadView);
+        PET_RenderAgentSquadDetail(&pStatus->tSnapshot);
+        g_pet_ui.ulSquadLastRotateTick = ulNow;
+    }
+
+    return;
+}
+
+/***************************
+ * PET_CreateAgentSquadDots: 创建页面生命周期内复用的状态点
+ * 参数：无
+ * 返回值：无
+ ***************************/
+static void PET_CreateAgentSquadDots(void)
+{
+    uint8_t ucIndex;
+
+    for (ucIndex = 0U;
+         ucIndex < MOMO_AGENT_SQUAD_VISIBLE_MAX;
+         ucIndex++)
+    {
+        g_pet_ui.aSquadDots[ucIndex] = lv_obj_create(g_pet_ui.root);
+        if (NULL == g_pet_ui.aSquadDots[ucIndex])
+        {
+            continue;
+        }
+        lv_obj_set_size(
+            g_pet_ui.aSquadDots[ucIndex],
+            PET_SQUAD_DOT_SIZE,
+            PET_SQUAD_DOT_SIZE);
+        lv_obj_set_style_bg_opa(
+            g_pet_ui.aSquadDots[ucIndex], LV_OPA_COVER, 0);
+        lv_obj_set_style_border_width(g_pet_ui.aSquadDots[ucIndex], 0, 0);
+        lv_obj_set_style_radius(
+            g_pet_ui.aSquadDots[ucIndex], LV_RADIUS_CIRCLE, 0);
+        lv_obj_set_style_pad_all(g_pet_ui.aSquadDots[ucIndex], 0, 0);
+        lv_obj_clear_flag(
+            g_pet_ui.aSquadDots[ucIndex], LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_clear_flag(
+            g_pet_ui.aSquadDots[ucIndex], LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_add_flag(
+            g_pet_ui.aSquadDots[ucIndex], LV_OBJ_FLAG_HIDDEN);
+    }
+    g_pet_ui.squad_overflow_label = lv_label_create(g_pet_ui.root);
+    if (NULL != g_pet_ui.squad_overflow_label)
+    {
+        lv_obj_set_width(
+            g_pet_ui.squad_overflow_label, PET_SQUAD_OVERFLOW_WIDTH);
+        lv_obj_set_style_text_align(
+            g_pet_ui.squad_overflow_label, LV_TEXT_ALIGN_LEFT, 0);
+        lv_obj_set_style_text_color(
+            g_pet_ui.squad_overflow_label, lv_color_hex(0xA7B0B5U), 0);
+        lv_obj_set_style_text_opa(
+            g_pet_ui.squad_overflow_label, LV_OPA_COVER, 0);
+        lv_obj_clear_flag(
+            g_pet_ui.squad_overflow_label, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_add_flag(
+            g_pet_ui.squad_overflow_label, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    return;
+}
+#endif /* MOMO_AGENT_SQUAD */
 
 /*
  * PET_RefreshMascotImage
@@ -1419,7 +1714,11 @@ static void PET_RefreshStatus(lv_timer_t *pTimer)
 {
     AGENTPET_BLE_STATUS tStatus;
     AGENTPET_MERIT_SNAPSHOT tMeritSnapshot;
+#if !defined(MOMO_AGENT_SQUAD)
     const AGENTPET_SESSION *pSession;
+#else
+    bool bSnapshotChanged;
+#endif
     QUEST_GARDEN_RESULT tQuestResult;
     uint32_t ulQuestDay;
     uint32_t ulPendingHitCount;
@@ -1474,6 +1773,12 @@ static void PET_RefreshStatus(lv_timer_t *pTimer)
         g_pet_ui.ulRenderedWoodenFishGeneration += ulPendingHitCount;
     }
 
+#if defined(MOMO_AGENT_SQUAD)
+    bSnapshotChanged =
+        (g_pet_ui.ulRenderedGeneration != tStatus.ulGeneration) ||
+        (g_pet_ui.bRenderedConnected != tStatus.bConnected);
+    PET_RefreshAgentSquad(&tStatus, bSnapshotChanged);
+#endif
     if (
         (g_pet_ui.ulRenderedGeneration == tStatus.ulGeneration) &&
         (g_pet_ui.bRenderedConnected == tStatus.bConnected)
@@ -1486,10 +1791,12 @@ static void PET_RefreshStatus(lv_timer_t *pTimer)
     g_pet_ui.bRenderedConnected = tStatus.bConnected;
     if (!tStatus.bHasSnapshot)
     {
+#if !defined(MOMO_AGENT_SQUAD)
         lv_label_set_text(
             g_pet_ui.status_label,
             tStatus.bConnected ? "BLE connected - waiting" : "BLE disconnected");
         lv_label_set_text(g_pet_ui.task_label, "No Agent snapshot");
+#endif
         PET_ApplyStateAnimation(AGENTPET_STATE_IDLE);
         return;
     }
@@ -1519,6 +1826,7 @@ static void PET_RefreshStatus(lv_timer_t *pTimer)
         }
     }
 
+#if !defined(MOMO_AGENT_SQUAD)
     lv_label_set_text_fmt(
         g_pet_ui.status_label,
         "%s%s  %u tasks",
@@ -1546,6 +1854,7 @@ static void PET_RefreshStatus(lv_timer_t *pTimer)
             (0U != (pSession->ucFlags & AGENTPET_TASK_FLAG_APPROVAL)) ?
                 " !" : "");
     }
+#endif
 
     PET_ApplyStateAnimation(tStatus.tSnapshot.ucAggregateState);
 
@@ -2664,7 +2973,11 @@ static void pet_on_start(void)
 
     g_pet_ui.status_label = lv_label_create(g_pet_ui.root);
     lv_obj_set_width(g_pet_ui.status_label, LV_HOR_RES_MAX - 24);
+#if defined(MOMO_AGENT_SQUAD)
+    lv_obj_set_pos(g_pet_ui.status_label, 12, PET_SQUAD_STATUS_Y);
+#else
     lv_obj_set_pos(g_pet_ui.status_label, 12, LV_VER_RES_MAX - 72);
+#endif
     lv_obj_set_style_text_align(g_pet_ui.status_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_ext_set_local_font(
         g_pet_ui.status_label,
@@ -2675,7 +2988,11 @@ static void pet_on_start(void)
 
     g_pet_ui.task_label = lv_label_create(g_pet_ui.root);
     lv_obj_set_width(g_pet_ui.task_label, LV_HOR_RES_MAX - 24);
+#if defined(MOMO_AGENT_SQUAD)
+    lv_obj_set_pos(g_pet_ui.task_label, 12, PET_SQUAD_DETAIL_Y);
+#else
     lv_obj_set_pos(g_pet_ui.task_label, 12, LV_VER_RES_MAX - 40);
+#endif
     lv_obj_set_style_text_align(g_pet_ui.task_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_ext_set_local_font(
         g_pet_ui.task_label,
@@ -2683,6 +3000,10 @@ static void pet_on_start(void)
         lv_color_hex(0xD8F7EEU));
     lv_obj_set_style_text_letter_space(g_pet_ui.task_label, 1, 0);
     lv_obj_set_style_text_opa(g_pet_ui.task_label, LV_OPA_COVER, 0);
+
+#if defined(MOMO_AGENT_SQUAD)
+    PET_CreateAgentSquadDots();
+#endif
 
     g_pet_ui.image_progress_panel = lv_obj_create(g_pet_ui.root);
     lv_obj_set_size(g_pet_ui.image_progress_panel, 320, 100);

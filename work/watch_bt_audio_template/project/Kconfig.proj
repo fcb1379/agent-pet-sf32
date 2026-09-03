@@ -38,6 +38,14 @@ config AGENT_PET_USING_TF_CARD
         Enable the Huangshan board SPI1 TF card and PA27 card-detect input.
         The PC simulator never builds the TF driver or file-manager app.
 
+config MOMO_AGENT_SQUAD
+    bool "Enable read-only Momo Agent squad radar"
+    default y
+    help
+        Show a bounded five-session summary and automatic read-only rotation
+        using the existing Agent Pet snapshot and pet status timer. This does
+        not add protocol fields, input ownership, storage, tasks, or timers.
+
 config FRAME_BUFFER_IN_PSRAM
     bool
     depends on BSP_USING_PSRAM
