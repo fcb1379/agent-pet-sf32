@@ -1,0 +1,39 @@
+work/watch_bt_audio_template/project/Kconfig.proj
+  s_b991e4ff93e87f::t_0ea4c9313f6121 41-47
+  s_b991e4ff93e87f::t_612a2876940d45 48
+work/watch_bt_audio_template/project/proj.conf
+  s_b991e4ff93e87f::t_9d3a1b104cb089 62
+docs/2026-09-04-momo-agent-squad-test-results.md
+  s_b991e4ff93e87f::t_e72b1c178577d7 1-120
+work/watch_bt_audio_template/src/gui_apps/pet/app_pet.c
+  s_b991e4ff93e87f::t_72e4fdbd32e2b2 1166,1185
+  s_b991e4ff93e87f::t_0ea4c9313f6121 8-10,85-93,166-169,209-213,1206,1239-1509,1717,1719-1721,1776-1781,1794,1799,1829,1857,2976-2978,2980,2991-2993,2995,3004-3006
+  s_b991e4ff93e87f::t_7bfd6fb14b5c2c 3007
+tests/run_momo_agent_squad_host_test.ps1
+  s_b991e4ff93e87f::t_00075506382443 1-23
+work/watch_bt_audio_template/src/gui_apps/pet/momo_agent_squad.h
+  s_b991e4ff93e87f::t_29b985cdbcf254 1-67
+tests/momo_agent_squad_host_test.c
+  s_b991e4ff93e87f::t_67ade603c4b615 300-301,309-312
+  s_b991e4ff93e87f::t_00075506382443 1-299,302-308,313-315
+work/watch_bt_audio_template/src/gui_apps/pet/momo_agent_squad.c
+  s_b991e4ff93e87f::t_29b985cdbcf254 1-407
+work/watch_bt_audio_template/src/gui_apps/pet/SConscript
+  s_b991e4ff93e87f::t_3ce76355fc0098 6-7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "0445f63408f1e294b611a3fb31d88929c54e933c",
+  "prompts": {},
+  "sessions": {
+    "s_b991e4ff93e87f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd60c-817e-7cf2-aadd-448c400c6b83",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}
