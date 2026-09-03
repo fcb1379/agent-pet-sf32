@@ -167,4 +167,3 @@ scons --board=sf32lb52-lchspi-ulp --board_search_path=../boards -j8
 ## 10. 回退策略
 
 发现以下任一情况时关闭 `CONFIG_MOMO_AGENT_SQUAD`：Flash 增量达到 6 KiB、业务状态达到 128 B、布局遮挡、刷新卡顿、生命周期异常或与输入/高优先级层冲突。关闭后不创建新增对象、不编译排序与轮播路径，原协议、快照和既有宠物页数据不迁移、不丢失。
-
