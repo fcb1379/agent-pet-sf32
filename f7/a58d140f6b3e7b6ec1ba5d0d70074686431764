@@ -1,0 +1,20 @@
+docs/2026-09-10-lvgl-pet-watch-idea-scan.md
+  s_b991e4ff93e87f::t_87c640bbb930e4 1-28
+  s_b991e4ff93e87f::t_e1c31257041d58 29-114
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "f7a58d140f6b3e7b6ec1ba5d0d70074686431764",
+  "prompts": {},
+  "sessions": {
+    "s_b991e4ff93e87f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd60c-817e-7cf2-aadd-448c400c6b83",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}
