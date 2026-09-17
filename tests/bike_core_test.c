@@ -10,6 +10,7 @@
 #include "bike_gpx.h"
 #include "bike_history.h"
 #include "bike_map.h"
+#include "bike_map_image.h"
 #include "bike_auto_pause.h"
 #include "bike_ble_advertising.h"
 #include "bike_ble_measurement.h"
@@ -25,6 +26,13 @@
 
 #define TEST_GPX_DIRECTORY "/tmp/sf32_bike_gpx_test"
 #define TEST_MAP_DIRECTORY "/tmp/sf32_bike_map_test"
+#define TEST_MAP_IMAGE_PATH "/tmp/sf32_bike_map_image.bin"
+
+/* l_aMapImageTestBuffer: 地图瓦片加载测试的固定工作缓冲区，
+ * 容量为一块 256 x 256 RGB565 瓦片的 131072 bytes；取值范围 0~255，
+ * 仅用于构造测试文件并接收加载结果，避免测试中使用动态内存。
+ */
+static uint8_t l_aMapImageTestBuffer[BIKE_MAP_IMAGE_DATA_SIZE];
 
 /* Test_PowerFilter: 覆盖 X-TRACK 电压百分比边界、低通、2% 回差、
  * 满量程边界、非法电压和空指针保护。
@@ -250,6 +258,176 @@ static void Test_MapZoomRange(void)
     assert(0 == rmdir(TEST_MAP_DIRECTORY "/20"));
     assert(0 == rmdir(TEST_MAP_DIRECTORY "/not_zoom"));
     assert(0 == rmdir(TEST_MAP_DIRECTORY));
+
+    return;
+}
+
+/* Test_WriteAll: 向测试文件完整写入指定数据。
+ * 参数：
+ *   - lFileDescriptor: 已打开的测试文件描述符
+ *   - pData: 输入数据
+ *   - ulLength: 输入数据长度
+ * 返回值：无，写入失败时触发断言
+ */
+static void Test_WriteAll(int lFileDescriptor, const uint8_t *pData,
+                          size_t ulLength)
+{
+    size_t ulOffset;
+    ssize_t lWriteLength;
+
+    assert(0 <= lFileDescriptor);
+    assert(NULL != pData);
+    ulOffset = 0U;
+    while (ulOffset < ulLength)
+    {
+        lWriteLength = write(lFileDescriptor, &pData[ulOffset],
+                             ulLength - ulOffset);
+        assert(0 < lWriteLength);
+        ulOffset += (size_t)lWriteLength;
+    }
+
+    return;
+}
+
+/* Test_CreateMapImage: 构造一个可控头部和载荷长度的 LVGL v8 瓦片文件。
+ * 参数：
+ *   - ucColorFormat: LVGL 色彩格式字段
+ *   - ucAlwaysZero: LVGL 源类型识别字段
+ *   - ucReserved: LVGL 保留字段
+ *   - usWidth/usHeight: 图像宽高
+ *   - ulDataLength: 写入的像素载荷长度
+ *   - bAppendExtraByte: 是否追加非法尾随字节
+ * 返回值：无，文件操作失败时触发断言
+ */
+static void Test_CreateMapImage(uint8_t ucColorFormat, uint8_t ucAlwaysZero,
+                                uint8_t ucReserved,
+                                uint16_t usWidth, uint16_t usHeight,
+                                size_t ulDataLength, bool bAppendExtraByte)
+{
+    uint8_t aHeader[BIKE_MAP_IMAGE_HEADER_SIZE];
+    uint8_t ucExtraByte;
+    uint32_t ulHeader;
+    int lFileDescriptor;
+
+    assert(BIKE_MAP_IMAGE_DATA_SIZE >= ulDataLength);
+    ulHeader = ((uint32_t)ucColorFormat & 0x1FU) |
+               (((uint32_t)ucAlwaysZero & 0x07U) << 5U) |
+               (((uint32_t)ucReserved & 0x03U) << 8U) |
+               (((uint32_t)usWidth & 0x07FFU) << 10U) |
+               (((uint32_t)usHeight & 0x07FFU) << 21U);
+    aHeader[0] = (uint8_t)ulHeader;
+    aHeader[1] = (uint8_t)(ulHeader >> 8U);
+    aHeader[2] = (uint8_t)(ulHeader >> 16U);
+    aHeader[3] = (uint8_t)(ulHeader >> 24U);
+    lFileDescriptor = open(TEST_MAP_IMAGE_PATH,
+                           O_CREAT | O_WRONLY | O_TRUNC, 0666);
+    assert(0 <= lFileDescriptor);
+    Test_WriteAll(lFileDescriptor, aHeader, sizeof(aHeader));
+    Test_WriteAll(lFileDescriptor, l_aMapImageTestBuffer, ulDataLength);
+    if (bAppendExtraByte)
+    {
+        ucExtraByte = 0xA5U;
+        Test_WriteAll(lFileDescriptor, &ucExtraByte, 1U);
+    }
+    assert(0 == close(lFileDescriptor));
+
+    return;
+}
+
+/* Test_MapImageLoader: 覆盖合法 RGB565 瓦片、色键瓦片、头部字段、
+ * 截断载荷、尾随数据、容量不足、缺失文件和空指针保护。
+ * 返回值：无
+ */
+static void Test_MapImageLoader(void)
+{
+    BIKE_MAP_IMAGE_INFO tInfo;
+
+    (void)unlink(TEST_MAP_IMAGE_PATH);
+    (void)memset(l_aMapImageTestBuffer, 0x5AU,
+                 sizeof(l_aMapImageTestBuffer));
+    Test_CreateMapImage(BIKE_MAP_IMAGE_CF_TRUE_COLOR, 0U, 0U,
+                        BIKE_MAP_IMAGE_TILE_SIZE_PX,
+                        BIKE_MAP_IMAGE_TILE_SIZE_PX,
+                        BIKE_MAP_IMAGE_DATA_SIZE, false);
+    (void)memset(l_aMapImageTestBuffer, 0U,
+                 sizeof(l_aMapImageTestBuffer));
+    assert(BIKE_MAP_IMAGE_Load(TEST_MAP_IMAGE_PATH,
+                               l_aMapImageTestBuffer,
+                               sizeof(l_aMapImageTestBuffer), &tInfo));
+    assert(BIKE_MAP_IMAGE_CF_TRUE_COLOR == tInfo.ucColorFormat);
+    assert(BIKE_MAP_IMAGE_TILE_SIZE_PX == tInfo.usWidth);
+    assert(BIKE_MAP_IMAGE_TILE_SIZE_PX == tInfo.usHeight);
+    assert(BIKE_MAP_IMAGE_DATA_SIZE == tInfo.ulDataSize);
+    assert(0x5AU == l_aMapImageTestBuffer[0]);
+    assert(0x5AU ==
+           l_aMapImageTestBuffer[BIKE_MAP_IMAGE_DATA_SIZE - 1U]);
+
+    Test_CreateMapImage(BIKE_MAP_IMAGE_CF_TRUE_COLOR_CHROMA_KEYED, 0U, 0U,
+                        BIKE_MAP_IMAGE_TILE_SIZE_PX,
+                        BIKE_MAP_IMAGE_TILE_SIZE_PX,
+                        BIKE_MAP_IMAGE_DATA_SIZE, false);
+    assert(BIKE_MAP_IMAGE_Load(TEST_MAP_IMAGE_PATH,
+                               l_aMapImageTestBuffer,
+                               sizeof(l_aMapImageTestBuffer), &tInfo));
+    assert(BIKE_MAP_IMAGE_CF_TRUE_COLOR_CHROMA_KEYED ==
+           tInfo.ucColorFormat);
+
+    Test_CreateMapImage(BIKE_MAP_IMAGE_CF_TRUE_COLOR, 1U, 0U,
+                        BIKE_MAP_IMAGE_TILE_SIZE_PX,
+                        BIKE_MAP_IMAGE_TILE_SIZE_PX,
+                        BIKE_MAP_IMAGE_DATA_SIZE, false);
+    assert(!BIKE_MAP_IMAGE_Load(TEST_MAP_IMAGE_PATH,
+                                l_aMapImageTestBuffer,
+                                sizeof(l_aMapImageTestBuffer), &tInfo));
+    Test_CreateMapImage(BIKE_MAP_IMAGE_CF_TRUE_COLOR, 0U, 1U,
+                        BIKE_MAP_IMAGE_TILE_SIZE_PX,
+                        BIKE_MAP_IMAGE_TILE_SIZE_PX,
+                        BIKE_MAP_IMAGE_DATA_SIZE, false);
+    assert(!BIKE_MAP_IMAGE_Load(TEST_MAP_IMAGE_PATH,
+                                l_aMapImageTestBuffer,
+                                sizeof(l_aMapImageTestBuffer), &tInfo));
+    Test_CreateMapImage(1U, 0U, 0U, BIKE_MAP_IMAGE_TILE_SIZE_PX,
+                        BIKE_MAP_IMAGE_TILE_SIZE_PX,
+                        BIKE_MAP_IMAGE_DATA_SIZE, false);
+    assert(!BIKE_MAP_IMAGE_Load(TEST_MAP_IMAGE_PATH,
+                                l_aMapImageTestBuffer,
+                                sizeof(l_aMapImageTestBuffer), &tInfo));
+    Test_CreateMapImage(BIKE_MAP_IMAGE_CF_TRUE_COLOR, 0U, 0U, 255U,
+                        BIKE_MAP_IMAGE_TILE_SIZE_PX,
+                        BIKE_MAP_IMAGE_DATA_SIZE, false);
+    assert(!BIKE_MAP_IMAGE_Load(TEST_MAP_IMAGE_PATH,
+                                l_aMapImageTestBuffer,
+                                sizeof(l_aMapImageTestBuffer), &tInfo));
+    Test_CreateMapImage(BIKE_MAP_IMAGE_CF_TRUE_COLOR, 0U, 0U,
+                        BIKE_MAP_IMAGE_TILE_SIZE_PX,
+                        BIKE_MAP_IMAGE_TILE_SIZE_PX,
+                        BIKE_MAP_IMAGE_DATA_SIZE - 1U, false);
+    assert(!BIKE_MAP_IMAGE_Load(TEST_MAP_IMAGE_PATH,
+                                l_aMapImageTestBuffer,
+                                sizeof(l_aMapImageTestBuffer), &tInfo));
+    Test_CreateMapImage(BIKE_MAP_IMAGE_CF_TRUE_COLOR, 0U, 0U,
+                        BIKE_MAP_IMAGE_TILE_SIZE_PX,
+                        BIKE_MAP_IMAGE_TILE_SIZE_PX,
+                        BIKE_MAP_IMAGE_DATA_SIZE, true);
+    assert(!BIKE_MAP_IMAGE_Load(TEST_MAP_IMAGE_PATH,
+                                l_aMapImageTestBuffer,
+                                sizeof(l_aMapImageTestBuffer), &tInfo));
+    assert(!BIKE_MAP_IMAGE_Load(TEST_MAP_IMAGE_PATH,
+                                l_aMapImageTestBuffer,
+                                BIKE_MAP_IMAGE_DATA_SIZE - 1U, &tInfo));
+    assert(!BIKE_MAP_IMAGE_Load(NULL, l_aMapImageTestBuffer,
+                                sizeof(l_aMapImageTestBuffer), &tInfo));
+    assert(!BIKE_MAP_IMAGE_Load("", l_aMapImageTestBuffer,
+                                sizeof(l_aMapImageTestBuffer), &tInfo));
+    assert(!BIKE_MAP_IMAGE_Load(TEST_MAP_IMAGE_PATH, NULL,
+                                sizeof(l_aMapImageTestBuffer), &tInfo));
+    assert(!BIKE_MAP_IMAGE_Load(TEST_MAP_IMAGE_PATH,
+                                l_aMapImageTestBuffer,
+                                sizeof(l_aMapImageTestBuffer), NULL));
+    assert(0 == unlink(TEST_MAP_IMAGE_PATH));
+    assert(!BIKE_MAP_IMAGE_Load(TEST_MAP_IMAGE_PATH,
+                                l_aMapImageTestBuffer,
+                                sizeof(l_aMapImageTestBuffer), &tInfo));
 
     return;
 }
@@ -1253,6 +1431,7 @@ int main(void)
     Test_PedometerAccumulator();
     Test_StoragePaths();
     Test_MapZoomRange();
+    Test_MapImageLoader();
     Test_NmeaParser();
     Test_RideModel();
     Test_SpeedSource();

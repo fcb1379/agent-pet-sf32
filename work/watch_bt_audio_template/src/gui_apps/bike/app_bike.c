@@ -1,9 +1,9 @@
 #include <rtthread.h>
 #include <stdio.h>
 #include <string.h>
-#include <dfs_posix.h>
 
 #include "bike_map.h"
+#include "bike_map_image.h"
 #include "bike_service.h"
 #include "bike_settings.h"
 #include "bike_storage.h"
@@ -11,6 +11,7 @@
 #include "littlevgl2rtt.h"
 #include "lv_ext_resource_manager.h"
 #include "lvgl.h"
+#include "mem_section.h"
 
 #define APP_ID "Bike"
 #define BIKE_UI_REFRESH_PERIOD_MS (500U)
@@ -23,6 +24,15 @@
 #define BIKE_UI_MAP_TRACK_LEVEL (16U)
 #define BIKE_UI_MAP_TRACK_OFFSET_THRESHOLD_PX (2U)
 #define BIKE_UI_MAP_EXTENSION "bin"
+
+#if 16 != LV_COLOR_DEPTH
+#error "Bike map tiles require LVGL RGB565 color depth"
+#endif
+
+typedef char BIKE_UI_MAP_COLOR_FORMAT_CHECK[
+    ((LV_IMG_CF_TRUE_COLOR == BIKE_MAP_IMAGE_CF_TRUE_COLOR) &&
+     (LV_IMG_CF_TRUE_COLOR_CHROMA_KEYED ==
+      BIKE_MAP_IMAGE_CF_TRUE_COLOR_CHROMA_KEYED)) ? 1 : -1];
 
 LV_IMG_DECLARE(img_workout);
 
@@ -53,6 +63,7 @@ typedef struct _BIKE_UI_MAP_TRACK_POINT
  *   - pMapContainer/apMapTiles: 离线地图瓦片容器和 3 x 3 固定瓦片
  *   - pMapTrackLine/pMapMarker: 实时轨迹线和当前位置标记
  *   - aMapTrackPoints/aMapLinePoints: 固定级别轨迹点和可见线段点
+ *   - atMapTileImages: 由 PSRAM 像素缓冲支撑的 LVGL 变量图像描述符
  *   - ucMapZoomMin/ucMapZoomMax: 当前地图介质实际可用的缩放范围
  *   - bMapUseWgs84: 当前离线瓦片坐标系选择
  *   - pTimer: 500 ms UI 刷新定时器
@@ -78,7 +89,7 @@ typedef struct _BIKE_UI_CONTEXT
     lv_obj_t *pMapStatusLabel;
     BIKE_UI_MAP_TRACK_POINT aMapTrackPoints[BIKE_UI_MAP_TRACK_POINT_MAX];
     lv_point_t aMapLinePoints[BIKE_UI_MAP_TRACK_POINT_MAX];
-    char aaMapTileSource[BIKE_UI_MAP_TILE_COUNT][BIKE_UI_MAP_PATH_MAX];
+    lv_img_dsc_t atMapTileImages[BIKE_UI_MAP_TILE_COUNT];
     uint32_t ulMapTrackPointCount;
     uint32_t ulMapCenterTileX;
     uint32_t ulMapCenterTileY;
@@ -94,6 +105,17 @@ typedef struct _BIKE_UI_CONTEXT
 
 /* l_tBikeUi: 仅由 LVGL GUI 线程访问的码表页面上下文。 */
 static BIKE_UI_CONTEXT l_tBikeUi;
+
+/* l_aaBikeMapTileData: 九块 256 x 256 RGB565 离线瓦片像素缓存，
+ * 每块固定 131072 bytes，总计 1179648 bytes；仅由 LVGL GUI 线程读写，
+ * 放置于 PSRAM 非缓存区以避免占用 HCPU SRAM 和 DMA 缓存一致性问题。
+ */
+L2_NON_RET_BSS_SECT_BEGIN(bike_map_tile)
+L2_NON_RET_BSS_SECT(
+    bike_map_tile,
+    ALIGN(64) static uint8_t
+        l_aaBikeMapTileData[BIKE_UI_MAP_TILE_COUNT][BIKE_MAP_IMAGE_DATA_SIZE]);
+L2_NON_RET_BSS_SECT_END
 
 static void BikeUi_Update(void);
 
@@ -118,6 +140,8 @@ static void BikeUi_MapClearTrack(void)
  */
 static uint8_t BikeUi_MapReloadTiles(const BIKE_MAP_POINT *pPoint)
 {
+    BIKE_MAP_IMAGE_INFO tImageInfo;
+    char aMapTilePath[BIKE_UI_MAP_PATH_MAX];
     int64_t dTileX;
     int64_t dTileY;
     uint32_t ulTileCount;
@@ -150,17 +174,30 @@ static uint8_t BikeUi_MapReloadTiles(const BIKE_MAP_POINT *pPoint)
                                         (int32_t)BIKE_MAP_TILE_SIZE_PX),
                            (lv_coord_t)((cRow + 1) *
                                         (int32_t)BIKE_MAP_TILE_SIZE_PX));
-            l_tBikeUi.aaMapTileSource[ucIndex][0] = '/';
+            lv_img_cache_invalidate_src(&l_tBikeUi.atMapTileImages[ucIndex]);
             if ((0LL <= dTileY) && ((int64_t)ulTileCount > dTileY) &&
                 BIKE_MAP_FormatTilePath(
                     BIKE_STORAGE_GetMapRoot(), pPoint->ucZoom, ulActualTileX,
                     (uint32_t)dTileY, BIKE_UI_MAP_EXTENSION,
-                    &l_tBikeUi.aaMapTileSource[ucIndex][1],
-                    sizeof(l_tBikeUi.aaMapTileSource[ucIndex]) - 1U) &&
-                (0 == access(&l_tBikeUi.aaMapTileSource[ucIndex][1], 0)))
+                    aMapTilePath, sizeof(aMapTilePath)) &&
+                BIKE_MAP_IMAGE_Load(
+                    aMapTilePath, l_aaBikeMapTileData[ucIndex],
+                    sizeof(l_aaBikeMapTileData[ucIndex]), &tImageInfo))
             {
+                l_tBikeUi.atMapTileImages[ucIndex].header.always_zero = 0U;
+                l_tBikeUi.atMapTileImages[ucIndex].header.reserved = 0U;
+                l_tBikeUi.atMapTileImages[ucIndex].header.cf =
+                    tImageInfo.ucColorFormat;
+                l_tBikeUi.atMapTileImages[ucIndex].header.w =
+                    tImageInfo.usWidth;
+                l_tBikeUi.atMapTileImages[ucIndex].header.h =
+                    tImageInfo.usHeight;
+                l_tBikeUi.atMapTileImages[ucIndex].data_size =
+                    tImageInfo.ulDataSize;
+                l_tBikeUi.atMapTileImages[ucIndex].data =
+                    l_aaBikeMapTileData[ucIndex];
                 lv_img_set_src(l_tBikeUi.apMapTiles[ucIndex],
-                               l_tBikeUi.aaMapTileSource[ucIndex]);
+                               &l_tBikeUi.atMapTileImages[ucIndex]);
                 lv_obj_clear_flag(l_tBikeUi.apMapTiles[ucIndex],
                                   LV_OBJ_FLAG_HIDDEN);
                 ucLoadedCount++;
