@@ -8,6 +8,149 @@
 #define BIKE_MAP_LONGITUDE_LIMIT_E7 (1800000000)
 #define BIKE_MAP_DEGREE_E7 (10000000.0)
 #define BIKE_MAP_PI (3.14159265358979323846)
+#define BIKE_MAP_GCJ_AXIS (6378245.0)
+#define BIKE_MAP_GCJ_ECCENTRICITY (0.00669342162296594323)
+#define BIKE_MAP_CHINA_LATITUDE_MIN_E7 (8293000)
+#define BIKE_MAP_CHINA_LATITUDE_MAX_E7 (558271000)
+#define BIKE_MAP_CHINA_LONGITUDE_MIN_E7 (720040000)
+#define BIKE_MAP_CHINA_LONGITUDE_MAX_E7 (1378347000)
+
+/* BikeMap_TransformLatitude: 计算 WGS-84 到 GCJ-02 的纬度偏移中间量。
+ * 参数：
+ *   - dLongitudeOffset/dLatitudeOffset: 相对 105E/35N 的角度偏移
+ * 返回值：纬度偏移中间量
+ */
+static double BikeMap_TransformLatitude(double dLongitudeOffset,
+                                        double dLatitudeOffset)
+{
+    double dResult;
+
+    dResult = -100.0 + (2.0 * dLongitudeOffset) +
+              (3.0 * dLatitudeOffset) +
+              (0.2 * dLatitudeOffset * dLatitudeOffset) +
+              (0.1 * dLongitudeOffset * dLatitudeOffset) +
+              (0.2 * sqrt(fabs(dLongitudeOffset)));
+    dResult += ((20.0 * sin(6.0 * dLongitudeOffset * BIKE_MAP_PI)) +
+                (20.0 * sin(2.0 * dLongitudeOffset * BIKE_MAP_PI))) *
+               2.0 / 3.0;
+    dResult += ((20.0 * sin(dLatitudeOffset * BIKE_MAP_PI)) +
+                (40.0 * sin(dLatitudeOffset * BIKE_MAP_PI / 3.0))) *
+               2.0 / 3.0;
+    dResult += ((160.0 * sin(dLatitudeOffset * BIKE_MAP_PI / 12.0)) +
+                (320.0 * sin(dLatitudeOffset * BIKE_MAP_PI / 30.0))) *
+               2.0 / 3.0;
+
+    return dResult;
+}
+
+/* BikeMap_TransformLongitude: 计算 WGS-84 到 GCJ-02 的经度偏移中间量。
+ * 参数：
+ *   - dLongitudeOffset/dLatitudeOffset: 相对 105E/35N 的角度偏移
+ * 返回值：经度偏移中间量
+ */
+static double BikeMap_TransformLongitude(double dLongitudeOffset,
+                                         double dLatitudeOffset)
+{
+    double dResult;
+
+    dResult = 300.0 + dLongitudeOffset + (2.0 * dLatitudeOffset) +
+              (0.1 * dLongitudeOffset * dLongitudeOffset) +
+              (0.1 * dLongitudeOffset * dLatitudeOffset) +
+              (0.1 * sqrt(fabs(dLongitudeOffset)));
+    dResult += ((20.0 * sin(6.0 * dLongitudeOffset * BIKE_MAP_PI)) +
+                (20.0 * sin(2.0 * dLongitudeOffset * BIKE_MAP_PI))) *
+               2.0 / 3.0;
+    dResult += ((20.0 * sin(dLongitudeOffset * BIKE_MAP_PI)) +
+                (40.0 * sin(dLongitudeOffset * BIKE_MAP_PI / 3.0))) *
+               2.0 / 3.0;
+    dResult += ((150.0 * sin(dLongitudeOffset * BIKE_MAP_PI / 12.0)) +
+                (300.0 * sin(dLongitudeOffset * BIKE_MAP_PI / 30.0))) *
+               2.0 / 3.0;
+
+    return dResult;
+}
+
+/* BikeMap_DegreeToE7: 将双精度角度四舍五入为 1e-7 度定点值。 */
+static int32_t BikeMap_DegreeToE7(double dDegree)
+{
+    double dScaled;
+
+    dScaled = dDegree * BIKE_MAP_DEGREE_E7;
+    if (0.0 <= dScaled)
+    {
+        dScaled += 0.5;
+    }
+    else
+    {
+        dScaled -= 0.5;
+    }
+
+    return (int32_t)dScaled;
+}
+
+/* BIKE_MAP_ConvertCoordinate: 按离线瓦片坐标系转换 GNSS WGS-84 坐标。
+ * 参数：
+ *   - lLatitudeE7/lLongitudeE7: GNSS WGS-84 坐标，单位 1e-7 度
+ *   - eCoordinateSystem: 目标坐标系
+ *   - pMapLatitudeE7/pMapLongitudeE7: 转换后的地图坐标
+ * 返回值：成功返回 true，参数非法返回 false
+ */
+bool BIKE_MAP_ConvertCoordinate(int32_t lLatitudeE7, int32_t lLongitudeE7,
+                                BIKE_MAP_COORDINATE_SYSTEM eCoordinateSystem,
+                                int32_t *pMapLatitudeE7,
+                                int32_t *pMapLongitudeE7)
+{
+    double dLatitude;
+    double dLongitude;
+    double dLatitudeOffset;
+    double dLongitudeOffset;
+    double dLatitudeRadians;
+    double dMagic;
+    double dSqrtMagic;
+
+    if ((NULL == pMapLatitudeE7) || (NULL == pMapLongitudeE7) ||
+        (-900000000 > lLatitudeE7) || (900000000 < lLatitudeE7) ||
+        (-BIKE_MAP_LONGITUDE_LIMIT_E7 > lLongitudeE7) ||
+        (BIKE_MAP_LONGITUDE_LIMIT_E7 < lLongitudeE7) ||
+        ((BIKE_MAP_COORDINATE_WGS84 != eCoordinateSystem) &&
+         (BIKE_MAP_COORDINATE_GCJ02 != eCoordinateSystem)))
+    {
+        return false;
+    }
+    *pMapLatitudeE7 = lLatitudeE7;
+    *pMapLongitudeE7 = lLongitudeE7;
+    if ((BIKE_MAP_COORDINATE_WGS84 == eCoordinateSystem) ||
+        (BIKE_MAP_CHINA_LATITUDE_MIN_E7 > lLatitudeE7) ||
+        (BIKE_MAP_CHINA_LATITUDE_MAX_E7 < lLatitudeE7) ||
+        (BIKE_MAP_CHINA_LONGITUDE_MIN_E7 > lLongitudeE7) ||
+        (BIKE_MAP_CHINA_LONGITUDE_MAX_E7 < lLongitudeE7))
+    {
+        return true;
+    }
+
+    dLatitude = (double)lLatitudeE7 / BIKE_MAP_DEGREE_E7;
+    dLongitude = (double)lLongitudeE7 / BIKE_MAP_DEGREE_E7;
+    dLatitudeOffset = BikeMap_TransformLatitude(dLongitude - 105.0,
+                                                dLatitude - 35.0);
+    dLongitudeOffset = BikeMap_TransformLongitude(dLongitude - 105.0,
+                                                  dLatitude - 35.0);
+    dLatitudeRadians = dLatitude * BIKE_MAP_PI / 180.0;
+    dMagic = sin(dLatitudeRadians);
+    dMagic = 1.0 -
+             (BIKE_MAP_GCJ_ECCENTRICITY * dMagic * dMagic);
+    dSqrtMagic = sqrt(dMagic);
+    dLatitudeOffset = (dLatitudeOffset * 180.0) /
+                      (((BIKE_MAP_GCJ_AXIS *
+                         (1.0 - BIKE_MAP_GCJ_ECCENTRICITY)) /
+                        (dMagic * dSqrtMagic)) * BIKE_MAP_PI);
+    dLongitudeOffset = (dLongitudeOffset * 180.0) /
+                       ((BIKE_MAP_GCJ_AXIS / dSqrtMagic) *
+                        cos(dLatitudeRadians) * BIKE_MAP_PI);
+    *pMapLatitudeE7 = BikeMap_DegreeToE7(dLatitude + dLatitudeOffset);
+    *pMapLongitudeE7 = BikeMap_DegreeToE7(dLongitude + dLongitudeOffset);
+
+    return true;
+}
 
 /* BikeMap_IsExtensionValid: 校验瓦片扩展名只含字母和数字。
  * 参数：
@@ -109,6 +252,32 @@ bool BIKE_MAP_Project(int32_t lLatitudeE7, int32_t lLongitudeE7,
     pPoint->ucZoom = ucZoom;
 
     return true;
+}
+
+/* BIKE_MAP_ProjectCoordinate: 将 GNSS WGS-84 坐标按瓦片坐标系转换后投影。
+ * 参数：
+ *   - lLatitudeE7/lLongitudeE7: GNSS WGS-84 坐标，单位 1e-7 度
+ *   - ucZoom: 缩放级别，范围 0~19
+ *   - eCoordinateSystem: 离线瓦片使用的坐标系
+ *   - pPoint: 输出瓦片与像素坐标
+ * 返回值：转换和投影成功返回 true，否则返回 false
+ */
+bool BIKE_MAP_ProjectCoordinate(int32_t lLatitudeE7, int32_t lLongitudeE7,
+                                uint8_t ucZoom,
+                                BIKE_MAP_COORDINATE_SYSTEM eCoordinateSystem,
+                                BIKE_MAP_POINT *pPoint)
+{
+    int32_t lMapLatitudeE7;
+    int32_t lMapLongitudeE7;
+
+    if (!BIKE_MAP_ConvertCoordinate(lLatitudeE7, lLongitudeE7,
+                                    eCoordinateSystem, &lMapLatitudeE7,
+                                    &lMapLongitudeE7))
+    {
+        return false;
+    }
+
+    return BIKE_MAP_Project(lMapLatitudeE7, lMapLongitudeE7, ucZoom, pPoint);
 }
 
 /* BIKE_MAP_FormatTilePath: 生成 X-TRACK 兼容的 root/zoom/x/y.ext 瓦片路径。

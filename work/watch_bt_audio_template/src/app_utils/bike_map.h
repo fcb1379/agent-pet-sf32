@@ -13,7 +13,14 @@ extern "C" {
 #define BIKE_MAP_ZOOM_MAX (19U)
 #define BIKE_MAP_TILE_SIZE_PX (256U)
 
-/* BIKE_MAP_POINT: WGS84 坐标在 Web Mercator 瓦片平面上的定位结果。
+/* BIKE_MAP_COORDINATE_SYSTEM: 离线瓦片采用的地理坐标系。 */
+typedef enum _BIKE_MAP_COORDINATE_SYSTEM
+{
+    BIKE_MAP_COORDINATE_WGS84 = 0,
+    BIKE_MAP_COORDINATE_GCJ02
+} BIKE_MAP_COORDINATE_SYSTEM;
+
+/* BIKE_MAP_POINT: 地图坐标在 Web Mercator 瓦片平面上的定位结果。
  * 成员说明：
  *   - ulPixelX/ulPixelY: 当前缩放级别的全局像素坐标
  *   - ulTileX/ulTileY: 256 x 256 瓦片索引
@@ -33,6 +40,14 @@ typedef struct _BIKE_MAP_POINT
 
 bool BIKE_MAP_Project(int32_t lLatitudeE7, int32_t lLongitudeE7,
                       uint8_t ucZoom, BIKE_MAP_POINT *pPoint);
+bool BIKE_MAP_ConvertCoordinate(int32_t lLatitudeE7, int32_t lLongitudeE7,
+                                BIKE_MAP_COORDINATE_SYSTEM eCoordinateSystem,
+                                int32_t *pMapLatitudeE7,
+                                int32_t *pMapLongitudeE7);
+bool BIKE_MAP_ProjectCoordinate(int32_t lLatitudeE7, int32_t lLongitudeE7,
+                                uint8_t ucZoom,
+                                BIKE_MAP_COORDINATE_SYSTEM eCoordinateSystem,
+                                BIKE_MAP_POINT *pPoint);
 bool BIKE_MAP_FormatTilePath(const char *pRoot, uint8_t ucZoom,
                              uint32_t ulTileX, uint32_t ulTileY,
                              const char *pExtension, char *pPath,

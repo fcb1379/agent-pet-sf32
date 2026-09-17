@@ -5,6 +5,7 @@
 
 #include "bike_map.h"
 #include "bike_service.h"
+#include "bike_settings.h"
 #include "bike_storage.h"
 #include "gui_app_fwk.h"
 #include "littlevgl2rtt.h"
@@ -42,6 +43,7 @@ LV_IMG_DECLARE(img_workout);
  *   - pMapContainer/apMapTiles: 离线地图瓦片容器和 3 x 3 固定瓦片
  *   - pMapTrackLine/pMapMarker: 实时轨迹线和当前位置标记
  *   - aMapTrackPoints/aMapLinePoints: 固定容量全局像素点和可见线段点
+ *   - bMapUseWgs84: 当前离线瓦片坐标系选择
  *   - pTimer: 500 ms UI 刷新定时器
  */
 typedef struct _BIKE_UI_CONTEXT
@@ -73,6 +75,7 @@ typedef struct _BIKE_UI_CONTEXT
     uint8_t ucMapLoadedCount;
     BIKE_RIDE_MODE ePreviousRideMode;
     bool bMapTilesLoaded;
+    bool bMapUseWgs84;
     lv_timer_t *pTimer;
 } BIKE_UI_CONTEXT;
 
@@ -292,6 +295,9 @@ static void BikeUi_MapAppendTrack(const BIKE_MAP_POINT *pPoint)
 static void BikeUi_MapUpdate(const BIKE_SERVICE_SNAPSHOT *pSnapshot)
 {
     BIKE_MAP_POINT tPoint;
+    BIKE_SETTINGS_SNAPSHOT tSettings;
+    BIKE_MAP_COORDINATE_SYSTEM eCoordinateSystem;
+    const char *pCoordinateName;
     uint8_t ucLoadedCount;
 
     if ((NULL == pSnapshot) || (NULL == l_tBikeUi.pMapStatusLabel) ||
@@ -305,12 +311,32 @@ static void BikeUi_MapUpdate(const BIKE_SERVICE_SNAPSHOT *pSnapshot)
         BikeUi_MapClearTrack();
     }
     l_tBikeUi.ePreviousRideMode = pSnapshot->tRide.eMode;
-    if ((!pSnapshot->tGnss.bFixValid) ||
-        (!BIKE_MAP_Project(pSnapshot->tGnss.lLatitudeE7,
-                           pSnapshot->tGnss.lLongitudeE7,
-                           l_tBikeUi.ucMapZoom, &tPoint)))
+    if ((RT_EOK == BIKE_SETTINGS_GetSnapshot(&tSettings)) &&
+        (l_tBikeUi.bMapUseWgs84 != tSettings.bMapUseWgs84))
     {
-        lv_label_set_text_fmt(l_tBikeUi.pMapStatusLabel, "MAP Z%u  WAIT FIX",
+        l_tBikeUi.bMapUseWgs84 = tSettings.bMapUseWgs84;
+        l_tBikeUi.bMapTilesLoaded = false;
+        l_tBikeUi.ucMapLoadedCount = 0U;
+        BikeUi_MapClearTrack();
+    }
+    if (l_tBikeUi.bMapUseWgs84)
+    {
+        eCoordinateSystem = BIKE_MAP_COORDINATE_WGS84;
+        pCoordinateName = "WGS";
+    }
+    else
+    {
+        eCoordinateSystem = BIKE_MAP_COORDINATE_GCJ02;
+        pCoordinateName = "GCJ";
+    }
+    if ((!pSnapshot->tGnss.bFixValid) ||
+        (!BIKE_MAP_ProjectCoordinate(pSnapshot->tGnss.lLatitudeE7,
+                                     pSnapshot->tGnss.lLongitudeE7,
+                                     l_tBikeUi.ucMapZoom, eCoordinateSystem,
+                                     &tPoint)))
+    {
+        lv_label_set_text_fmt(l_tBikeUi.pMapStatusLabel,
+                              "MAP %s Z%u  WAIT FIX", pCoordinateName,
                               (unsigned int)l_tBikeUi.ucMapZoom);
         return;
     }
@@ -334,7 +360,7 @@ static void BikeUi_MapUpdate(const BIKE_SERVICE_SNAPSHOT *pSnapshot)
     }
     BikeUi_MapRebuildLine(&tPoint);
     lv_label_set_text_fmt(l_tBikeUi.pMapStatusLabel,
-                          "MAP Z%u  %lu/%lu  T%lu",
+                          "MAP %s Z%u  %lu/%lu  T%lu", pCoordinateName,
                           (unsigned int)l_tBikeUi.ucMapZoom,
                           (unsigned long)ucLoadedCount,
                           (unsigned long)BIKE_UI_MAP_TILE_COUNT,
@@ -1464,7 +1490,7 @@ static void BikeUi_OnStart(void)
 
     l_tBikeUi.pMapStatusLabel = lv_label_create(pMapPage);
     RT_ASSERT(NULL != l_tBikeUi.pMapStatusLabel);
-    lv_label_set_text(l_tBikeUi.pMapStatusLabel, "MAP Z16  WAIT FIX");
+    lv_label_set_text(l_tBikeUi.pMapStatusLabel, "MAP GCJ Z16  WAIT FIX");
     lv_obj_set_style_text_color(l_tBikeUi.pMapStatusLabel,
                                 lv_color_hex(0xFFFFFF), LV_PART_MAIN);
     lv_obj_set_style_bg_color(l_tBikeUi.pMapStatusLabel,

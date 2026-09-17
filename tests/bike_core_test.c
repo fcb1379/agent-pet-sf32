@@ -1018,6 +1018,10 @@ static void Test_GpxWriter(void)
 static void Test_MapProjection(void)
 {
     BIKE_MAP_POINT tPoint;
+    BIKE_MAP_POINT tWgsPoint;
+    BIKE_MAP_POINT tGcjPoint;
+    int32_t lMapLatitudeE7;
+    int32_t lMapLongitudeE7;
     char aPath[64];
 
     assert(BIKE_MAP_Project(0, 0, 0U, &tPoint));
@@ -1034,6 +1038,44 @@ static void Test_MapProjection(void)
     assert(tPoint.ulTileY < (1UL << 16U));
     assert(256U > tPoint.usOffsetX);
     assert(256U > tPoint.usOffsetY);
+
+    assert(BIKE_MAP_ConvertCoordinate(399074150, 1163913320,
+                                      BIKE_MAP_COORDINATE_WGS84,
+                                      &lMapLatitudeE7,
+                                      &lMapLongitudeE7));
+    assert(399074150 == lMapLatitudeE7);
+    assert(1163913320 == lMapLongitudeE7);
+    assert(BIKE_MAP_ConvertCoordinate(399074150, 1163913320,
+                                      BIKE_MAP_COORDINATE_GCJ02,
+                                      &lMapLatitudeE7,
+                                      &lMapLongitudeE7));
+    assert((399074150 + 10000) < lMapLatitudeE7);
+    assert((399074150 + 20000) > lMapLatitudeE7);
+    assert((1163913320 + 50000) < lMapLongitudeE7);
+    assert((1163913320 + 70000) > lMapLongitudeE7);
+    assert(BIKE_MAP_ProjectCoordinate(399074150, 1163913320, 16U,
+                                      BIKE_MAP_COORDINATE_WGS84,
+                                      &tWgsPoint));
+    assert(BIKE_MAP_ProjectCoordinate(399074150, 1163913320, 16U,
+                                      BIKE_MAP_COORDINATE_GCJ02,
+                                      &tGcjPoint));
+    assert((tWgsPoint.ulPixelX != tGcjPoint.ulPixelX) ||
+           (tWgsPoint.ulPixelY != tGcjPoint.ulPixelY));
+
+    assert(BIKE_MAP_ConvertCoordinate(488566000, 23522000,
+                                      BIKE_MAP_COORDINATE_GCJ02,
+                                      &lMapLatitudeE7,
+                                      &lMapLongitudeE7));
+    assert(488566000 == lMapLatitudeE7);
+    assert(23522000 == lMapLongitudeE7);
+    assert(!BIKE_MAP_ConvertCoordinate(
+        399074150, 1163913320, (BIKE_MAP_COORDINATE_SYSTEM)2,
+        &lMapLatitudeE7, &lMapLongitudeE7));
+    assert(!BIKE_MAP_ConvertCoordinate(399074150, 1163913320,
+                                       BIKE_MAP_COORDINATE_GCJ02, NULL,
+                                       &lMapLongitudeE7));
+    assert(!BIKE_MAP_ProjectCoordinate(399074150, 1163913320, 16U,
+                                       BIKE_MAP_COORDINATE_GCJ02, NULL));
     assert(BIKE_MAP_FormatTilePath("/MAP", tPoint.ucZoom,
                                    tPoint.ulTileX, tPoint.ulTileY, "bin",
                                    aPath, sizeof(aPath)));

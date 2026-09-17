@@ -14,6 +14,7 @@ extern "C" {
 #define BIKE_SETTINGS_DEFAULT_AUTO_PAUSE_CENTI_KPH (300U)
 #define BIKE_SETTINGS_DEFAULT_BRIGHTNESS_PERCENT (80U)
 #define BIKE_SETTINGS_DEFAULT_SCREEN_TIMEOUT_SECONDS (30U)
+#define BIKE_SETTINGS_DEFAULT_MAP_USE_WGS84 (false)
 
 /* BIKE_SETTINGS_SNAPSHOT: 码表运行参数的一致性快照。
  * 成员说明：
@@ -23,6 +24,7 @@ extern "C" {
  *   - usScreenTimeoutSeconds: 自动熄屏时间，范围 0~3600 秒，0 表示关闭
  *   - ucBrightnessPercent: 屏幕亮度，范围 1~100%
  *   - bAutoPauseEnabled: 是否启用自动暂停
+ *   - bMapUseWgs84: true 使用 WGS-84 瓦片，false 使用 GCJ-02 瓦片
  *   - bStorageReady: 参数持久化存储是否可用
  */
 typedef struct _BIKE_SETTINGS_SNAPSHOT
@@ -33,6 +35,7 @@ typedef struct _BIKE_SETTINGS_SNAPSHOT
     uint16_t usScreenTimeoutSeconds;
     uint8_t ucBrightnessPercent;
     bool bAutoPauseEnabled;
+    bool bMapUseWgs84;
     bool bStorageReady;
 } BIKE_SETTINGS_SNAPSHOT;
 
@@ -43,6 +46,7 @@ rt_err_t BIKE_SETTINGS_SetWheelCircumference(uint16_t usMillimeters);
 rt_err_t BIKE_SETTINGS_SetAutoPause(bool bEnabled, uint16_t usThresholdCentiKph);
 rt_err_t BIKE_SETTINGS_SetDisplay(uint8_t ucBrightnessPercent,
                                   uint16_t usTimeoutSeconds);
+rt_err_t BIKE_SETTINGS_SetMapUseWgs84(bool bUseWgs84);
 
 #ifdef __cplusplus
 }

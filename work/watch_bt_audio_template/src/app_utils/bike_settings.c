@@ -35,6 +35,7 @@
 #define BIKE_SETTINGS_KEY_AUTO_THRESHOLD "auto_kph"
 #define BIKE_SETTINGS_KEY_BRIGHTNESS "brightness"
 #define BIKE_SETTINGS_KEY_SCREEN_TIMEOUT "screen_sec"
+#define BIKE_SETTINGS_KEY_MAP_WGS84 "map_wgs84"
 
 /* l_aBikeSettingsPrefName: FlashDB 命名空间，数组固定 32 字节以规避 SDK
  * share_prefs_open 固定读取 31 字节时越过短字符串结尾。
@@ -173,6 +174,7 @@ rt_err_t BIKE_SETTINGS_Init(void)
     l_tBikeSettings.usScreenTimeoutSeconds = BIKE_SETTINGS_DEFAULT_SCREEN_TIMEOUT_SECONDS;
     l_tBikeSettings.ucBrightnessPercent = BIKE_SETTINGS_DEFAULT_BRIGHTNESS_PERCENT;
     l_tBikeSettings.bAutoPauseEnabled = false;
+    l_tBikeSettings.bMapUseWgs84 = BIKE_SETTINGS_DEFAULT_MAP_USE_WGS84;
 
 #ifdef BSP_SHARE_PREFS
     l_pBikeSettingsPrefs = share_prefs_open(l_aBikeSettingsPrefName,
@@ -207,17 +209,21 @@ rt_err_t BIKE_SETTINGS_Init(void)
                                 l_tBikeSettings.usScreenTimeoutSeconds),
             BIKE_SETTINGS_SCREEN_TIMEOUT_MIN_SECONDS,
             BIKE_SETTINGS_SCREEN_TIMEOUT_MAX_SECONDS);
+        l_tBikeSettings.bMapUseWgs84 = (0 != share_prefs_get_int(
+            l_pBikeSettingsPrefs, BIKE_SETTINGS_KEY_MAP_WGS84,
+            l_tBikeSettings.bMapUseWgs84 ? 1 : 0));
     }
 #endif
 
     l_bBikeSettingsReady = true;
-    LOG_I("ready storage=%u timezone=%d wheel=%u auto=%u/%u display=%u/%u",
+    LOG_I("ready storage=%u timezone=%d wheel=%u auto=%u/%u display=%u/%u map=%u",
           l_tBikeSettings.bStorageReady, l_tBikeSettings.sTimeZoneMinutes,
           l_tBikeSettings.usWheelCircumferenceMm,
           l_tBikeSettings.bAutoPauseEnabled,
           l_tBikeSettings.usAutoPauseCentiKph,
           l_tBikeSettings.ucBrightnessPercent,
-          l_tBikeSettings.usScreenTimeoutSeconds);
+          l_tBikeSettings.usScreenTimeoutSeconds,
+          l_tBikeSettings.bMapUseWgs84);
 
     return RT_EOK;
 }
@@ -426,6 +432,35 @@ rt_err_t BIKE_SETTINGS_SetDisplay(uint8_t ucBrightnessPercent,
     return eResult;
 }
 
+/* BIKE_SETTINGS_SetMapUseWgs84: 更新并保存离线瓦片坐标系。
+ * 参数：
+ *   - bUseWgs84: true 使用 WGS-84，false 使用 GCJ-02
+ * 返回值：保存成功返回 RT_EOK，存储错误返回错误码
+ */
+rt_err_t BIKE_SETTINGS_SetMapUseWgs84(bool bUseWgs84)
+{
+    rt_err_t eResult;
+
+    eResult = BIKE_SETTINGS_Init();
+    if (RT_EOK != eResult)
+    {
+        return eResult;
+    }
+    eResult = rt_mutex_take(&l_tBikeSettingsMutex, RT_WAITING_FOREVER);
+    if (RT_EOK == eResult)
+    {
+        eResult = BikeSettings_SaveLocked(BIKE_SETTINGS_KEY_MAP_WGS84,
+                                          bUseWgs84 ? 1 : 0);
+        if (RT_EOK == eResult)
+        {
+            l_tBikeSettings.bMapUseWgs84 = bUseWgs84;
+        }
+        BikeSettings_Unlock();
+    }
+
+    return eResult;
+}
+
 /* BikeSettings_Command: 查询或修改码表持久化设置。
  * 参数：
  *   - lArgumentCount: shell 参数数量
@@ -444,13 +479,14 @@ static void BikeSettings_Command(int lArgumentCount, char **pArguments)
         (void)memset(&tSnapshot, 0, sizeof(tSnapshot));
         eResult = BIKE_SETTINGS_GetSnapshot(&tSnapshot);
         rt_kprintf("bike settings ret=%d storage=%u timezone=%d wheel=%u "
-                   "auto=%u threshold=%u brightness=%u screen=%u\n",
+                   "auto=%u threshold=%u brightness=%u screen=%u map_wgs84=%u\n",
                    eResult, tSnapshot.bStorageReady, tSnapshot.sTimeZoneMinutes,
                    tSnapshot.usWheelCircumferenceMm, tSnapshot.bAutoPauseEnabled,
                    tSnapshot.usAutoPauseCentiKph, tSnapshot.ucBrightnessPercent,
-                   tSnapshot.usScreenTimeoutSeconds);
+                   tSnapshot.usScreenTimeoutSeconds, tSnapshot.bMapUseWgs84);
         rt_kprintf("usage: bikeset timezone <min> | wheel <mm> | "
-                   "autopause <0|1> <centi-kph> | display <1-100> <sec>\n");
+                   "map <0|1> | autopause <0|1> <centi-kph> | "
+                   "display <1-100> <sec>\n");
         return;
     }
 
@@ -468,6 +504,11 @@ static void BikeSettings_Command(int lArgumentCount, char **pArguments)
                  (0 <= lFirstValue) && (UINT16_MAX >= lFirstValue))
         {
             eResult = BIKE_SETTINGS_SetWheelCircumference((uint16_t)lFirstValue);
+        }
+        else if ((0 == strcmp(pArguments[1], "map")) &&
+                 ((0 == lFirstValue) || (1 == lFirstValue)))
+        {
+            eResult = BIKE_SETTINGS_SetMapUseWgs84(1 == lFirstValue);
         }
     }
     else if ((4 == lArgumentCount) &&
