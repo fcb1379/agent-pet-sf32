@@ -11,7 +11,7 @@
 extern "C" {
 #endif
 
-#define BIKE_RIDE_DEFAULT_WEIGHT_KG (70U)
+#define BIKE_RIDE_DEFAULT_WEIGHT_KG (65U)
 
 /* BIKE_RIDE_MODE: 本次骑行的控制状态。 */
 typedef enum _BIKE_RIDE_MODE

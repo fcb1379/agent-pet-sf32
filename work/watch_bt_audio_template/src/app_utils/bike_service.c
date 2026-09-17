@@ -556,7 +556,9 @@ static void BikeService_ConfigurePins(void)
  */
 static int BikeService_Init(void)
 {
+    BIKE_SETTINGS_SNAPSHOT tSettings;
     struct serial_configure tConfig;
+    uint8_t ucRiderWeightKg;
     rt_err_t eResult;
     bool bUartOpened;
 
@@ -576,13 +578,18 @@ static int BikeService_Init(void)
     {
         LOG_E("settings init failed: %d", eResult);
     }
+    ucRiderWeightKg = BIKE_RIDE_DEFAULT_WEIGHT_KG;
+    if (RT_EOK == BIKE_SETTINGS_GetSnapshot(&tSettings))
+    {
+        ucRiderWeightKg = tSettings.ucRiderWeightKg;
+    }
     eResult = BIKE_HISTORY_Init();
     if (RT_EOK != eResult)
     {
         LOG_E("history init failed: %d", eResult);
     }
     BIKE_NMEA_Init(&l_tBikeParser);
-    BIKE_RIDE_Init(&l_tBikeSnapshot.tRide, BIKE_RIDE_DEFAULT_WEIGHT_KG);
+    BIKE_RIDE_Init(&l_tBikeSnapshot.tRide, ucRiderWeightKg);
     l_tBikeSnapshot.ePortStatus = BIKE_GNSS_PORT_SEARCHING;
 
     if (!BIKE_STORAGE_Init())
@@ -734,10 +741,13 @@ bool BIKE_SERVICE_GetSnapshot(BIKE_SERVICE_SNAPSHOT *pSnapshot)
  */
 bool BIKE_SERVICE_StartRide(void)
 {
+    BIKE_SETTINGS_SNAPSHOT tSettings;
     bool bResult;
     BIKE_RIDE_MODE ePreviousMode;
+    rt_err_t eSettingsResult;
 
     bResult = false;
+    eSettingsResult = BIKE_SETTINGS_GetSnapshot(&tSettings);
     if (BikeService_Lock())
     {
         ePreviousMode = l_tBikeSnapshot.tRide.eMode;
@@ -759,6 +769,12 @@ bool BIKE_SERVICE_StartRide(void)
             }
             if (BikeService_Lock())
             {
+                if ((BIKE_RIDE_MODE_STOPPED == ePreviousMode) &&
+                    (RT_EOK == eSettingsResult))
+                {
+                    l_tBikeSnapshot.tRide.ucWeightKg =
+                        tSettings.ucRiderWeightKg;
+                }
                 BIKE_AUTO_PAUSE_Init(&l_tBikeAutoPause);
                 l_tBikeSnapshot.bAutoPaused = false;
                 l_ulBikeLastHistoryCheckpointMs =

@@ -671,7 +671,7 @@ static void Test_NmeaParser(void)
     return;
 }
 
-/* Test_RideModel: 覆盖开始、里程、速度、暂停和跳点过滤。
+/* Test_RideModel: 覆盖默认/自定义体重、开始、里程、速度、暂停和跳点过滤。
  * 返回值：无
  */
 static void Test_RideModel(void)
@@ -685,8 +685,11 @@ static void Test_RideModel(void)
     tGnss.ucSatellites = 8U;
     tGnss.ulSpeedCmPerSec = 500U;
 
+    BIKE_RIDE_Init(&tState, 0U);
+    assert(BIKE_RIDE_DEFAULT_WEIGHT_KG == tState.ucWeightKg);
     BIKE_RIDE_Init(&tState, 70U);
     BIKE_RIDE_Start(&tState, 0U);
+    assert(70U == tState.ucWeightKg);
     BIKE_RIDE_Update(&tState, &tGnss, 1000U);
     tGnss.lLongitudeE7 = 898;
     BIKE_RIDE_Update(&tState, &tGnss, 2000U);

@@ -22,6 +22,8 @@
 #define BIKE_SETTINGS_TIMEZONE_MAX (840)
 #define BIKE_SETTINGS_WHEEL_MIN_MM (500)
 #define BIKE_SETTINGS_WHEEL_MAX_MM (4000)
+#define BIKE_SETTINGS_RIDER_WEIGHT_MIN_KG (30)
+#define BIKE_SETTINGS_RIDER_WEIGHT_MAX_KG (250)
 #define BIKE_SETTINGS_AUTO_PAUSE_MIN_CENTI_KPH (50)
 #define BIKE_SETTINGS_AUTO_PAUSE_MAX_CENTI_KPH (2000)
 #define BIKE_SETTINGS_BRIGHTNESS_MIN_PERCENT (1)
@@ -31,6 +33,7 @@
 
 #define BIKE_SETTINGS_KEY_TIMEZONE "timezone"
 #define BIKE_SETTINGS_KEY_WHEEL "wheel_mm"
+#define BIKE_SETTINGS_KEY_RIDER_WEIGHT "weight_kg"
 #define BIKE_SETTINGS_KEY_AUTO_PAUSE "auto_pause"
 #define BIKE_SETTINGS_KEY_AUTO_THRESHOLD "auto_kph"
 #define BIKE_SETTINGS_KEY_BRIGHTNESS "brightness"
@@ -170,6 +173,7 @@ rt_err_t BIKE_SETTINGS_Init(void)
         CONFIG_BIKE_TIMEZONE_MINUTES, BIKE_SETTINGS_TIMEZONE_MIN,
         BIKE_SETTINGS_TIMEZONE_MAX);
     l_tBikeSettings.usWheelCircumferenceMm = BIKE_SETTINGS_DEFAULT_WHEEL_MM;
+    l_tBikeSettings.ucRiderWeightKg = BIKE_SETTINGS_DEFAULT_RIDER_WEIGHT_KG;
     l_tBikeSettings.usAutoPauseCentiKph = BIKE_SETTINGS_DEFAULT_AUTO_PAUSE_CENTI_KPH;
     l_tBikeSettings.usScreenTimeoutSeconds = BIKE_SETTINGS_DEFAULT_SCREEN_TIMEOUT_SECONDS;
     l_tBikeSettings.ucBrightnessPercent = BIKE_SETTINGS_DEFAULT_BRIGHTNESS_PERCENT;
@@ -190,6 +194,12 @@ rt_err_t BIKE_SETTINGS_Init(void)
             share_prefs_get_int(l_pBikeSettingsPrefs, BIKE_SETTINGS_KEY_WHEEL,
                                 l_tBikeSettings.usWheelCircumferenceMm),
             BIKE_SETTINGS_WHEEL_MIN_MM, BIKE_SETTINGS_WHEEL_MAX_MM);
+        l_tBikeSettings.ucRiderWeightKg = (uint8_t)BikeSettings_Clamp(
+            share_prefs_get_int(l_pBikeSettingsPrefs,
+                                BIKE_SETTINGS_KEY_RIDER_WEIGHT,
+                                l_tBikeSettings.ucRiderWeightKg),
+            BIKE_SETTINGS_RIDER_WEIGHT_MIN_KG,
+            BIKE_SETTINGS_RIDER_WEIGHT_MAX_KG);
         l_tBikeSettings.bAutoPauseEnabled = (0 != share_prefs_get_int(
             l_pBikeSettingsPrefs, BIKE_SETTINGS_KEY_AUTO_PAUSE, 0));
         l_tBikeSettings.usAutoPauseCentiKph = (uint16_t)BikeSettings_Clamp(
@@ -216,9 +226,10 @@ rt_err_t BIKE_SETTINGS_Init(void)
 #endif
 
     l_bBikeSettingsReady = true;
-    LOG_I("ready storage=%u timezone=%d wheel=%u auto=%u/%u display=%u/%u map=%u",
+    LOG_I("ready storage=%u timezone=%d wheel=%u weight=%u auto=%u/%u display=%u/%u map=%u",
           l_tBikeSettings.bStorageReady, l_tBikeSettings.sTimeZoneMinutes,
           l_tBikeSettings.usWheelCircumferenceMm,
+          l_tBikeSettings.ucRiderWeightKg,
           l_tBikeSettings.bAutoPauseEnabled,
           l_tBikeSettings.usAutoPauseCentiKph,
           l_tBikeSettings.ucBrightnessPercent,
@@ -316,6 +327,40 @@ rt_err_t BIKE_SETTINGS_SetWheelCircumference(uint16_t usMillimeters)
         if (RT_EOK == eResult)
         {
             l_tBikeSettings.usWheelCircumferenceMm = usMillimeters;
+        }
+        BikeSettings_Unlock();
+    }
+
+    return eResult;
+}
+
+/* BIKE_SETTINGS_SetRiderWeight: 更新并保存卡路里估算使用的骑手体重。
+ * 参数：
+ *   - ucWeightKg: 骑手体重，范围 30~250 kg
+ * 返回值：保存成功返回 RT_EOK，参数或存储错误返回错误码
+ */
+rt_err_t BIKE_SETTINGS_SetRiderWeight(uint8_t ucWeightKg)
+{
+    rt_err_t eResult;
+
+    if ((BIKE_SETTINGS_RIDER_WEIGHT_MIN_KG > ucWeightKg) ||
+        (BIKE_SETTINGS_RIDER_WEIGHT_MAX_KG < ucWeightKg))
+    {
+        return -RT_EINVAL;
+    }
+    eResult = BIKE_SETTINGS_Init();
+    if (RT_EOK != eResult)
+    {
+        return eResult;
+    }
+    eResult = rt_mutex_take(&l_tBikeSettingsMutex, RT_WAITING_FOREVER);
+    if (RT_EOK == eResult)
+    {
+        eResult = BikeSettings_SaveLocked(BIKE_SETTINGS_KEY_RIDER_WEIGHT,
+                                          ucWeightKg);
+        if (RT_EOK == eResult)
+        {
+            l_tBikeSettings.ucRiderWeightKg = ucWeightKg;
         }
         BikeSettings_Unlock();
     }
@@ -478,13 +523,14 @@ static void BikeSettings_Command(int lArgumentCount, char **pArguments)
     {
         (void)memset(&tSnapshot, 0, sizeof(tSnapshot));
         eResult = BIKE_SETTINGS_GetSnapshot(&tSnapshot);
-        rt_kprintf("bike settings ret=%d storage=%u timezone=%d wheel=%u "
+        rt_kprintf("bike settings ret=%d storage=%u timezone=%d wheel=%u weight=%u "
                    "auto=%u threshold=%u brightness=%u screen=%u map_wgs84=%u\n",
                    eResult, tSnapshot.bStorageReady, tSnapshot.sTimeZoneMinutes,
-                   tSnapshot.usWheelCircumferenceMm, tSnapshot.bAutoPauseEnabled,
+                   tSnapshot.usWheelCircumferenceMm,
+                   tSnapshot.ucRiderWeightKg, tSnapshot.bAutoPauseEnabled,
                    tSnapshot.usAutoPauseCentiKph, tSnapshot.ucBrightnessPercent,
                    tSnapshot.usScreenTimeoutSeconds, tSnapshot.bMapUseWgs84);
-        rt_kprintf("usage: bikeset timezone <min> | wheel <mm> | "
+        rt_kprintf("usage: bikeset timezone <min> | wheel <mm> | weight <kg> | "
                    "map <0|1> | autopause <0|1> <centi-kph> | "
                    "display <1-100> <sec>\n");
         return;
@@ -504,6 +550,11 @@ static void BikeSettings_Command(int lArgumentCount, char **pArguments)
                  (0 <= lFirstValue) && (UINT16_MAX >= lFirstValue))
         {
             eResult = BIKE_SETTINGS_SetWheelCircumference((uint16_t)lFirstValue);
+        }
+        else if ((0 == strcmp(pArguments[1], "weight")) &&
+                 (0 <= lFirstValue) && (UINT8_MAX >= lFirstValue))
+        {
+            eResult = BIKE_SETTINGS_SetRiderWeight((uint8_t)lFirstValue);
         }
         else if ((0 == strcmp(pArguments[1], "map")) &&
                  ((0 == lFirstValue) || (1 == lFirstValue)))

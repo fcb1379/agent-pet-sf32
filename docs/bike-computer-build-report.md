@@ -25,6 +25,7 @@
 - 首次有效 RMC 按持久化时区（默认值来自 `CONFIG_BIKE_TIMEZONE_MINUTES`）校准片上 RTC，已移除模板启动时写死的 2022 年时间。
 - 黄山派 KEY2 已适配为骑行控制键：短按开始/暂停/继续，长按结束并闭合 GPX。
 - 时区、轮周、自动暂停阈值、亮度和熄屏参数使用独立 `share_prefs` 命名空间保存；RTC 校时读取运行期时区设置。
+- 骑手体重按 X-TRACK 上游默认 65 kg 保存到独立运行参数，`bikeset weight <kg>` 支持 30~250 kg；服务启动和每次新骑行开始时恢复最新值，暂停继续不会在骑行中途改变卡路里基准。
 - 自动暂停使用独立防抖状态机：低于阈值持续 5 秒暂停，高于阈值 1 km/h 持续 2 秒恢复；手动暂停不会被速度变化自动恢复。
 - GUI 启动和设置变化后应用持久化 LCD 亮度，并以持久化秒数替代模板固定 10 秒熄屏；0 秒可关闭自动熄屏。
 - 屏幕休眠时 KEY2 第一次短按或长按只唤醒界面，不会在不可见状态下改变骑行或轨迹记录状态。
@@ -110,12 +111,12 @@ scons: done building targets.
 
 | 产物 | 大小 |
 |---|---:|
-| `main.bin` | 3,337,244 bytes |
+| `main.bin` | 3,337,500 bytes |
 | `fs_root.bin` | 4,194,304 bytes |
 
 完整重构建输出 SDK 既有的 FlashDB/LVGL/音频等静态告警，以及 `dfu` 分区未定义和 ftab 入口符号警告；新增 `bike_*` 模块在 `-Werror` 主机测试中无告警，且目标编译成功。生成配置已确认 `CONFIG_BSP_USING_UART3=y`、`CONFIG_BSP_UART3_RX_USING_DMA=y`，未启用 UART2 或 USB Device/Host；同时启用 `CONFIG_BSP_USING_SPI1=y`、`CONFIG_RT_USING_SPI_MSD=y`、`CONFIG_RT_USING_SENSOR=y`、`CONFIG_ACC_USING_LSM6DSL=y`、仅 `CONFIG_PKG_USING_LSM6DSL_STEP=y`，以及 `CONFIG_RT_USING_ADC=y`、`CONFIG_BSP_USING_ADC1=y`、`CONFIG_BSP_BATTERY_DETECT_ADC="bat1"`、`CONFIG_BSP_BATTERY_DETECT_ADC_CHANNEL=7`；加速度/陀螺仪 RT-Thread 设备未启用。
 
-HCPU ELF 汇总为 `.text=3,329,721 bytes`、`.data=7,492 bytes`、`.bss=4,147,740 bytes`。其中地图新增的 1,179,648 bytes 固定像素缓冲位于 `0x601db5c0` 的 PSRAM 非缓存段，不占用片上 SRAM；相对字体修复后的基线，`main.bin` 增加 264 bytes。目标编译已实际生成 `lsm6dsl.o`、`lsm6dsl_reg.o`、`st_lsm6dsl_sensor_v1.o`、`sensor.o`、`drv_adc.o`、`bike_pedometer.o`、`bike_compass.o`、`bike_power.o` 和 `bike_map_image.o`。
+HCPU ELF 汇总为 `.text=3,329,977 bytes`、`.data=7,492 bytes`、`.bss=4,147,744 bytes`。其中地图新增的 1,179,648 bytes 固定像素缓冲位于 `0x601db5c0` 的 PSRAM 非缓存段，不占用片上 SRAM。目标编译已实际生成 `lsm6dsl.o`、`lsm6dsl_reg.o`、`st_lsm6dsl_sensor_v1.o`、`sensor.o`、`drv_adc.o`、`bike_pedometer.o`、`bike_compass.o`、`bike_power.o` 和 `bike_map_image.o`。
 
 ## 4. 资源占用
 
@@ -123,7 +124,7 @@ HCPU ELF 链接结果：
 
 | 区域 | 当前占用 | 链接容量 | 余量 |
 |---|---:|---:|---:|
-| 片上 SRAM 地址范围 | 353,032 bytes | 523,264 bytes | 170,232 bytes |
+| 片上 SRAM 地址范围 | 353,036 bytes | 523,264 bytes | 170,228 bytes |
 | PSRAM 可写段 | 3,828,720 bytes | 8,388,608 bytes | 4,559,888 bytes |
 
 码表新增对象文件在链接前的直接占用：
@@ -148,11 +149,11 @@ HCPU ELF 链接结果：
 | `bike_power.o` | 1,184 bytes | 1,745 bytes |
 | `bike_storage.o` | 803 bytes | 2 bytes |
 | `bike_recorder.o` | 1,301 bytes | 3,865 bytes |
-| `bike_settings.o` | 2,134 bytes | 53 bytes |
+| `bike_settings.o` | 2,329 bytes | 55 bytes |
 | `bike_sensor_ble.o` | 5,925 bytes | 2,545 bytes |
-| `bike_service.o` | 3,894 bytes | 3,929 bytes |
+| `bike_service.o` | 3,934 bytes | 3,929 bytes |
 | `app_bike.o` | 7,818 bytes | 1,181,416 bytes |
-| 合计 | 40,921 bytes | 1,200,399 bytes |
+| 合计 | 41,156 bytes | 1,200,401 bytes |
 
 `app_bike.o` 的 `.bss` 包含明确放入 PSRAM 的 1,179,648 bytes 地图像素缓存，不是片上 SRAM 占用。`bike_service.o` 和 `bike_recorder.o` 分别包含 3,072 bytes 静态线程栈，`bike_sensor_ble.o`、`bike_pedometer.o` 与 `bike_compass.o` 分别包含 2,048 bytes 静态线程栈，`bike_history.o` 与 `bike_power.o` 分别包含 1,536 bytes 静态线程栈。对象文件合计只用于描述新增模块的直接体积，不等同于最终镜像增量；最终镜像还包含本轮启用的 SDK LSM6DSL、RT-Thread sensor 与 GPADC1 驱动，并受链接消除、库引用和资源打包影响。
 

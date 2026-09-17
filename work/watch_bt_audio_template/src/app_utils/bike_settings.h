@@ -11,6 +11,7 @@ extern "C" {
 #endif
 
 #define BIKE_SETTINGS_DEFAULT_WHEEL_MM (2105U)
+#define BIKE_SETTINGS_DEFAULT_RIDER_WEIGHT_KG (65U)
 #define BIKE_SETTINGS_DEFAULT_AUTO_PAUSE_CENTI_KPH (300U)
 #define BIKE_SETTINGS_DEFAULT_BRIGHTNESS_PERCENT (80U)
 #define BIKE_SETTINGS_DEFAULT_SCREEN_TIMEOUT_SECONDS (30U)
@@ -20,6 +21,7 @@ extern "C" {
  * 成员说明：
  *   - sTimeZoneMinutes: UTC 时区偏移，范围 -720~840 分钟
  *   - usWheelCircumferenceMm: 车轮周长，范围 500~4000 毫米
+ *   - ucRiderWeightKg: 卡路里估算使用的骑手体重，范围 30~250 kg
  *   - usAutoPauseCentiKph: 自动暂停阈值，范围 50~2000，单位 0.01 km/h
  *   - usScreenTimeoutSeconds: 自动熄屏时间，范围 0~3600 秒，0 表示关闭
  *   - ucBrightnessPercent: 屏幕亮度，范围 1~100%
@@ -34,6 +36,7 @@ typedef struct _BIKE_SETTINGS_SNAPSHOT
     uint16_t usAutoPauseCentiKph;
     uint16_t usScreenTimeoutSeconds;
     uint8_t ucBrightnessPercent;
+    uint8_t ucRiderWeightKg;
     bool bAutoPauseEnabled;
     bool bMapUseWgs84;
     bool bStorageReady;
@@ -43,6 +46,7 @@ rt_err_t BIKE_SETTINGS_Init(void);
 rt_err_t BIKE_SETTINGS_GetSnapshot(BIKE_SETTINGS_SNAPSHOT *pSnapshot);
 rt_err_t BIKE_SETTINGS_SetTimeZoneMinutes(int16_t sMinutes);
 rt_err_t BIKE_SETTINGS_SetWheelCircumference(uint16_t usMillimeters);
+rt_err_t BIKE_SETTINGS_SetRiderWeight(uint8_t ucWeightKg);
 rt_err_t BIKE_SETTINGS_SetAutoPause(bool bEnabled, uint16_t usThresholdCentiKph);
 rt_err_t BIKE_SETTINGS_SetDisplay(uint8_t ucBrightnessPercent,
                                   uint16_t usTimeoutSeconds);
