@@ -401,7 +401,7 @@ static void Test_CscCalculation(void)
     return;
 }
 
-/* Test_BleAdvertising: 覆盖 HR/CSC UUID 列表、服务数据和畸形 AD 结构。
+/* Test_BleAdvertising: 覆盖 HR/CSC/Power UUID 列表、服务数据和畸形 AD 结构。
  * 返回值：无
  */
 static void Test_BleAdvertising(void)
@@ -409,7 +409,7 @@ static void Test_BleAdvertising(void)
     static const uint8_t aHeartRate[] = {3U, 0x03U, 0x0DU, 0x18U};
     static const uint8_t aCombined[] = {
         2U, 0x01U, 0x06U,
-        5U, 0x02U, 0x0DU, 0x18U, 0x16U, 0x18U
+        7U, 0x02U, 0x0DU, 0x18U, 0x16U, 0x18U, 0x18U, 0x18U
     };
     static const uint8_t aCscServiceData[] = {
         5U, 0x16U, 0x16U, 0x18U, 0x01U, 0x02U
@@ -418,7 +418,8 @@ static void Test_BleAdvertising(void)
 
     assert(BIKE_BLE_SERVICE_HEART_RATE ==
            BIKE_BLE_ADV_GetServiceMask(aHeartRate, sizeof(aHeartRate)));
-    assert((BIKE_BLE_SERVICE_HEART_RATE | BIKE_BLE_SERVICE_CSC) ==
+    assert((BIKE_BLE_SERVICE_HEART_RATE | BIKE_BLE_SERVICE_CSC |
+            BIKE_BLE_SERVICE_POWER) ==
            BIKE_BLE_ADV_GetServiceMask(aCombined, sizeof(aCombined)));
     assert(BIKE_BLE_SERVICE_CSC ==
            BIKE_BLE_ADV_GetServiceMask(aCscServiceData,
@@ -429,7 +430,7 @@ static void Test_BleAdvertising(void)
     return;
 }
 
-/* Test_BleMeasurement: 覆盖标准 HR/CSC 测量解析和畸形长度拒绝。
+/* Test_BleMeasurement: 覆盖标准 HR/CSC/Power 测量解析和畸形长度拒绝。
  * 返回值：无
  */
 static void Test_BleMeasurement(void)
@@ -452,7 +453,15 @@ static void Test_BleMeasurement(void)
     static const uint8_t aBatteryValid[] = {85U};
     static const uint8_t aBatteryInvalid[] = {101U};
     static const uint8_t aBatteryTrailing[] = {85U, 0U};
+    static const uint8_t aPowerPositive[] = {0x00U, 0x00U, 0xFAU, 0x00U};
+    static const uint8_t aPowerNegative[] = {0x00U, 0x00U, 0xD4U, 0xFEU};
+    static const uint8_t aPowerReserved[] = {0x00U, 0x20U, 0x00U, 0x00U};
+    static const uint8_t aPowerTrailing[] = {
+        0x00U, 0x00U, 0x00U, 0x00U, 0x00U
+    };
+    uint8_t aPowerAllFields[34];
     BIKE_CSC_MEASUREMENT tMeasurement;
+    int16_t sPowerWatts;
     uint8_t ucBatteryPercent;
     uint16_t usHeartRateBpm;
 
@@ -499,6 +508,34 @@ static void Test_BleMeasurement(void)
                                    &tMeasurement));
     assert(!BIKE_BLE_MEAS_ParseCsc(NULL, 0U, &tMeasurement));
     assert(!BIKE_BLE_MEAS_ParseCsc(aCscCombined, sizeof(aCscCombined), NULL));
+
+    sPowerWatts = 0;
+    assert(BIKE_BLE_MEAS_ParseCyclingPower(aPowerPositive,
+                                           sizeof(aPowerPositive),
+                                           &sPowerWatts));
+    assert(250 == sPowerWatts);
+    assert(BIKE_BLE_MEAS_ParseCyclingPower(aPowerNegative,
+                                           sizeof(aPowerNegative),
+                                           &sPowerWatts));
+    assert(-300 == sPowerWatts);
+    (void)memset(aPowerAllFields, 0, sizeof(aPowerAllFields));
+    aPowerAllFields[0] = 0xF5U;
+    aPowerAllFields[1] = 0x0FU;
+    assert(BIKE_BLE_MEAS_ParseCyclingPower(aPowerAllFields,
+                                           sizeof(aPowerAllFields),
+                                           &sPowerWatts));
+    assert(!BIKE_BLE_MEAS_ParseCyclingPower(aPowerAllFields,
+                                            sizeof(aPowerAllFields) - 1U,
+                                            &sPowerWatts));
+    assert(!BIKE_BLE_MEAS_ParseCyclingPower(aPowerReserved,
+                                            sizeof(aPowerReserved),
+                                            &sPowerWatts));
+    assert(!BIKE_BLE_MEAS_ParseCyclingPower(aPowerTrailing,
+                                            sizeof(aPowerTrailing),
+                                            &sPowerWatts));
+    assert(!BIKE_BLE_MEAS_ParseCyclingPower(NULL, 0U, &sPowerWatts));
+    assert(!BIKE_BLE_MEAS_ParseCyclingPower(aPowerPositive,
+                                            sizeof(aPowerPositive), NULL));
 
     ucBatteryPercent = 0U;
     assert(BIKE_BLE_MEAS_ParseBatteryLevel(aBatteryValid,

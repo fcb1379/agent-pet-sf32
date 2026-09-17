@@ -7,6 +7,7 @@
 #define BIKE_BLE_AD_TYPE_SERVICE_DATA_UUID16 (0x16U)
 #define BIKE_BLE_UUID_HEART_RATE (0x180DU)
 #define BIKE_BLE_UUID_CSC (0x1816U)
+#define BIKE_BLE_UUID_CYCLING_POWER (0x1818U)
 
 /* BikeBleAdv_ServiceMaskFromUuid: 将标准 16 位服务 UUID 转为码表服务位。
  * 参数：
@@ -26,11 +27,15 @@ static uint8_t BikeBleAdv_ServiceMaskFromUuid(uint16_t usUuid)
     {
         ucMask = BIKE_BLE_SERVICE_CSC;
     }
+    else if (BIKE_BLE_UUID_CYCLING_POWER == usUuid)
+    {
+        ucMask = BIKE_BLE_SERVICE_POWER;
+    }
 
     return ucMask;
 }
 
-/* BIKE_BLE_ADV_GetServiceMask: 安全解析 BLE 广播 AD 结构中的 HR/CSC 服务。
+/* BIKE_BLE_ADV_GetServiceMask: 安全解析 BLE 广播 AD 结构中的骑行传感器服务。
  * 参数：
  *   - pData: 广播或扫描响应数据
  *   - usLength: 数据长度

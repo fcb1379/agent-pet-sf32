@@ -15,8 +15,8 @@
 #define LOG_LVL LOG_LVL_INFO
 #include <ulog.h>
 
-#define BIKE_BLE_GATT_SLOT_COUNT (4U)
-#define BIKE_BLE_GATT_BATTERY_SLOT_FIRST (2U)
+#define BIKE_BLE_GATT_SLOT_COUNT (6U)
+#define BIKE_BLE_GATT_BATTERY_SLOT_FIRST (3U)
 #define BIKE_BLE_GATT_INVALID_CONN_INDEX (0xFFU)
 #define BIKE_BLE_GATT_SERVICE_BATTERY (0x80U)
 
@@ -62,7 +62,7 @@ typedef struct _BIKE_BLE_GATT_SLOT
     uint16_t usCccdHandle;
 } BIKE_BLE_GATT_SLOT;
 
-/* l_aBikeBleGattSlots: HR、CSC 各一槽，BAS 按连接固定两槽。 */
+/* l_aBikeBleGattSlots: HR、CSC、Power 各一槽，BAS 按连接固定三槽。 */
 static BIKE_BLE_GATT_SLOT l_aBikeBleGattSlots[BIKE_BLE_GATT_SLOT_COUNT];
 
 /* l_pBikeBleGattReadyCallback: service 就绪或失败回调。 */
@@ -73,6 +73,9 @@ static BIKE_BLE_GATT_HEART_RATE_CALLBACK l_pBikeBleGattHeartRateCallback;
 
 /* l_pBikeBleGattCscCallback: 已校验 CSC 测量回调。 */
 static BIKE_BLE_GATT_CSC_CALLBACK l_pBikeBleGattCscCallback;
+
+/* l_pBikeBleGattPowerCallback: 已校验骑行功率测量回调。 */
+static BIKE_BLE_GATT_POWER_CALLBACK l_pBikeBleGattPowerCallback;
 
 /* l_pBikeBleGattBatteryCallback: 已校验传感器电量回调。 */
 static BIKE_BLE_GATT_BATTERY_CALLBACK l_pBikeBleGattBatteryCallback;
@@ -177,6 +180,12 @@ static bool BikeBleGatt_GetUuid(uint8_t ucServiceMask, uint16_t *pServiceUuid,
     {
         *pServiceUuid = ATT_UUID_16(ATT_SVC_CYCLING_SPEED_CADENCE);
         *pValueUuid = ATT_UUID_16(ATT_CHAR_CSC_MEAS);
+        return true;
+    }
+    if (BIKE_BLE_SERVICE_POWER == ucServiceMask)
+    {
+        *pServiceUuid = ATT_UUID_16(ATT_SVC_CYCLING_POWER);
+        *pValueUuid = ATT_UUID_16(ATT_CHAR_CP_MEAS);
         return true;
     }
     if (BIKE_BLE_GATT_SERVICE_BATTERY == ucServiceMask)
@@ -707,6 +716,7 @@ static int BikeBleGatt_RemoteEventHandler(uint16_t usEventId, uint8_t *pData,
         for (ucIndex = 0U; ucIndex < BIKE_BLE_GATT_SLOT_COUNT; ucIndex++)
         {
             uint16_t usHeartRateBpm;
+            int16_t sPowerWatts;
             uint8_t ucBatteryPercent;
             bool bDataState;
             BIKE_CSC_MEASUREMENT tMeasurement;
@@ -740,6 +750,15 @@ static int BikeBleGatt_RemoteEventHandler(uint16_t usEventId, uint8_t *pData,
                      (NULL != l_pBikeBleGattCscCallback))
             {
                 l_pBikeBleGattCscCallback(pSlot->ucConnIndex, &tMeasurement);
+            }
+            else if ((BIKE_BLE_SERVICE_POWER == pSlot->ucServiceMask) &&
+                     BIKE_BLE_MEAS_ParseCyclingPower(pIndication->value,
+                                                     pIndication->length,
+                                                     &sPowerWatts) &&
+                     (NULL != l_pBikeBleGattPowerCallback))
+            {
+                l_pBikeBleGattPowerCallback(pSlot->ucConnIndex,
+                                            sPowerWatts);
             }
             else if ((BIKE_BLE_GATT_SERVICE_BATTERY ==
                       pSlot->ucServiceMask) &&
@@ -819,21 +838,24 @@ static int BikeBleGatt_EventHandler(uint16_t usEventId, uint8_t *pData,
 }
 BLE_EVENT_REGISTER(BikeBleGatt_EventHandler, NULL);
 
-/* BIKE_BLE_GATT_Init: 初始化 HR/CSC 与按连接 BAS 的固定服务槽。
+/* BIKE_BLE_GATT_Init: 初始化骑行传感器与按连接 BAS 的固定服务槽。
  * 参数：
  *   - pReadyCallback: service 就绪/失败回调
  *   - pHeartRateCallback: 心率测量回调
  *   - pCscCallback: CSC 测量回调
+ *   - pPowerCallback: 骑行功率测量回调
  *   - pBatteryCallback: BAS 电量回调
  * 返回值：参数有效返回 true，否则返回 false
  */
 bool BIKE_BLE_GATT_Init(BIKE_BLE_GATT_READY_CALLBACK pReadyCallback,
                         BIKE_BLE_GATT_HEART_RATE_CALLBACK pHeartRateCallback,
                         BIKE_BLE_GATT_CSC_CALLBACK pCscCallback,
+                        BIKE_BLE_GATT_POWER_CALLBACK pPowerCallback,
                         BIKE_BLE_GATT_BATTERY_CALLBACK pBatteryCallback)
 {
     if ((NULL == pReadyCallback) || (NULL == pHeartRateCallback) ||
-        (NULL == pCscCallback) || (NULL == pBatteryCallback))
+        (NULL == pCscCallback) || (NULL == pPowerCallback) ||
+        (NULL == pBatteryCallback))
     {
         return false;
     }
@@ -841,12 +863,17 @@ bool BIKE_BLE_GATT_Init(BIKE_BLE_GATT_READY_CALLBACK pReadyCallback,
                           BIKE_BLE_SERVICE_HEART_RATE);
     BikeBleGatt_ResetSlot(&l_aBikeBleGattSlots[1], BIKE_BLE_SERVICE_CSC);
     BikeBleGatt_ResetSlot(&l_aBikeBleGattSlots[2],
-                          BIKE_BLE_GATT_SERVICE_BATTERY);
+                          BIKE_BLE_SERVICE_POWER);
     BikeBleGatt_ResetSlot(&l_aBikeBleGattSlots[3],
+                          BIKE_BLE_GATT_SERVICE_BATTERY);
+    BikeBleGatt_ResetSlot(&l_aBikeBleGattSlots[4],
+                          BIKE_BLE_GATT_SERVICE_BATTERY);
+    BikeBleGatt_ResetSlot(&l_aBikeBleGattSlots[5],
                           BIKE_BLE_GATT_SERVICE_BATTERY);
     l_pBikeBleGattReadyCallback = pReadyCallback;
     l_pBikeBleGattHeartRateCallback = pHeartRateCallback;
     l_pBikeBleGattCscCallback = pCscCallback;
+    l_pBikeBleGattPowerCallback = pPowerCallback;
     l_pBikeBleGattBatteryCallback = pBatteryCallback;
     l_bBikeBleGattReady = true;
 
@@ -866,7 +893,8 @@ bool BIKE_BLE_GATT_Attach(uint8_t ucConnIndex, uint8_t ucServiceMask)
     uint8_t ucMask;
     uint8_t ucSupportedMask;
 
-    ucSupportedMask = BIKE_BLE_SERVICE_HEART_RATE | BIKE_BLE_SERVICE_CSC;
+    ucSupportedMask = BIKE_BLE_SERVICE_HEART_RATE | BIKE_BLE_SERVICE_CSC |
+                      BIKE_BLE_SERVICE_POWER;
     if ((!l_bBikeBleGattReady) ||
         (BIKE_BLE_GATT_INVALID_CONN_INDEX == ucConnIndex) ||
         (0U == ucServiceMask) ||
@@ -880,7 +908,7 @@ bool BIKE_BLE_GATT_Attach(uint8_t ucConnIndex, uint8_t ucServiceMask)
         return false;
     }
     for (ucMask = BIKE_BLE_SERVICE_HEART_RATE;
-         ucMask <= BIKE_BLE_SERVICE_CSC; ucMask <<= 1U)
+         ucMask <= BIKE_BLE_SERVICE_POWER; ucMask <<= 1U)
     {
         if (0U == (ucServiceMask & ucMask))
         {
@@ -894,7 +922,7 @@ bool BIKE_BLE_GATT_Attach(uint8_t ucConnIndex, uint8_t ucServiceMask)
         }
     }
     for (ucMask = BIKE_BLE_SERVICE_HEART_RATE;
-         ucMask <= BIKE_BLE_SERVICE_CSC; ucMask <<= 1U)
+         ucMask <= BIKE_BLE_SERVICE_POWER; ucMask <<= 1U)
     {
         if (0U == (ucServiceMask & ucMask))
         {

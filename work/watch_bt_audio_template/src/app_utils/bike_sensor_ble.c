@@ -44,6 +44,7 @@
 #define BIKE_SENSOR_BLE_PEER_VERSION (1U)
 #define BIKE_SENSOR_BLE_PEER_KEY_HEART_RATE "hr_peer"
 #define BIKE_SENSOR_BLE_PEER_KEY_CSC "csc_peer"
+#define BIKE_SENSOR_BLE_PEER_KEY_POWER "power_peer"
 
 /* BIKE_SENSOR_BLE_EVENT: 连接管理线程接收的固定事件。 */
 typedef enum _BIKE_SENSOR_BLE_EVENT
@@ -93,8 +94,10 @@ typedef struct _BIKE_SENSOR_BLE_MANAGER
     bool bPendingFromScan;
     bool bHeartRatePeerKnown;
     bool bCscPeerKnown;
+    bool bPowerPeerKnown;
     uint8_t ucHeartRateConnIndex;
     uint8_t ucCscConnIndex;
+    uint8_t ucPowerConnIndex;
     uint8_t ucPendingServiceMask;
     uint8_t ucKnownAttemptMask;
     int8_t cPendingRssi;
@@ -102,6 +105,7 @@ typedef struct _BIKE_SENSOR_BLE_MANAGER
     uint32_t ulConnectionAttemptCount;
     ble_gap_addr_t tHeartRateAddress;
     ble_gap_addr_t tCscAddress;
+    ble_gap_addr_t tPowerAddress;
     ble_gap_addr_t tPendingAddress;
 } BIKE_SENSOR_BLE_MANAGER;
 
@@ -377,6 +381,17 @@ static void BikeSensorBle_LoadPeers(BIKE_SENSOR_BLE_MANAGER *pManager)
         BikeSensorBle_AddressFromPeer(&tPeer, &pManager->tCscAddress);
         pManager->bCscPeerKnown = true;
     }
+
+    (void)memset(&tPeer, 0, sizeof(tPeer));
+    lLength = share_prefs_get_block(l_pBikeSensorPrefs,
+                                    BIKE_SENSOR_BLE_PEER_KEY_POWER,
+                                    &tPeer, sizeof(tPeer));
+    if ((int32_t)sizeof(tPeer) == lLength &&
+        BikeSensorBle_PeerValid(&tPeer, BIKE_BLE_SERVICE_POWER))
+    {
+        BikeSensorBle_AddressFromPeer(&tPeer, &pManager->tPowerAddress);
+        pManager->bPowerPeerKnown = true;
+    }
 #else
     (void)pManager;
 #endif
@@ -422,6 +437,16 @@ static void BikeSensorBle_SavePeer(const ble_gap_addr_t *pAddress,
             LOG_E("save CSC peer failed: %d", eResult);
         }
     }
+    if (0U != (ucServiceMask & BIKE_BLE_SERVICE_POWER))
+    {
+        eResult = share_prefs_set_block(l_pBikeSensorPrefs,
+                                        BIKE_SENSOR_BLE_PEER_KEY_POWER,
+                                        &tPeer, sizeof(tPeer));
+        if (RT_EOK != eResult)
+        {
+            LOG_E("save power peer failed: %d", eResult);
+        }
+    }
 #else
     (void)pAddress;
     (void)ucServiceMask;
@@ -451,6 +476,12 @@ static void BikeSensorBle_RemovePeers(void)
         if ((RT_EOK != eResult) && (-RT_ERROR != eResult))
         {
             LOG_W("remove CSC peer failed: %d", eResult);
+        }
+        eResult = share_prefs_remove(l_pBikeSensorPrefs,
+                                     BIKE_SENSOR_BLE_PEER_KEY_POWER);
+        if ((RT_EOK != eResult) && (-RT_ERROR != eResult))
+        {
+            LOG_W("remove power peer failed: %d", eResult);
         }
     }
 #endif
@@ -500,8 +531,11 @@ static void BikeSensorBle_PublishManager(const BIKE_SENSOR_BLE_MANAGER *pManager
         (BIKE_SENSOR_BLE_INVALID_CONN_INDEX != pManager->ucHeartRateConnIndex);
     l_tBikeSensorSnapshot.bCscConnected =
         (BIKE_SENSOR_BLE_INVALID_CONN_INDEX != pManager->ucCscConnIndex);
+    l_tBikeSensorSnapshot.bPowerConnected =
+        (BIKE_SENSOR_BLE_INVALID_CONN_INDEX != pManager->ucPowerConnIndex);
     l_tBikeSensorSnapshot.ucHeartRateConnIndex = pManager->ucHeartRateConnIndex;
     l_tBikeSensorSnapshot.ucCscConnIndex = pManager->ucCscConnIndex;
+    l_tBikeSensorSnapshot.ucPowerConnIndex = pManager->ucPowerConnIndex;
     l_tBikeSensorSnapshot.cLastRssi = pManager->cPendingRssi;
     l_tBikeSensorSnapshot.ulConnectionAttemptCount =
         pManager->ulConnectionAttemptCount;
@@ -531,6 +565,10 @@ static uint8_t BikeSensorBle_GetNeededMask(const BIKE_SENSOR_BLE_MANAGER *pManag
     if (BIKE_SENSOR_BLE_INVALID_CONN_INDEX == pManager->ucCscConnIndex)
     {
         ucMask |= BIKE_BLE_SERVICE_CSC;
+    }
+    if (BIKE_SENSOR_BLE_INVALID_CONN_INDEX == pManager->ucPowerConnIndex)
+    {
+        ucMask |= BIKE_BLE_SERVICE_POWER;
     }
 
     return ucMask;
@@ -574,7 +612,9 @@ static rt_int32_t BikeSensorBle_GetWaitTicks(
         ((0U != (ucNeededMask & BIKE_BLE_SERVICE_HEART_RATE)) &&
          pManager->bHeartRatePeerKnown) ||
         ((0U != (ucNeededMask & BIKE_BLE_SERVICE_CSC)) &&
-         pManager->bCscPeerKnown);
+         pManager->bCscPeerKnown) ||
+        ((0U != (ucNeededMask & BIKE_BLE_SERVICE_POWER)) &&
+         pManager->bPowerPeerKnown);
     if ((!pManager->bScanRequested) && (!bKnownPeerNeeded))
     {
         return RT_WAITING_FOREVER;
@@ -692,6 +732,110 @@ static bool BikeSensorBle_StartConnection(BIKE_SENSOR_BLE_MANAGER *pManager,
 
     return true;
 }
+
+/* BikeSensorBle_GetConnectionForAddress: 查找目标地址已有的传感器连接。
+ * 参数：
+ *   - pManager: 连接管理状态
+ *   - pAddress: 目标地址
+ * 返回值：SDK 连接索引；未找到时返回 0xFF
+ */
+static uint8_t BikeSensorBle_GetConnectionForAddress(
+    const BIKE_SENSOR_BLE_MANAGER *pManager, const ble_gap_addr_t *pAddress)
+{
+    if ((NULL == pManager) || (NULL == pAddress))
+    {
+        return BIKE_SENSOR_BLE_INVALID_CONN_INDEX;
+    }
+    if ((BIKE_SENSOR_BLE_INVALID_CONN_INDEX !=
+         pManager->ucHeartRateConnIndex) &&
+        BikeSensorBle_AddressEqual(&pManager->tHeartRateAddress, pAddress))
+    {
+        return pManager->ucHeartRateConnIndex;
+    }
+    if ((BIKE_SENSOR_BLE_INVALID_CONN_INDEX != pManager->ucCscConnIndex) &&
+        BikeSensorBle_AddressEqual(&pManager->tCscAddress, pAddress))
+    {
+        return pManager->ucCscConnIndex;
+    }
+    if ((BIKE_SENSOR_BLE_INVALID_CONN_INDEX != pManager->ucPowerConnIndex) &&
+        BikeSensorBle_AddressEqual(&pManager->tPowerAddress, pAddress))
+    {
+        return pManager->ucPowerConnIndex;
+    }
+
+    return BIKE_SENSOR_BLE_INVALID_CONN_INDEX;
+}
+
+/* BikeSensorBle_AssignServiceMask: 将服务位绑定到一个已建立连接。
+ * 参数：
+ *   - pManager: 连接管理状态
+ *   - pAddress: 传感器地址
+ *   - ucConnIndex: SDK 连接索引
+ *   - ucServiceMask: 需要绑定的服务位
+ * 返回值：无
+ */
+static void BikeSensorBle_AssignServiceMask(BIKE_SENSOR_BLE_MANAGER *pManager,
+                                             const ble_gap_addr_t *pAddress,
+                                             uint8_t ucConnIndex,
+                                             uint8_t ucServiceMask)
+{
+    if ((NULL == pManager) || (NULL == pAddress))
+    {
+        return;
+    }
+    if (0U != (ucServiceMask & BIKE_BLE_SERVICE_HEART_RATE))
+    {
+        pManager->ucHeartRateConnIndex = ucConnIndex;
+        pManager->tHeartRateAddress = *pAddress;
+        pManager->bHeartRatePeerKnown = true;
+    }
+    if (0U != (ucServiceMask & BIKE_BLE_SERVICE_CSC))
+    {
+        pManager->ucCscConnIndex = ucConnIndex;
+        pManager->tCscAddress = *pAddress;
+        pManager->bCscPeerKnown = true;
+    }
+    if (0U != (ucServiceMask & BIKE_BLE_SERVICE_POWER))
+    {
+        pManager->ucPowerConnIndex = ucConnIndex;
+        pManager->tPowerAddress = *pAddress;
+        pManager->bPowerPeerKnown = true;
+    }
+
+    return;
+}
+
+/* BikeSensorBle_TryAttachExisting: 在同地址已有链路上增加传感器服务。
+ * 参数：
+ *   - pManager: 连接管理状态
+ *   - pAddress: 目标地址
+ *   - ucServiceMask: 待增加的单个服务位
+ * 返回值：已处理同地址链路返回 true，否则返回 false
+ */
+static bool BikeSensorBle_TryAttachExisting(BIKE_SENSOR_BLE_MANAGER *pManager,
+                                             const ble_gap_addr_t *pAddress,
+                                             uint8_t ucServiceMask)
+{
+    uint8_t ucConnIndex;
+
+    ucConnIndex = BikeSensorBle_GetConnectionForAddress(pManager, pAddress);
+    if (BIKE_SENSOR_BLE_INVALID_CONN_INDEX == ucConnIndex)
+    {
+        return false;
+    }
+    BikeSensorBle_AssignServiceMask(pManager, pAddress, ucConnIndex,
+                                    ucServiceMask);
+    BikeSensorBle_SavePeer(pAddress, ucServiceMask);
+    BikeSensorBle_PublishManager(pManager);
+    if (!BIKE_BLE_GATT_Attach(ucConnIndex, ucServiceMask))
+    {
+        LOG_E("GATT add service failed conn=%u mask=0x%02x",
+              ucConnIndex, ucServiceMask);
+        connection_manager_disconnect(ucConnIndex);
+    }
+
+    return true;
+}
 #endif
 
 #ifdef BSP_BLE_SIBLES
@@ -766,6 +910,35 @@ static void BikeSensorBle_HandleCsc(
     return;
 }
 
+/* BikeSensorBle_HandlePower: 提交项目 GATT 客户端已校验的功率通知。
+ * 参数：
+ *   - ucConnIndex: 通知所属连接
+ *   - sPowerWatts: 瞬时功率，单位 W
+ * 返回值：无
+ */
+static void BikeSensorBle_HandlePower(uint8_t ucConnIndex,
+                                      int16_t sPowerWatts)
+{
+    if (!BikeSensorBle_Lock())
+    {
+        BikeSensorBle_CountDroppedEvent();
+        return;
+    }
+    if (ucConnIndex != l_tBikeSensorSnapshot.ucPowerConnIndex)
+    {
+        BikeSensorBle_Unlock();
+        return;
+    }
+
+    l_tBikeSensorSnapshot.sPowerWatts = sPowerWatts;
+    l_tBikeSensorSnapshot.ulPowerUpdateMs =
+        (uint32_t)rt_tick_get_millisecond();
+    l_tBikeSensorSnapshot.bPowerValid = true;
+    BikeSensorBle_Unlock();
+
+    return;
+}
+
 /* BikeSensorBle_HandleBattery: 将 BAS 电量写入同一连接对应的传感器槽。
  * 参数：
  *   - ucConnIndex: 电量所属连接
@@ -797,6 +970,12 @@ static void BikeSensorBle_HandleBattery(uint8_t ucConnIndex,
     {
         l_tBikeSensorSnapshot.ucCscBatteryPercent = ucBatteryPercent;
         l_tBikeSensorSnapshot.bCscBatteryValid = true;
+        bMatched = true;
+    }
+    if (ucConnIndex == l_tBikeSensorSnapshot.ucPowerConnIndex)
+    {
+        l_tBikeSensorSnapshot.ucPowerBatteryPercent = ucBatteryPercent;
+        l_tBikeSensorSnapshot.bPowerBatteryValid = true;
         bMatched = true;
     }
     BikeSensorBle_Unlock();
@@ -862,6 +1041,29 @@ static void BikeSensorBle_TryNextAction(BIKE_SENSOR_BLE_MANAGER *pManager)
 
     if ((0U != (ucMask & BIKE_BLE_SERVICE_HEART_RATE)) &&
         pManager->bHeartRatePeerKnown &&
+        BikeSensorBle_TryAttachExisting(pManager,
+                                        &pManager->tHeartRateAddress,
+                                        BIKE_BLE_SERVICE_HEART_RATE))
+    {
+        return;
+    }
+    if ((0U != (ucMask & BIKE_BLE_SERVICE_CSC)) &&
+        pManager->bCscPeerKnown &&
+        BikeSensorBle_TryAttachExisting(pManager, &pManager->tCscAddress,
+                                        BIKE_BLE_SERVICE_CSC))
+    {
+        return;
+    }
+    if ((0U != (ucMask & BIKE_BLE_SERVICE_POWER)) &&
+        pManager->bPowerPeerKnown &&
+        BikeSensorBle_TryAttachExisting(pManager, &pManager->tPowerAddress,
+                                        BIKE_BLE_SERVICE_POWER))
+    {
+        return;
+    }
+
+    if ((0U != (ucMask & BIKE_BLE_SERVICE_HEART_RATE)) &&
+        pManager->bHeartRatePeerKnown &&
         (0U == (pManager->ucKnownAttemptMask & BIKE_BLE_SERVICE_HEART_RATE)))
     {
         ucMask = BIKE_BLE_SERVICE_HEART_RATE;
@@ -871,6 +1073,13 @@ static void BikeSensorBle_TryNextAction(BIKE_SENSOR_BLE_MANAGER *pManager)
                                        &pManager->tCscAddress))
         {
             ucMask |= BIKE_BLE_SERVICE_CSC;
+        }
+        if ((BIKE_SENSOR_BLE_INVALID_CONN_INDEX ==
+             pManager->ucPowerConnIndex) && pManager->bPowerPeerKnown &&
+            BikeSensorBle_AddressEqual(&pManager->tHeartRateAddress,
+                                       &pManager->tPowerAddress))
+        {
+            ucMask |= BIKE_BLE_SERVICE_POWER;
         }
         pManager->ucKnownAttemptMask |= ucMask;
         pManager->bPendingFromScan = false;
@@ -882,10 +1091,29 @@ static void BikeSensorBle_TryNextAction(BIKE_SENSOR_BLE_MANAGER *pManager)
     if ((0U != (ucMask & BIKE_BLE_SERVICE_CSC)) && pManager->bCscPeerKnown &&
         (0U == (pManager->ucKnownAttemptMask & BIKE_BLE_SERVICE_CSC)))
     {
-        pManager->ucKnownAttemptMask |= BIKE_BLE_SERVICE_CSC;
+        ucMask = BIKE_BLE_SERVICE_CSC;
+        if ((BIKE_SENSOR_BLE_INVALID_CONN_INDEX ==
+             pManager->ucPowerConnIndex) && pManager->bPowerPeerKnown &&
+            BikeSensorBle_AddressEqual(&pManager->tCscAddress,
+                                       &pManager->tPowerAddress))
+        {
+            ucMask |= BIKE_BLE_SERVICE_POWER;
+        }
+        pManager->ucKnownAttemptMask |= ucMask;
         pManager->bPendingFromScan = false;
         (void)BikeSensorBle_StartConnection(pManager, &pManager->tCscAddress,
-                                            BIKE_BLE_SERVICE_CSC, -127);
+                                            ucMask, -127);
+        return;
+    }
+    if ((0U != (ucMask & BIKE_BLE_SERVICE_POWER)) &&
+        pManager->bPowerPeerKnown &&
+        (0U == (pManager->ucKnownAttemptMask & BIKE_BLE_SERVICE_POWER)))
+    {
+        pManager->ucKnownAttemptMask |= BIKE_BLE_SERVICE_POWER;
+        pManager->bPendingFromScan = false;
+        (void)BikeSensorBle_StartConnection(pManager,
+                                            &pManager->tPowerAddress,
+                                            BIKE_BLE_SERVICE_POWER, -127);
         return;
     }
 
@@ -920,18 +1148,8 @@ static void BikeSensorBle_AssignConnection(BIKE_SENSOR_BLE_MANAGER *pManager,
     }
 
     ucMask = pManager->ucPendingServiceMask & BikeSensorBle_GetNeededMask(pManager);
-    if (0U != (ucMask & BIKE_BLE_SERVICE_HEART_RATE))
-    {
-        pManager->ucHeartRateConnIndex = pMessage->ucConnIndex;
-        pManager->tHeartRateAddress = pMessage->tAddress;
-        pManager->bHeartRatePeerKnown = true;
-    }
-    if (0U != (ucMask & BIKE_BLE_SERVICE_CSC))
-    {
-        pManager->ucCscConnIndex = pMessage->ucConnIndex;
-        pManager->tCscAddress = pMessage->tAddress;
-        pManager->bCscPeerKnown = true;
-    }
+    BikeSensorBle_AssignServiceMask(pManager, &pMessage->tAddress,
+                                    pMessage->ucConnIndex, ucMask);
     pManager->bConnecting = false;
     pManager->bCandidatePending = false;
     pManager->ucKnownAttemptMask &= (uint8_t)(~ucMask);
@@ -974,6 +1192,7 @@ static void BikeSensorBle_HandleAdvertisement(BIKE_SENSOR_BLE_MANAGER *pManager,
                                               const BIKE_SENSOR_BLE_MESSAGE *pMessage)
 {
     uint8_t ucMask;
+    uint8_t ucConnIndex;
     uint8_t ucResult;
 
     if ((NULL == pManager) || (NULL == pMessage) || (!pManager->bScanning) ||
@@ -988,42 +1207,17 @@ static void BikeSensorBle_HandleAdvertisement(BIKE_SENSOR_BLE_MANAGER *pManager,
         return;
     }
 
-    if ((BIKE_SENSOR_BLE_INVALID_CONN_INDEX != pManager->ucHeartRateConnIndex) &&
-        BikeSensorBle_AddressEqual(&pManager->tHeartRateAddress,
-                                   &pMessage->tAddress))
+    ucConnIndex = BikeSensorBle_GetConnectionForAddress(
+        pManager, &pMessage->tAddress);
+    if (BIKE_SENSOR_BLE_INVALID_CONN_INDEX != ucConnIndex)
     {
-        if (0U != (ucMask & BIKE_BLE_SERVICE_CSC))
+        BikeSensorBle_AssignServiceMask(pManager, &pMessage->tAddress,
+                                        ucConnIndex, ucMask);
+        BikeSensorBle_SavePeer(&pMessage->tAddress, ucMask);
+        BikeSensorBle_PublishManager(pManager);
+        if (!BIKE_BLE_GATT_Attach(ucConnIndex, ucMask))
         {
-            pManager->ucCscConnIndex = pManager->ucHeartRateConnIndex;
-            pManager->tCscAddress = pMessage->tAddress;
-            pManager->bCscPeerKnown = true;
-            BikeSensorBle_SavePeer(&pMessage->tAddress, BIKE_BLE_SERVICE_CSC);
-            BikeSensorBle_PublishManager(pManager);
-            if (!BIKE_BLE_GATT_Attach(pManager->ucHeartRateConnIndex,
-                                      BIKE_BLE_SERVICE_CSC))
-            {
-                connection_manager_disconnect(
-                    pManager->ucHeartRateConnIndex);
-            }
-        }
-        return;
-    }
-    if ((BIKE_SENSOR_BLE_INVALID_CONN_INDEX != pManager->ucCscConnIndex) &&
-        BikeSensorBle_AddressEqual(&pManager->tCscAddress, &pMessage->tAddress))
-    {
-        if (0U != (ucMask & BIKE_BLE_SERVICE_HEART_RATE))
-        {
-            pManager->ucHeartRateConnIndex = pManager->ucCscConnIndex;
-            pManager->tHeartRateAddress = pMessage->tAddress;
-            pManager->bHeartRatePeerKnown = true;
-            BikeSensorBle_SavePeer(&pMessage->tAddress,
-                                   BIKE_BLE_SERVICE_HEART_RATE);
-            BikeSensorBle_PublishManager(pManager);
-            if (!BIKE_BLE_GATT_Attach(pManager->ucCscConnIndex,
-                                      BIKE_BLE_SERVICE_HEART_RATE))
-            {
-                connection_manager_disconnect(pManager->ucCscConnIndex);
-            }
+            connection_manager_disconnect(ucConnIndex);
         }
         return;
     }
@@ -1072,6 +1266,11 @@ static void BikeSensorBle_HandleDisconnect(BIKE_SENSOR_BLE_MANAGER *pManager,
         pManager->ucCscConnIndex = BIKE_SENSOR_BLE_INVALID_CONN_INDEX;
         ucDisconnectedMask |= BIKE_BLE_SERVICE_CSC;
     }
+    if (pManager->ucPowerConnIndex == ucConnIndex)
+    {
+        pManager->ucPowerConnIndex = BIKE_SENSOR_BLE_INVALID_CONN_INDEX;
+        ucDisconnectedMask |= BIKE_BLE_SERVICE_POWER;
+    }
     if (0U == ucDisconnectedMask)
     {
         return;
@@ -1101,6 +1300,14 @@ static void BikeSensorBle_HandleDisconnect(BIKE_SENSOR_BLE_MANAGER *pManager,
             l_tBikeSensorSnapshot.ulCscUpdateMs = 0U;
             BIKE_CSC_Init(&l_tBikeCscState);
         }
+        if (0U != (ucDisconnectedMask & BIKE_BLE_SERVICE_POWER))
+        {
+            l_tBikeSensorSnapshot.bPowerValid = false;
+            l_tBikeSensorSnapshot.bPowerBatteryValid = false;
+            l_tBikeSensorSnapshot.sPowerWatts = 0;
+            l_tBikeSensorSnapshot.ucPowerBatteryPercent = 0U;
+            l_tBikeSensorSnapshot.ulPowerUpdateMs = 0U;
+        }
         BikeSensorBle_Unlock();
     }
     BikeSensorBle_PublishManager(pManager);
@@ -1119,6 +1326,7 @@ static void BikeSensorBle_ClearManagerPeers(BIKE_SENSOR_BLE_MANAGER *pManager)
 {
     uint8_t ucHeartRateIndex;
     uint8_t ucCscIndex;
+    uint8_t ucPowerIndex;
 
     if (NULL == pManager)
     {
@@ -1126,6 +1334,7 @@ static void BikeSensorBle_ClearManagerPeers(BIKE_SENSOR_BLE_MANAGER *pManager)
     }
     ucHeartRateIndex = pManager->ucHeartRateConnIndex;
     ucCscIndex = pManager->ucCscConnIndex;
+    ucPowerIndex = pManager->ucPowerConnIndex;
     if (BIKE_SENSOR_BLE_INVALID_CONN_INDEX != ucHeartRateIndex)
     {
         BIKE_BLE_GATT_Detach(ucHeartRateIndex);
@@ -1137,10 +1346,18 @@ static void BikeSensorBle_ClearManagerPeers(BIKE_SENSOR_BLE_MANAGER *pManager)
         BIKE_BLE_GATT_Detach(ucCscIndex);
         connection_manager_disconnect(ucCscIndex);
     }
+    if ((BIKE_SENSOR_BLE_INVALID_CONN_INDEX != ucPowerIndex) &&
+        (ucHeartRateIndex != ucPowerIndex) && (ucCscIndex != ucPowerIndex))
+    {
+        BIKE_BLE_GATT_Detach(ucPowerIndex);
+        connection_manager_disconnect(ucPowerIndex);
+    }
     pManager->ucHeartRateConnIndex = BIKE_SENSOR_BLE_INVALID_CONN_INDEX;
     pManager->ucCscConnIndex = BIKE_SENSOR_BLE_INVALID_CONN_INDEX;
+    pManager->ucPowerConnIndex = BIKE_SENSOR_BLE_INVALID_CONN_INDEX;
     pManager->bHeartRatePeerKnown = false;
     pManager->bCscPeerKnown = false;
+    pManager->bPowerPeerKnown = false;
     pManager->ucKnownAttemptMask = 0U;
     pManager->ulNextActionMs = (uint32_t)rt_tick_get_millisecond();
     if (BikeSensorBle_LockForever())
@@ -1150,13 +1367,18 @@ static void BikeSensorBle_ClearManagerPeers(BIKE_SENSOR_BLE_MANAGER *pManager)
         l_tBikeSensorSnapshot.bCadenceValid = false;
         l_tBikeSensorSnapshot.bHeartRateBatteryValid = false;
         l_tBikeSensorSnapshot.bCscBatteryValid = false;
+        l_tBikeSensorSnapshot.bPowerValid = false;
+        l_tBikeSensorSnapshot.bPowerBatteryValid = false;
         l_tBikeSensorSnapshot.usHeartRateBpm = 0U;
         l_tBikeSensorSnapshot.usWheelSpeedCentiKph = 0U;
         l_tBikeSensorSnapshot.usCadenceRpm = 0U;
+        l_tBikeSensorSnapshot.sPowerWatts = 0;
         l_tBikeSensorSnapshot.ucHeartRateBatteryPercent = 0U;
         l_tBikeSensorSnapshot.ucCscBatteryPercent = 0U;
+        l_tBikeSensorSnapshot.ucPowerBatteryPercent = 0U;
         l_tBikeSensorSnapshot.ulHeartRateUpdateMs = 0U;
         l_tBikeSensorSnapshot.ulCscUpdateMs = 0U;
+        l_tBikeSensorSnapshot.ulPowerUpdateMs = 0U;
         BIKE_CSC_Init(&l_tBikeCscState);
         BikeSensorBle_Unlock();
     }
@@ -1503,10 +1725,12 @@ bool BIKE_SENSOR_BLE_Init(void)
     l_tBikeSensorSnapshot.ucHeartRateConnIndex =
         BIKE_SENSOR_BLE_INVALID_CONN_INDEX;
     l_tBikeSensorSnapshot.ucCscConnIndex = BIKE_SENSOR_BLE_INVALID_CONN_INDEX;
+    l_tBikeSensorSnapshot.ucPowerConnIndex = BIKE_SENSOR_BLE_INVALID_CONN_INDEX;
     l_tBikeSensorSnapshot.cLastRssi = -127;
     l_tBikeSensorManager.ucHeartRateConnIndex =
         BIKE_SENSOR_BLE_INVALID_CONN_INDEX;
     l_tBikeSensorManager.ucCscConnIndex = BIKE_SENSOR_BLE_INVALID_CONN_INDEX;
+    l_tBikeSensorManager.ucPowerConnIndex = BIKE_SENSOR_BLE_INVALID_CONN_INDEX;
     l_tBikeSensorManager.cPendingRssi = -127;
     BIKE_CSC_Init(&l_tBikeCscState);
     eResult = rt_mutex_init(&l_tBikeSensorMutex, "bike_ble", RT_IPC_FLAG_FIFO);
@@ -1528,6 +1752,7 @@ bool BIKE_SENSOR_BLE_Init(void)
     if (!BIKE_BLE_GATT_Init(BikeSensorBle_HandleGattReady,
                             BikeSensorBle_HandleHeartRate,
                             BikeSensorBle_HandleCsc,
+                            BikeSensorBle_HandlePower,
                             BikeSensorBle_HandleBattery))
     {
         LOG_E("GATT client init failed");
@@ -1603,11 +1828,17 @@ bool BIKE_SENSOR_BLE_GetSnapshot(BIKE_SENSOR_BLE_SNAPSHOT *pSnapshot)
         pSnapshot->bWheelSpeedValid = false;
         pSnapshot->bCadenceValid = false;
     }
+    if ((0U == pSnapshot->ulPowerUpdateMs) ||
+        (BIKE_SENSOR_BLE_TIMEOUT_MS <
+         (ulNowMs - pSnapshot->ulPowerUpdateMs)))
+    {
+        pSnapshot->bPowerValid = false;
+    }
 
     return true;
 }
 
-/* BIKE_SENSOR_BLE_RequestScan: 请求立即扫描未连接的 HR/CSC 传感器。
+/* BIKE_SENSOR_BLE_RequestScan: 请求立即扫描未连接的骑行传感器。
  * 返回值：事件入队成功返回 true，否则返回 false
  */
 bool BIKE_SENSOR_BLE_RequestScan(void)
@@ -1656,7 +1887,7 @@ static void BikeSensorBle_Command(int lArgumentCount, char **pArguments)
         bResult = BIKE_SENSOR_BLE_GetSnapshot(&tSnapshot);
         rt_kprintf("bike sensor ret=%u power=%u scan=%u connecting=%u "
                    "hr=%u/%u/%u hb=%u/%u csc=%u/%u/%u rpm=%u cb=%u/%u "
-                   "attempts=%lu "
+                   "cp=%u/%u/%d pb=%u/%u attempts=%lu "
                    "rssi=%d dropped=%lu\n",
                    bResult, tSnapshot.bPowerOn, tSnapshot.bScanning,
                    tSnapshot.bConnecting, tSnapshot.bHeartRateConnected,
@@ -1667,6 +1898,11 @@ static void BikeSensorBle_Command(int lArgumentCount, char **pArguments)
                    tSnapshot.usWheelSpeedCentiKph, tSnapshot.usCadenceRpm,
                    tSnapshot.bCscBatteryValid,
                    tSnapshot.ucCscBatteryPercent,
+                   tSnapshot.bPowerConnected,
+                   tSnapshot.ucPowerConnIndex,
+                   tSnapshot.sPowerWatts,
+                   tSnapshot.bPowerBatteryValid,
+                   tSnapshot.ucPowerBatteryPercent,
                    (unsigned long)tSnapshot.ulConnectionAttemptCount,
                    tSnapshot.cLastRssi,
                    (unsigned long)tSnapshot.ulDroppedEventCount);

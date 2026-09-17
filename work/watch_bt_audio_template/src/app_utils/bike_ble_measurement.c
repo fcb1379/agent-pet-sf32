@@ -8,6 +8,17 @@
 #define BIKE_BLE_HR_FLAG_RR_PRESENT (0x10U)
 #define BIKE_BLE_CSC_KNOWN_FLAGS (BIKE_CSC_WHEEL_DATA_PRESENT | \
                                   BIKE_CSC_CRANK_DATA_PRESENT)
+#define BIKE_BLE_POWER_KNOWN_FLAGS (0x1FFFU)
+#define BIKE_BLE_POWER_PEDAL_BALANCE (0x0001U)
+#define BIKE_BLE_POWER_ACCUMULATED_TORQUE (0x0004U)
+#define BIKE_BLE_POWER_WHEEL_REVOLUTIONS (0x0010U)
+#define BIKE_BLE_POWER_CRANK_REVOLUTIONS (0x0020U)
+#define BIKE_BLE_POWER_EXTREME_FORCE (0x0040U)
+#define BIKE_BLE_POWER_EXTREME_TORQUE (0x0080U)
+#define BIKE_BLE_POWER_EXTREME_ANGLES (0x0100U)
+#define BIKE_BLE_POWER_TOP_DEAD_SPOT (0x0200U)
+#define BIKE_BLE_POWER_BOTTOM_DEAD_SPOT (0x0400U)
+#define BIKE_BLE_POWER_ACCUMULATED_ENERGY (0x0800U)
 
 /* BikeBleMeas_Read16: 读取小端 16 位整数。
  * 参数：
@@ -142,6 +153,89 @@ bool BIKE_BLE_MEAS_ParseCsc(const uint8_t *pData, uint16_t usLength,
     }
 
     return usOffset == usLength;
+}
+
+/* BIKE_BLE_MEAS_ParseCyclingPower: 安全解析 Cycling Power Measurement。
+ * 参数：
+ *   - pData: GATT characteristic value
+ *   - usLength: 数据长度
+ *   - pPowerWatts: 输出瞬时功率，单位 W
+ * 返回值：完整且仅含标准字段返回 true，否则返回 false
+ */
+bool BIKE_BLE_MEAS_ParseCyclingPower(const uint8_t *pData,
+                                    uint16_t usLength,
+                                    int16_t *pPowerWatts)
+{
+    uint16_t usFlags;
+    uint16_t usOffset;
+    uint16_t usPowerRaw;
+    int32_t lPowerWatts;
+
+    if ((NULL == pData) || (NULL == pPowerWatts) || (4U > usLength))
+    {
+        return false;
+    }
+    usFlags = BikeBleMeas_Read16(pData);
+    if (0U != (usFlags & (uint16_t)(~BIKE_BLE_POWER_KNOWN_FLAGS)))
+    {
+        return false;
+    }
+
+    usOffset = 4U;
+    if (0U != (usFlags & BIKE_BLE_POWER_PEDAL_BALANCE))
+    {
+        usOffset = (uint16_t)(usOffset + 1U);
+    }
+    if (0U != (usFlags & BIKE_BLE_POWER_ACCUMULATED_TORQUE))
+    {
+        usOffset = (uint16_t)(usOffset + 2U);
+    }
+    if (0U != (usFlags & BIKE_BLE_POWER_WHEEL_REVOLUTIONS))
+    {
+        usOffset = (uint16_t)(usOffset + 6U);
+    }
+    if (0U != (usFlags & BIKE_BLE_POWER_CRANK_REVOLUTIONS))
+    {
+        usOffset = (uint16_t)(usOffset + 4U);
+    }
+    if (0U != (usFlags & BIKE_BLE_POWER_EXTREME_FORCE))
+    {
+        usOffset = (uint16_t)(usOffset + 4U);
+    }
+    if (0U != (usFlags & BIKE_BLE_POWER_EXTREME_TORQUE))
+    {
+        usOffset = (uint16_t)(usOffset + 4U);
+    }
+    if (0U != (usFlags & BIKE_BLE_POWER_EXTREME_ANGLES))
+    {
+        usOffset = (uint16_t)(usOffset + 3U);
+    }
+    if (0U != (usFlags & BIKE_BLE_POWER_TOP_DEAD_SPOT))
+    {
+        usOffset = (uint16_t)(usOffset + 2U);
+    }
+    if (0U != (usFlags & BIKE_BLE_POWER_BOTTOM_DEAD_SPOT))
+    {
+        usOffset = (uint16_t)(usOffset + 2U);
+    }
+    if (0U != (usFlags & BIKE_BLE_POWER_ACCUMULATED_ENERGY))
+    {
+        usOffset = (uint16_t)(usOffset + 2U);
+    }
+    if (usOffset != usLength)
+    {
+        return false;
+    }
+
+    usPowerRaw = BikeBleMeas_Read16(&pData[2]);
+    lPowerWatts = (int32_t)usPowerRaw;
+    if (INT16_MAX < usPowerRaw)
+    {
+        lPowerWatts -= 65536L;
+    }
+    *pPowerWatts = (int16_t)lPowerWatts;
+
+    return true;
 }
 
 /* BIKE_BLE_MEAS_ParseBatteryLevel: 校验标准 Battery Level 值。
