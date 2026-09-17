@@ -6,6 +6,9 @@ import os
 cwd = GetCurrentDir()
 src = ['main.c']
 
+if GetDepend('BIKE_COMPUTER'):
+    src += ['bike_nmea.c', 'bike_ride_model.c', 'bike_service.c']
+
 if GetDepend('BSP_BLE_SIBLES') and os.path.exists(os.path.join(cwd, 'ble_app.c')):
     src+=['ble_app.c']
 

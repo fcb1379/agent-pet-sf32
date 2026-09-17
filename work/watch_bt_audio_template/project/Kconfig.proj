@@ -12,6 +12,10 @@ config FREETYPE_TINY_FONT_FULL
     bool
     default y
 
+config BIKE_COMPUTER
+    bool "Enable X-TRACK based bike computer"
+    default y
+
 menu "app cache Memory configuration"   
 
 choice
