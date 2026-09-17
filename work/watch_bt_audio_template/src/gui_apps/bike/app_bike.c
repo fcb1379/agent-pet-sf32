@@ -278,7 +278,7 @@ static void BikeUi_Update(void)
         break;
 
     case BIKE_RIDE_MODE_PAUSED:
-        pRideState = "PAUSED";
+        pRideState = tSnapshot.bAutoPaused ? "AUTO PAUSED" : "PAUSED";
         break;
 
     case BIKE_RIDE_MODE_STOPPED:
@@ -320,7 +320,18 @@ static void BikeUi_Update(void)
                           (unsigned long)(ulAltitudeAbsoluteCm / 100U),
                           (unsigned long)((ulAltitudeAbsoluteCm % 100U) / 10U));
 
-    pStartText = (BIKE_RIDE_MODE_RUNNING == tSnapshot.tRide.eMode) ? "PAUSE" : "START";
+    if (BIKE_RIDE_MODE_RUNNING == tSnapshot.tRide.eMode)
+    {
+        pStartText = "PAUSE";
+    }
+    else if (BIKE_RIDE_MODE_PAUSED == tSnapshot.tRide.eMode)
+    {
+        pStartText = "RESUME";
+    }
+    else
+    {
+        pStartText = "START";
+    }
     lv_label_set_text(l_tBikeUi.pStartLabel, pStartText);
     lv_label_set_text(l_tBikeUi.pSummaryStartLabel, pStartText);
 

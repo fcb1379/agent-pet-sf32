@@ -8,6 +8,7 @@
 #include <unistd.h>
 
 #include "bike_gpx.h"
+#include "bike_auto_pause.h"
 #include "bike_nmea.h"
 #include "bike_ride_model.h"
 #include "bike_time.h"
@@ -171,6 +172,70 @@ static void Test_RideModel(void)
     return;
 }
 
+/* Test_AutoPause: 覆盖低速防抖、恢复回差、无效定位和手动暂停隔离。
+ * 返回值：无
+ */
+static void Test_AutoPause(void)
+{
+    BIKE_AUTO_PAUSE_CONTROLLER tController;
+    BIKE_AUTO_PAUSE_ACTION eAction;
+
+    BIKE_AUTO_PAUSE_Init(&tController);
+    eAction = BIKE_AUTO_PAUSE_Update(&tController, true, false,
+                                     BIKE_RIDE_MODE_RUNNING, true,
+                                     250U, 300U, 1000U);
+    assert(BIKE_AUTO_PAUSE_ACTION_NONE == eAction);
+    eAction = BIKE_AUTO_PAUSE_Update(&tController, true, false,
+                                     BIKE_RIDE_MODE_RUNNING, true,
+                                     250U, 300U, 5999U);
+    assert(BIKE_AUTO_PAUSE_ACTION_NONE == eAction);
+    eAction = BIKE_AUTO_PAUSE_Update(&tController, true, false,
+                                     BIKE_RIDE_MODE_RUNNING, true,
+                                     250U, 300U, 6000U);
+    assert(BIKE_AUTO_PAUSE_ACTION_PAUSE == eAction);
+
+    eAction = BIKE_AUTO_PAUSE_Update(&tController, true, true,
+                                     BIKE_RIDE_MODE_PAUSED, true,
+                                     350U, 300U, 7000U);
+    assert(BIKE_AUTO_PAUSE_ACTION_NONE == eAction);
+    eAction = BIKE_AUTO_PAUSE_Update(&tController, true, true,
+                                     BIKE_RIDE_MODE_PAUSED, true,
+                                     450U, 300U, 8000U);
+    assert(BIKE_AUTO_PAUSE_ACTION_NONE == eAction);
+    eAction = BIKE_AUTO_PAUSE_Update(&tController, true, true,
+                                     BIKE_RIDE_MODE_PAUSED, true,
+                                     450U, 300U, 9999U);
+    assert(BIKE_AUTO_PAUSE_ACTION_NONE == eAction);
+    eAction = BIKE_AUTO_PAUSE_Update(&tController, true, true,
+                                     BIKE_RIDE_MODE_PAUSED, true,
+                                     450U, 300U, 10000U);
+    assert(BIKE_AUTO_PAUSE_ACTION_RESUME == eAction);
+
+    eAction = BIKE_AUTO_PAUSE_Update(&tController, false, true,
+                                     BIKE_RIDE_MODE_PAUSED, false,
+                                     0U, 300U, 11000U);
+    assert(BIKE_AUTO_PAUSE_ACTION_RESUME == eAction);
+    eAction = BIKE_AUTO_PAUSE_Update(&tController, true, false,
+                                     BIKE_RIDE_MODE_PAUSED, true,
+                                     1000U, 300U, 12000U);
+    assert(BIKE_AUTO_PAUSE_ACTION_NONE == eAction);
+
+    eAction = BIKE_AUTO_PAUSE_Update(&tController, true, false,
+                                     BIKE_RIDE_MODE_RUNNING, true,
+                                     0U, 300U, UINT32_MAX - 2000U);
+    assert(BIKE_AUTO_PAUSE_ACTION_NONE == eAction);
+    eAction = BIKE_AUTO_PAUSE_Update(&tController, true, false,
+                                     BIKE_RIDE_MODE_RUNNING, false,
+                                     0U, 300U, UINT32_MAX - 1000U);
+    assert(BIKE_AUTO_PAUSE_ACTION_NONE == eAction);
+    eAction = BIKE_AUTO_PAUSE_Update(&tController, true, false,
+                                     BIKE_RIDE_MODE_RUNNING, true,
+                                     0U, 300U, 1000U);
+    assert(BIKE_AUTO_PAUSE_ACTION_NONE == eAction);
+
+    return;
+}
+
 /* Test_TimeConversion: 覆盖正负时区、跨年和闰日转换。
  * 返回值：无
  */
@@ -304,6 +369,7 @@ int main(void)
 {
     Test_NmeaParser();
     Test_RideModel();
+    Test_AutoPause();
     Test_TimeConversion();
     Test_GpxWriter();
     (void)printf("bike_core_test: PASS\n");
