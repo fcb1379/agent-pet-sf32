@@ -9,6 +9,7 @@
 
 #include "bike_gpx.h"
 #include "bike_auto_pause.h"
+#include "bike_ble_advertising.h"
 #include "bike_csc.h"
 #include "bike_nmea.h"
 #include "bike_ride_model.h"
@@ -286,6 +287,34 @@ static void Test_CscCalculation(void)
     return;
 }
 
+/* Test_BleAdvertising: 覆盖 HR/CSC UUID 列表、服务数据和畸形 AD 结构。
+ * 返回值：无
+ */
+static void Test_BleAdvertising(void)
+{
+    static const uint8_t aHeartRate[] = {3U, 0x03U, 0x0DU, 0x18U};
+    static const uint8_t aCombined[] = {
+        2U, 0x01U, 0x06U,
+        5U, 0x02U, 0x0DU, 0x18U, 0x16U, 0x18U
+    };
+    static const uint8_t aCscServiceData[] = {
+        5U, 0x16U, 0x16U, 0x18U, 0x01U, 0x02U
+    };
+    static const uint8_t aMalformed[] = {5U, 0x03U, 0x0DU, 0x18U};
+
+    assert(BIKE_BLE_SERVICE_HEART_RATE ==
+           BIKE_BLE_ADV_GetServiceMask(aHeartRate, sizeof(aHeartRate)));
+    assert((BIKE_BLE_SERVICE_HEART_RATE | BIKE_BLE_SERVICE_CSC) ==
+           BIKE_BLE_ADV_GetServiceMask(aCombined, sizeof(aCombined)));
+    assert(BIKE_BLE_SERVICE_CSC ==
+           BIKE_BLE_ADV_GetServiceMask(aCscServiceData,
+                                       sizeof(aCscServiceData)));
+    assert(0U == BIKE_BLE_ADV_GetServiceMask(aMalformed, sizeof(aMalformed)));
+    assert(0U == BIKE_BLE_ADV_GetServiceMask(NULL, 0U));
+
+    return;
+}
+
 /* Test_TimeConversion: 覆盖正负时区、跨年和闰日转换。
  * 返回值：无
  */
@@ -420,6 +449,7 @@ int main(void)
     Test_NmeaParser();
     Test_RideModel();
     Test_AutoPause();
+    Test_BleAdvertising();
     Test_CscCalculation();
     Test_TimeConversion();
     Test_GpxWriter();

@@ -451,7 +451,6 @@ static int ble_link_event_handler(uint16_t event_id, uint8_t *data, uint16_t len
 {
     ble_link_env_t *env = ble_link_env();
 
-    (void)len;
     (void)context;
 
     switch (event_id)
@@ -467,6 +466,17 @@ static int ble_link_event_handler(uint16_t event_id, uint8_t *data, uint16_t len
         ble_gap_connect_ind_t *ind = (ble_gap_connect_ind_t *)data;
         ble_gap_sec_req_t sec_req;
 
+        if ((NULL == data) || (sizeof(*ind) > len))
+        {
+            LOG_E("invalid connected event len=%u", len);
+            break;
+        }
+        if (1U != ind->role)
+        {
+            LOG_I("ignore sensor master link conn=%d", ind->conn_idx);
+            break;
+        }
+
         env->is_connected = 1;
         env->conn_idx = ind->conn_idx;
         env->conn_interval = ind->con_interval;
@@ -481,6 +491,16 @@ static int ble_link_event_handler(uint16_t event_id, uint8_t *data, uint16_t len
     case BLE_GAP_DISCONNECTED_IND:
     {
         ble_gap_disconnected_ind_t *ind = (ble_gap_disconnected_ind_t *)data;
+
+        if ((NULL == data) || (sizeof(*ind) > len))
+        {
+            LOG_E("invalid disconnected event len=%u", len);
+            break;
+        }
+        if ((!env->is_connected) || (env->conn_idx != ind->conn_idx))
+        {
+            break;
+        }
         env->is_connected = 0;
         env->notify_enabled = 0;
         rt_timer_stop(env->notify_timer);
@@ -490,6 +510,16 @@ static int ble_link_event_handler(uint16_t event_id, uint8_t *data, uint16_t len
     case SIBLES_MTU_EXCHANGE_IND:
     {
         sibles_mtu_exchange_ind_t *ind = (sibles_mtu_exchange_ind_t *)data;
+
+        if ((NULL == data) || (sizeof(*ind) > len))
+        {
+            LOG_E("invalid MTU event len=%u", len);
+            break;
+        }
+        if ((!env->is_connected) || (env->conn_idx != ind->conn_idx))
+        {
+            break;
+        }
         env->mtu = ind->mtu;
         LOG_I("BLE MTU=%d", env->mtu);
         break;

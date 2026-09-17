@@ -15,10 +15,15 @@ extern "C" {
  *   - bHeartRateValid: 心率在超时范围内有效
  *   - bWheelSpeedValid: CSC 轮速在超时范围内有效
  *   - bCadenceValid: CSC 踏频在超时范围内有效
+ *   - bPowerOn/bScanning/bConnecting: BLE 中央设备连接管理状态
+ *   - bHeartRateConnected/bCscConnected: 对应传感器链路状态
  *   - usHeartRateBpm: 心率，单位 bpm
  *   - usWheelSpeedCentiKph: CSC 轮速，单位 0.01 km/h
  *   - usCadenceRpm: 踏频，单位 rpm
+ *   - ucHeartRateConnIndex/ucCscConnIndex: SDK 连接索引，无连接时为 0xFF
+ *   - cLastRssi: 最近发现目标传感器的 RSSI
  *   - ulHeartRateUpdateMs/ulCscUpdateMs: 最近通知的单调时间戳
+ *   - ulConnectionAttemptCount: 启动以来连接尝试次数
  *   - ulDroppedEventCount: 互斥锁忙或事件长度错误时丢弃的事件数
  */
 typedef struct _BIKE_SENSOR_BLE_SNAPSHOT
@@ -26,16 +31,27 @@ typedef struct _BIKE_SENSOR_BLE_SNAPSHOT
     bool bHeartRateValid;
     bool bWheelSpeedValid;
     bool bCadenceValid;
+    bool bPowerOn;
+    bool bScanning;
+    bool bConnecting;
+    bool bHeartRateConnected;
+    bool bCscConnected;
     uint16_t usHeartRateBpm;
     uint16_t usWheelSpeedCentiKph;
     uint16_t usCadenceRpm;
+    uint8_t ucHeartRateConnIndex;
+    uint8_t ucCscConnIndex;
+    int8_t cLastRssi;
     uint32_t ulHeartRateUpdateMs;
     uint32_t ulCscUpdateMs;
+    uint32_t ulConnectionAttemptCount;
     uint32_t ulDroppedEventCount;
 } BIKE_SENSOR_BLE_SNAPSHOT;
 
 bool BIKE_SENSOR_BLE_Init(void);
 bool BIKE_SENSOR_BLE_GetSnapshot(BIKE_SENSOR_BLE_SNAPSHOT *pSnapshot);
+bool BIKE_SENSOR_BLE_RequestScan(void);
+bool BIKE_SENSOR_BLE_ClearPeers(void);
 
 #ifdef __cplusplus
 }
