@@ -1022,6 +1022,8 @@ static void Test_MapProjection(void)
     BIKE_MAP_POINT tGcjPoint;
     int32_t lMapLatitudeE7;
     int32_t lMapLongitudeE7;
+    uint32_t ulConvertedPixelX;
+    uint32_t ulConvertedPixelY;
     char aPath[64];
 
     assert(BIKE_MAP_Project(0, 0, 0U, &tPoint));
@@ -1061,6 +1063,25 @@ static void Test_MapProjection(void)
                                       &tGcjPoint));
     assert((tWgsPoint.ulPixelX != tGcjPoint.ulPixelX) ||
            (tWgsPoint.ulPixelY != tGcjPoint.ulPixelY));
+    assert(BIKE_MAP_ConvertPixelLevel(
+        tWgsPoint.ulPixelX, tWgsPoint.ulPixelY, 16U, 19U,
+        &ulConvertedPixelX, &ulConvertedPixelY));
+    assert((tWgsPoint.ulPixelX << 3U) == ulConvertedPixelX);
+    assert((tWgsPoint.ulPixelY << 3U) == ulConvertedPixelY);
+    assert(BIKE_MAP_ConvertPixelLevel(
+        ulConvertedPixelX, ulConvertedPixelY, 19U, 16U,
+        &ulConvertedPixelX, &ulConvertedPixelY));
+    assert(tWgsPoint.ulPixelX == ulConvertedPixelX);
+    assert(tWgsPoint.ulPixelY == ulConvertedPixelY);
+    assert(!BIKE_MAP_ConvertPixelLevel(
+        BIKE_MAP_TILE_SIZE_PX << 16U, tWgsPoint.ulPixelY, 16U, 19U,
+        &ulConvertedPixelX, &ulConvertedPixelY));
+    assert(!BIKE_MAP_ConvertPixelLevel(
+        tWgsPoint.ulPixelX, tWgsPoint.ulPixelY, 20U, 16U,
+        &ulConvertedPixelX, &ulConvertedPixelY));
+    assert(!BIKE_MAP_ConvertPixelLevel(
+        tWgsPoint.ulPixelX, tWgsPoint.ulPixelY, 16U, 19U,
+        NULL, &ulConvertedPixelY));
 
     assert(BIKE_MAP_ConvertCoordinate(488566000, 23522000,
                                       BIKE_MAP_COORDINATE_GCJ02,

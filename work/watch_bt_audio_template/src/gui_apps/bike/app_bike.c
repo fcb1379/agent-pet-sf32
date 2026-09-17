@@ -22,9 +22,21 @@
 #define BIKE_UI_MAP_ZOOM_DEFAULT (16U)
 #define BIKE_UI_MAP_ZOOM_MIN (3U)
 #define BIKE_UI_MAP_ZOOM_MAX (19U)
+#define BIKE_UI_MAP_TRACK_LEVEL (16U)
+#define BIKE_UI_MAP_TRACK_OFFSET_THRESHOLD_PX (2U)
 #define BIKE_UI_MAP_EXTENSION "bin"
 
 LV_IMG_DECLARE(img_workout);
+
+/* BIKE_UI_MAP_TRACK_POINT: 实时轨迹在固定缩放级别的全局像素坐标。
+ * 成员说明：
+ *   - ulPixelX/ulPixelY: BIKE_UI_MAP_TRACK_LEVEL 级全局像素坐标
+ */
+typedef struct _BIKE_UI_MAP_TRACK_POINT
+{
+    uint32_t ulPixelX;
+    uint32_t ulPixelY;
+} BIKE_UI_MAP_TRACK_POINT;
 
 /* BIKE_UI_CONTEXT: 码表主页面的静态 LVGL 对象引用。
  * 成员说明：
@@ -42,7 +54,7 @@ LV_IMG_DECLARE(img_workout);
  *   - pSummaryLabel: 骑行总结页文本
  *   - pMapContainer/apMapTiles: 离线地图瓦片容器和 3 x 3 固定瓦片
  *   - pMapTrackLine/pMapMarker: 实时轨迹线和当前位置标记
- *   - aMapTrackPoints/aMapLinePoints: 固定容量全局像素点和可见线段点
+ *   - aMapTrackPoints/aMapLinePoints: 固定级别轨迹点和可见线段点
  *   - bMapUseWgs84: 当前离线瓦片坐标系选择
  *   - pTimer: 500 ms UI 刷新定时器
  */
@@ -65,7 +77,7 @@ typedef struct _BIKE_UI_CONTEXT
     lv_obj_t *pMapTrackLine;
     lv_obj_t *pMapMarker;
     lv_obj_t *pMapStatusLabel;
-    BIKE_MAP_POINT aMapTrackPoints[BIKE_UI_MAP_TRACK_POINT_MAX];
+    BIKE_UI_MAP_TRACK_POINT aMapTrackPoints[BIKE_UI_MAP_TRACK_POINT_MAX];
     lv_point_t aMapLinePoints[BIKE_UI_MAP_TRACK_POINT_MAX];
     char aaMapTileSource[BIKE_UI_MAP_TILE_COUNT][BIKE_UI_MAP_PATH_MAX];
     uint32_t ulMapTrackPointCount;
@@ -180,6 +192,8 @@ static void BikeUi_MapRebuildLine(const BIKE_MAP_POINT *pCenter)
     int64_t dMapSize;
     int64_t dRelativeX;
     int64_t dRelativeY;
+    uint32_t ulTrackPixelX;
+    uint32_t ulTrackPixelY;
     uint32_t ulIndex;
     uint32_t ulVisibleCount;
 
@@ -195,8 +209,16 @@ static void BikeUi_MapRebuildLine(const BIKE_MAP_POINT *pCenter)
     ulVisibleCount = 0U;
     for (ulIndex = 0U; ulIndex < l_tBikeUi.ulMapTrackPointCount; ulIndex++)
     {
-        dRelativeX = (int64_t)l_tBikeUi.aMapTrackPoints[ulIndex].ulPixelX -
-                     dFirstPixelX;
+        if (!BIKE_MAP_ConvertPixelLevel(
+                l_tBikeUi.aMapTrackPoints[ulIndex].ulPixelX,
+                l_tBikeUi.aMapTrackPoints[ulIndex].ulPixelY,
+                BIKE_UI_MAP_TRACK_LEVEL, pCenter->ucZoom,
+                &ulTrackPixelX, &ulTrackPixelY))
+        {
+            ulVisibleCount = 0U;
+            continue;
+        }
+        dRelativeX = (int64_t)ulTrackPixelX - dFirstPixelX;
         if (0LL > dRelativeX)
         {
             dRelativeX += dMapSize;
@@ -205,8 +227,7 @@ static void BikeUi_MapRebuildLine(const BIKE_MAP_POINT *pCenter)
         {
             dRelativeX -= dMapSize;
         }
-        dRelativeY = (int64_t)l_tBikeUi.aMapTrackPoints[ulIndex].ulPixelY -
-                     dFirstPixelY;
+        dRelativeY = (int64_t)ulTrackPixelY - dFirstPixelY;
         if ((0LL <= dRelativeX) && (768LL > dRelativeX) &&
             (0LL <= dRelativeY) && (768LL > dRelativeY))
         {
@@ -243,7 +264,8 @@ static void BikeUi_MapRebuildLine(const BIKE_MAP_POINT *pCenter)
  */
 static void BikeUi_MapAppendTrack(const BIKE_MAP_POINT *pPoint)
 {
-    BIKE_MAP_POINT *pPrevious;
+    BIKE_UI_MAP_TRACK_POINT tTrackPoint;
+    BIKE_UI_MAP_TRACK_POINT *pPrevious;
     uint32_t ulReadIndex;
     uint32_t ulWriteIndex;
     uint32_t ulDeltaX;
@@ -253,17 +275,26 @@ static void BikeUi_MapAppendTrack(const BIKE_MAP_POINT *pPoint)
     {
         return;
     }
+    if (!BIKE_MAP_ConvertPixelLevel(pPoint->ulPixelX, pPoint->ulPixelY,
+                                    pPoint->ucZoom,
+                                    BIKE_UI_MAP_TRACK_LEVEL,
+                                    &tTrackPoint.ulPixelX,
+                                    &tTrackPoint.ulPixelY))
+    {
+        return;
+    }
     if (0U < l_tBikeUi.ulMapTrackPointCount)
     {
         pPrevious = &l_tBikeUi.aMapTrackPoints[
             l_tBikeUi.ulMapTrackPointCount - 1U];
-        ulDeltaX = (pPrevious->ulPixelX > pPoint->ulPixelX) ?
-                   (pPrevious->ulPixelX - pPoint->ulPixelX) :
-                   (pPoint->ulPixelX - pPrevious->ulPixelX);
-        ulDeltaY = (pPrevious->ulPixelY > pPoint->ulPixelY) ?
-                   (pPrevious->ulPixelY - pPoint->ulPixelY) :
-                   (pPoint->ulPixelY - pPrevious->ulPixelY);
-        if ((2U > ulDeltaX) && (2U > ulDeltaY))
+        ulDeltaX = (pPrevious->ulPixelX > tTrackPoint.ulPixelX) ?
+                   (pPrevious->ulPixelX - tTrackPoint.ulPixelX) :
+                   (tTrackPoint.ulPixelX - pPrevious->ulPixelX);
+        ulDeltaY = (pPrevious->ulPixelY > tTrackPoint.ulPixelY) ?
+                   (pPrevious->ulPixelY - tTrackPoint.ulPixelY) :
+                   (tTrackPoint.ulPixelY - pPrevious->ulPixelY);
+        if ((BIKE_UI_MAP_TRACK_OFFSET_THRESHOLD_PX > ulDeltaX) &&
+            (BIKE_UI_MAP_TRACK_OFFSET_THRESHOLD_PX > ulDeltaY))
         {
             return;
         }
@@ -281,7 +312,7 @@ static void BikeUi_MapAppendTrack(const BIKE_MAP_POINT *pPoint)
         }
         l_tBikeUi.ulMapTrackPointCount = ulWriteIndex;
     }
-    l_tBikeUi.aMapTrackPoints[l_tBikeUi.ulMapTrackPointCount] = *pPoint;
+    l_tBikeUi.aMapTrackPoints[l_tBikeUi.ulMapTrackPointCount] = tTrackPoint;
     l_tBikeUi.ulMapTrackPointCount++;
 
     return;
@@ -369,7 +400,7 @@ static void BikeUi_MapUpdate(const BIKE_SERVICE_SNAPSHOT *pSnapshot)
     return;
 }
 
-/* BikeUi_MapChangeZoom: 调整离线地图级别并清理不同级别的像素轨迹。
+/* BikeUi_MapChangeZoom: 调整离线地图级别并按固定级别轨迹重新投影。
  * 参数：
  *   - cDelta: 缩放级别增量，仅支持 -1 或 1
  * 返回值：无
@@ -385,7 +416,6 @@ static void BikeUi_MapChangeZoom(int8_t cDelta)
         l_tBikeUi.ucMapZoom = (uint8_t)sNewZoom;
         l_tBikeUi.bMapTilesLoaded = false;
         l_tBikeUi.ucMapLoadedCount = 0U;
-        BikeUi_MapClearTrack();
         BikeUi_Update();
     }
 

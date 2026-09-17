@@ -280,6 +280,53 @@ bool BIKE_MAP_ProjectCoordinate(int32_t lLatitudeE7, int32_t lLongitudeE7,
     return BIKE_MAP_Project(lMapLatitudeE7, lMapLongitudeE7, ucZoom, pPoint);
 }
 
+/* BIKE_MAP_ConvertPixelLevel: 在 Web Mercator 缩放级别之间转换像素坐标。
+ * 参数：
+ *   - ulSourcePixelX/ulSourcePixelY: 源缩放级别的全局像素坐标
+ *   - ucSourceZoom: 源缩放级别，范围 0~19
+ *   - ucDestinationZoom: 目标缩放级别，范围 0~19
+ *   - pDestinationPixelX/pDestinationPixelY: 目标全局像素坐标
+ * 返回值：转换成功返回 true，参数非法返回 false
+ */
+bool BIKE_MAP_ConvertPixelLevel(uint32_t ulSourcePixelX,
+                                uint32_t ulSourcePixelY,
+                                uint8_t ucSourceZoom,
+                                uint8_t ucDestinationZoom,
+                                uint32_t *pDestinationPixelX,
+                                uint32_t *pDestinationPixelY)
+{
+    uint32_t ulSourceMapSize;
+    uint8_t ucLevelDifference;
+
+    if ((NULL == pDestinationPixelX) ||
+        (NULL == pDestinationPixelY) ||
+        (BIKE_MAP_ZOOM_MAX < ucSourceZoom) ||
+        (BIKE_MAP_ZOOM_MAX < ucDestinationZoom))
+    {
+        return false;
+    }
+    ulSourceMapSize = BIKE_MAP_TILE_SIZE_PX << ucSourceZoom;
+    if ((ulSourceMapSize <= ulSourcePixelX) ||
+        (ulSourceMapSize <= ulSourcePixelY))
+    {
+        return false;
+    }
+    if (ucSourceZoom >= ucDestinationZoom)
+    {
+        ucLevelDifference = ucSourceZoom - ucDestinationZoom;
+        *pDestinationPixelX = ulSourcePixelX >> ucLevelDifference;
+        *pDestinationPixelY = ulSourcePixelY >> ucLevelDifference;
+    }
+    else
+    {
+        ucLevelDifference = ucDestinationZoom - ucSourceZoom;
+        *pDestinationPixelX = ulSourcePixelX << ucLevelDifference;
+        *pDestinationPixelY = ulSourcePixelY << ucLevelDifference;
+    }
+
+    return true;
+}
+
 /* BIKE_MAP_FormatTilePath: 生成 X-TRACK 兼容的 root/zoom/x/y.ext 瓦片路径。
  * 参数：
  *   - pRoot: 绝对根目录，例如 /MAP

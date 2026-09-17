@@ -48,6 +48,12 @@ bool BIKE_MAP_ProjectCoordinate(int32_t lLatitudeE7, int32_t lLongitudeE7,
                                 uint8_t ucZoom,
                                 BIKE_MAP_COORDINATE_SYSTEM eCoordinateSystem,
                                 BIKE_MAP_POINT *pPoint);
+bool BIKE_MAP_ConvertPixelLevel(uint32_t ulSourcePixelX,
+                                uint32_t ulSourcePixelY,
+                                uint8_t ucSourceZoom,
+                                uint8_t ucDestinationZoom,
+                                uint32_t *pDestinationPixelX,
+                                uint32_t *pDestinationPixelY);
 bool BIKE_MAP_FormatTilePath(const char *pRoot, uint8_t ucZoom,
                              uint32_t ulTileX, uint32_t ulTileY,
                              const char *pExtension, char *pPath,
