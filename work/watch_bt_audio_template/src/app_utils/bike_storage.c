@@ -1,6 +1,7 @@
 #include "bike_storage.h"
 
 #include <stdio.h>
+#include <string.h>
 #include <sys/stat.h>
 
 #ifndef BIKE_STORAGE_HOST_BUILD
@@ -172,6 +173,90 @@ const char *BIKE_STORAGE_GetTrackDirectory(void)
 const char *BIKE_STORAGE_GetMapRoot(void)
 {
     return BIKE_STORAGE_SelectMapRoot(l_bBikeTfMounted);
+}
+
+/* BIKE_STORAGE_IsMapDirectoryValid: 校验当前介质内的地图逻辑绝对路径。
+ * 路径必须以单个斜杠开头，支持多级 ASCII 字母、数字、下划线和连字符，
+ * 禁止根目录、尾随/连续斜杠、点号和路径穿越。
+ * 参数：
+ *   - pDirectory: 待校验的逻辑路径
+ * 返回值：路径可安全拼接到当前介质挂载点时返回 true
+ */
+bool BIKE_STORAGE_IsMapDirectoryValid(const char *pDirectory)
+{
+    size_t ulIndex;
+    bool bComponentHasCharacter;
+    char cValue;
+
+    if ((NULL == pDirectory) || ('/' != pDirectory[0]))
+    {
+        return false;
+    }
+    bComponentHasCharacter = false;
+    for (ulIndex = 1U; ulIndex < BIKE_STORAGE_MAP_DIRECTORY_MAX; ulIndex++)
+    {
+        cValue = pDirectory[ulIndex];
+        if ('\0' == cValue)
+        {
+            return bComponentHasCharacter;
+        }
+        if ('/' == cValue)
+        {
+            if (!bComponentHasCharacter)
+            {
+                return false;
+            }
+            bComponentHasCharacter = false;
+        }
+        else if ((('a' <= cValue) && ('z' >= cValue)) ||
+                 (('A' <= cValue) && ('Z' >= cValue)) ||
+                 (('0' <= cValue) && ('9' >= cValue)) ||
+                 ('_' == cValue) || ('-' == cValue))
+        {
+            bComponentHasCharacter = true;
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+    return false;
+}
+
+/* BIKE_STORAGE_FormatMapRoot: 将地图逻辑路径解析为当前介质实际路径。
+ * 参数：
+ *   - bTfMounted: TF 卡是否挂载到 /sd
+ *   - pDirectory: 当前介质内的逻辑绝对路径
+ *   - pMapRoot: 输出实际地图根目录
+ *   - ulMapRootSize: 输出缓冲容量
+ * 返回值：路径合法且完整写入返回 true，否则返回 false
+ */
+bool BIKE_STORAGE_FormatMapRoot(bool bTfMounted, const char *pDirectory,
+                                char *pMapRoot, size_t ulMapRootSize)
+{
+    int lWrittenLength;
+
+    if ((NULL == pMapRoot) || (0U == ulMapRootSize))
+    {
+        return false;
+    }
+    pMapRoot[0] = '\0';
+    if (!BIKE_STORAGE_IsMapDirectoryValid(pDirectory))
+    {
+        return false;
+    }
+    lWrittenLength = snprintf(pMapRoot, ulMapRootSize, "%s%s",
+                              bTfMounted ? BIKE_STORAGE_TF_MOUNT_POINT : "",
+                              pDirectory);
+    if ((0 > lWrittenLength) ||
+        (ulMapRootSize <= (size_t)lWrittenLength))
+    {
+        pMapRoot[0] = '\0';
+        return false;
+    }
+
+    return true;
 }
 
 /* BIKE_STORAGE_FindMapZoomRange: 扫描地图根目录下实际存在的缩放目录。

@@ -262,6 +262,50 @@ static void Test_MapZoomRange(void)
     return;
 }
 
+/* Test_MapDirectory: 覆盖多地图源逻辑路径校验和 TF 挂载点解析。
+ * 返回值：无
+ */
+static void Test_MapDirectory(void)
+{
+    char aMapRoot[BIKE_STORAGE_MAP_ROOT_MAX];
+    char aLongDirectory[BIKE_STORAGE_MAP_DIRECTORY_MAX + 1U];
+
+    assert(BIKE_STORAGE_IsMapDirectoryValid("/MAP"));
+    assert(BIKE_STORAGE_IsMapDirectoryValid("/MAP_CN/beijing-2026"));
+    assert(!BIKE_STORAGE_IsMapDirectoryValid(NULL));
+    assert(!BIKE_STORAGE_IsMapDirectoryValid(""));
+    assert(!BIKE_STORAGE_IsMapDirectoryValid("/"));
+    assert(!BIKE_STORAGE_IsMapDirectoryValid("MAP"));
+    assert(!BIKE_STORAGE_IsMapDirectoryValid("/MAP/"));
+    assert(!BIKE_STORAGE_IsMapDirectoryValid("/MAP//city"));
+    assert(!BIKE_STORAGE_IsMapDirectoryValid("/MAP/../city"));
+    assert(!BIKE_STORAGE_IsMapDirectoryValid("/MAP.cn"));
+    (void)memset(aLongDirectory, 'A', sizeof(aLongDirectory));
+    aLongDirectory[0] = '/';
+    aLongDirectory[BIKE_STORAGE_MAP_DIRECTORY_MAX - 1U] = '\0';
+    assert(BIKE_STORAGE_IsMapDirectoryValid(aLongDirectory));
+    aLongDirectory[BIKE_STORAGE_MAP_DIRECTORY_MAX - 1U] = 'A';
+    aLongDirectory[sizeof(aLongDirectory) - 1U] = '\0';
+    assert(!BIKE_STORAGE_IsMapDirectoryValid(aLongDirectory));
+
+    assert(BIKE_STORAGE_FormatMapRoot(false, "/MAP", aMapRoot,
+                                      sizeof(aMapRoot)));
+    assert(0 == strcmp("/MAP", aMapRoot));
+    assert(BIKE_STORAGE_FormatMapRoot(true, "/MAP_CN/beijing-2026",
+                                      aMapRoot, sizeof(aMapRoot)));
+    assert(0 == strcmp("/sd/MAP_CN/beijing-2026", aMapRoot));
+    assert(!BIKE_STORAGE_FormatMapRoot(true, "../MAP", aMapRoot,
+                                       sizeof(aMapRoot)));
+    assert('\0' == aMapRoot[0]);
+    assert(!BIKE_STORAGE_FormatMapRoot(true, "/MAP", aMapRoot, 4U));
+    assert('\0' == aMapRoot[0]);
+    assert(!BIKE_STORAGE_FormatMapRoot(true, "/MAP", NULL,
+                                       sizeof(aMapRoot)));
+    assert(!BIKE_STORAGE_FormatMapRoot(true, "/MAP", aMapRoot, 0U));
+
+    return;
+}
+
 /* Test_WriteAll: 向测试文件完整写入指定数据。
  * 参数：
  *   - lFileDescriptor: 已打开的测试文件描述符
@@ -1434,6 +1478,7 @@ int main(void)
     Test_PedometerAccumulator();
     Test_StoragePaths();
     Test_MapZoomRange();
+    Test_MapDirectory();
     Test_MapImageLoader();
     Test_NmeaParser();
     Test_RideModel();

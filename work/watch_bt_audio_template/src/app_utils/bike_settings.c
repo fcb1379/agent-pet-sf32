@@ -39,6 +39,7 @@
 #define BIKE_SETTINGS_KEY_BRIGHTNESS "brightness"
 #define BIKE_SETTINGS_KEY_SCREEN_TIMEOUT "screen_sec"
 #define BIKE_SETTINGS_KEY_MAP_WGS84 "map_wgs84"
+#define BIKE_SETTINGS_KEY_MAP_DIRECTORY "map_dir"
 
 /* l_aBikeSettingsPrefName: FlashDB 命名空间，数组固定 32 字节以规避 SDK
  * share_prefs_open 固定读取 31 字节时越过短字符串结尾。
@@ -154,6 +155,10 @@ static bool BikeSettings_ParseInt32(const char *pText, int32_t *pValue)
  */
 rt_err_t BIKE_SETTINGS_Init(void)
 {
+#ifdef BSP_SHARE_PREFS
+    char aStoredMapDirectory[BIKE_STORAGE_MAP_DIRECTORY_MAX];
+    int32_t lMapDirectoryLength;
+#endif
     rt_err_t eResult;
 
     if (l_bBikeSettingsReady)
@@ -179,6 +184,9 @@ rt_err_t BIKE_SETTINGS_Init(void)
     l_tBikeSettings.ucBrightnessPercent = BIKE_SETTINGS_DEFAULT_BRIGHTNESS_PERCENT;
     l_tBikeSettings.bAutoPauseEnabled = false;
     l_tBikeSettings.bMapUseWgs84 = BIKE_SETTINGS_DEFAULT_MAP_USE_WGS84;
+    (void)memcpy(l_tBikeSettings.aMapDirectory,
+                 BIKE_SETTINGS_DEFAULT_MAP_DIRECTORY,
+                 sizeof(BIKE_SETTINGS_DEFAULT_MAP_DIRECTORY));
 
 #ifdef BSP_SHARE_PREFS
     l_pBikeSettingsPrefs = share_prefs_open(l_aBikeSettingsPrefName,
@@ -222,11 +230,27 @@ rt_err_t BIKE_SETTINGS_Init(void)
         l_tBikeSettings.bMapUseWgs84 = (0 != share_prefs_get_int(
             l_pBikeSettingsPrefs, BIKE_SETTINGS_KEY_MAP_WGS84,
             l_tBikeSettings.bMapUseWgs84 ? 1 : 0));
+        lMapDirectoryLength = share_prefs_get_string(
+            l_pBikeSettingsPrefs, BIKE_SETTINGS_KEY_MAP_DIRECTORY,
+            aStoredMapDirectory, sizeof(aStoredMapDirectory) - 1U);
+        if ((0 < lMapDirectoryLength) &&
+            ((int32_t)sizeof(aStoredMapDirectory) > lMapDirectoryLength))
+        {
+            aStoredMapDirectory[lMapDirectoryLength] = '\0';
+            if (BIKE_STORAGE_IsMapDirectoryValid(aStoredMapDirectory))
+            {
+                (void)memset(l_tBikeSettings.aMapDirectory, 0,
+                             sizeof(l_tBikeSettings.aMapDirectory));
+                (void)memcpy(l_tBikeSettings.aMapDirectory,
+                             aStoredMapDirectory,
+                             (size_t)lMapDirectoryLength + 1U);
+            }
+        }
     }
 #endif
 
     l_bBikeSettingsReady = true;
-    LOG_I("ready storage=%u timezone=%d wheel=%u weight=%u auto=%u/%u display=%u/%u map=%u",
+    LOG_I("ready storage=%u timezone=%d wheel=%u weight=%u auto=%u/%u display=%u/%u map=%u/%s",
           l_tBikeSettings.bStorageReady, l_tBikeSettings.sTimeZoneMinutes,
           l_tBikeSettings.usWheelCircumferenceMm,
           l_tBikeSettings.ucRiderWeightKg,
@@ -234,7 +258,8 @@ rt_err_t BIKE_SETTINGS_Init(void)
           l_tBikeSettings.usAutoPauseCentiKph,
           l_tBikeSettings.ucBrightnessPercent,
           l_tBikeSettings.usScreenTimeoutSeconds,
-          l_tBikeSettings.bMapUseWgs84);
+          l_tBikeSettings.bMapUseWgs84,
+          l_tBikeSettings.aMapDirectory);
 
     return RT_EOK;
 }
@@ -506,6 +531,54 @@ rt_err_t BIKE_SETTINGS_SetMapUseWgs84(bool bUseWgs84)
     return eResult;
 }
 
+/* BIKE_SETTINGS_SetMapDirectory: 更新并保存当前介质内的地图逻辑路径。
+ * 参数：
+ *   - pDirectory: 以斜杠开头的安全逻辑绝对路径
+ * 返回值：保存成功返回 RT_EOK，参数或存储错误返回错误码
+ */
+rt_err_t BIKE_SETTINGS_SetMapDirectory(const char *pDirectory)
+{
+    size_t ulLength;
+    rt_err_t eResult;
+
+    if (!BIKE_STORAGE_IsMapDirectoryValid(pDirectory))
+    {
+        return -RT_EINVAL;
+    }
+    eResult = BIKE_SETTINGS_Init();
+    if (RT_EOK != eResult)
+    {
+        return eResult;
+    }
+    ulLength = strlen(pDirectory);
+    eResult = rt_mutex_take(&l_tBikeSettingsMutex, RT_WAITING_FOREVER);
+    if (RT_EOK == eResult)
+    {
+#ifdef BSP_SHARE_PREFS
+        if (NULL != l_pBikeSettingsPrefs)
+        {
+            eResult = share_prefs_set_string(l_pBikeSettingsPrefs,
+                                             BIKE_SETTINGS_KEY_MAP_DIRECTORY,
+                                             pDirectory);
+        }
+        else
+#endif
+        {
+            eResult = -RT_ERROR;
+        }
+        if (RT_EOK == eResult)
+        {
+            (void)memset(l_tBikeSettings.aMapDirectory, 0,
+                         sizeof(l_tBikeSettings.aMapDirectory));
+            (void)memcpy(l_tBikeSettings.aMapDirectory, pDirectory,
+                         ulLength + 1U);
+        }
+        BikeSettings_Unlock();
+    }
+
+    return eResult;
+}
+
 /* BikeSettings_Command: 查询或修改码表持久化设置。
  * 参数：
  *   - lArgumentCount: shell 参数数量
@@ -524,14 +597,17 @@ static void BikeSettings_Command(int lArgumentCount, char **pArguments)
         (void)memset(&tSnapshot, 0, sizeof(tSnapshot));
         eResult = BIKE_SETTINGS_GetSnapshot(&tSnapshot);
         rt_kprintf("bike settings ret=%d storage=%u timezone=%d wheel=%u weight=%u "
-                   "auto=%u threshold=%u brightness=%u screen=%u map_wgs84=%u\n",
+                   "auto=%u threshold=%u brightness=%u screen=%u map_wgs84=%u "
+                   "map_dir=%s\n",
                    eResult, tSnapshot.bStorageReady, tSnapshot.sTimeZoneMinutes,
                    tSnapshot.usWheelCircumferenceMm,
                    tSnapshot.ucRiderWeightKg, tSnapshot.bAutoPauseEnabled,
                    tSnapshot.usAutoPauseCentiKph, tSnapshot.ucBrightnessPercent,
-                   tSnapshot.usScreenTimeoutSeconds, tSnapshot.bMapUseWgs84);
+                   tSnapshot.usScreenTimeoutSeconds, tSnapshot.bMapUseWgs84,
+                   tSnapshot.aMapDirectory);
         rt_kprintf("usage: bikeset timezone <min> | wheel <mm> | weight <kg> | "
-                   "map <0|1> | autopause <0|1> <centi-kph> | "
+                   "map <0|1> | mapdir </path> | "
+                   "autopause <0|1> <centi-kph> | "
                    "display <1-100> <sec>\n");
         return;
     }
@@ -561,6 +637,11 @@ static void BikeSettings_Command(int lArgumentCount, char **pArguments)
         {
             eResult = BIKE_SETTINGS_SetMapUseWgs84(1 == lFirstValue);
         }
+    }
+    else if ((3 == lArgumentCount) &&
+             (0 == strcmp(pArguments[1], "mapdir")))
+    {
+        eResult = BIKE_SETTINGS_SetMapDirectory(pArguments[2]);
     }
     else if ((4 == lArgumentCount) &&
              BikeSettings_ParseInt32(pArguments[2], &lFirstValue) &&
