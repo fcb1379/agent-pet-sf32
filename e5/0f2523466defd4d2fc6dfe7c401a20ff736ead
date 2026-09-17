@@ -1,0 +1,20 @@
+docs/bike-computer-build-report.md
+  s_8e23440d3d99c8::t_4c83d66e0ecc6f 16,162
+  s_8e23440d3d99c8::t_9317e228b01687 111,116,124,151-152
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e50f2523466defd4d2fc6dfe7c401a20ff736ead",
+  "prompts": {},
+  "sessions": {
+    "s_8e23440d3d99c8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ad75-ee73-78f0-b559-493bc936de00",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}
