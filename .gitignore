@@ -32,4 +32,5 @@ ImgBurnList.ini
 # Local diagnostics and temporary artifacts
 work/diagnostics/
 work/sifli-check/
+tmp/
 *.log
