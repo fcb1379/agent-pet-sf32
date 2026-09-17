@@ -262,6 +262,8 @@ static void Test_PedometerAccumulator(void)
  */
 static void Test_StoragePaths(void)
 {
+    BIKE_STORAGE_INFO tInfo;
+
     assert(0 == strcmp("/tracks",
                        BIKE_STORAGE_SelectTrackDirectory(false)));
     assert(0 == strcmp("/sd/tracks",
@@ -273,6 +275,14 @@ static void Test_StoragePaths(void)
     assert(!BIKE_STORAGE_IsTfMounted());
     assert(0 == strcmp("/tracks", BIKE_STORAGE_GetTrackDirectory()));
     assert(0 == strcmp("/MAP", BIKE_STORAGE_GetMapRoot()));
+    assert(BIKE_STORAGE_GetInfo(&tInfo));
+    assert(tInfo.bAvailable);
+    assert(BIKE_STORAGE_MEDIUM_INTERNAL == tInfo.eMedium);
+    assert(0U < tInfo.udTotalBytes);
+    assert(tInfo.udFreeBytes <= tInfo.udTotalBytes);
+    assert(0U == tInfo.ulQueryErrorCount);
+    assert(BIKE_STORAGE_RefreshInfo());
+    assert(!BIKE_STORAGE_GetInfo(NULL));
 
     return;
 }

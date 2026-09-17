@@ -97,7 +97,7 @@ gcc -Wall -Wextra -Werror -fanalyzer -c ...
 - 地图源配置覆盖内部介质/TF 挂载点解析、多级合法路径、路径穿越、连续/尾随斜杠、非法字符、超长输入、输出缓冲截断，以及扩展名空值、非法字符和 1~7 位长度边界。
 - 地图箭头主题覆盖 `default/light/dark` 完整匹配、稳定名称、大小写错误、尾随字符、空字符串和空指针拒绝。
 - 历史累计模型覆盖空记录、多次骑行合并、最高速度保留、校验和损坏以及 A/B 槽选择/全损坏回退。
-- 存储路径选择覆盖 TF 优先和内部文件系统回退；地图目录扫描覆盖合法最小/最大缩放级别、越界/非数字目录、同名普通文件、空目录、缺失目录和空指针保护；主机测试不执行目标板挂载操作。
+- 存储路径选择覆盖 TF 优先和内部文件系统回退，容量快照覆盖介质类型、总/剩余字节关系、重新查询和空指针保护；地图目录扫描覆盖合法最小/最大缩放级别、越界/非数字目录、同名普通文件、空目录、缺失目录和空指针保护；主机测试使用本机文件系统，不执行目标板挂载操作。
 - 计步累计覆盖首帧基线、正常递增、异常跳变重同步、传感器计数复位、16 位自然回绕、32 位饱和和空指针保护；主机测试不访问 I2C。
 - 磁力计覆盖 X/Y 极值和中心偏移、校准进度、最少样本门限、四象限 0~359.9 度航向、样本计数饱和和空指针保护；主机测试不访问 I2C。
 - 电池模型覆盖 3.3/4.1 V 百分比边界、四分之一权重低通、2% 回差、0/100% 边界更新、无效电压和空指针保护；主机测试不访问 ADC/charger。
@@ -118,12 +118,12 @@ scons: done building targets.
 
 | 产物 | 大小 |
 |---|---:|
-| `main.bin` | 3,341,116 bytes |
+| `main.bin` | 3,341,852 bytes |
 | `fs_root.bin` | 4,194,304 bytes |
 
 完整重构建输出 SDK 既有的 FlashDB/LVGL/音频等静态告警，以及 `dfu` 分区未定义和 ftab 入口符号警告；新增 `bike_*` 模块在 `-Werror` 主机测试中无告警，且目标编译成功。生成配置已确认 `CONFIG_BSP_USING_UART3=y`、`CONFIG_BSP_UART3_RX_USING_DMA=y`，未启用 UART2 或 USB Device/Host；同时启用 `CONFIG_BSP_USING_SPI1=y`、`CONFIG_RT_USING_SPI_MSD=y`、`CONFIG_RT_USING_SENSOR=y`、`CONFIG_ACC_USING_LSM6DSL=y`、仅 `CONFIG_PKG_USING_LSM6DSL_STEP=y`，以及 `CONFIG_RT_USING_ADC=y`、`CONFIG_BSP_USING_ADC1=y`、`CONFIG_BSP_BATTERY_DETECT_ADC="bat1"`、`CONFIG_BSP_BATTERY_DETECT_ADC_CHANNEL=7`；加速度/陀螺仪 RT-Thread 设备未启用。
 
-HCPU ELF 汇总为 `.text=3,333,593 bytes`、`.data=7,492 bytes`、`.bss=4,150,880 bytes`。其中地图新增的 1,179,648 bytes 固定像素缓冲位于 `0x601db5c0` 的 PSRAM 非缓存段，不占用片上 SRAM。目标编译已实际生成 `lsm6dsl.o`、`lsm6dsl_reg.o`、`st_lsm6dsl_sensor_v1.o`、`sensor.o`、`drv_adc.o`、`bike_pedometer.o`、`bike_compass.o`、`bike_power.o`、`bike_sound.o` 和 `bike_map_image.o`。
+HCPU ELF 汇总为 `.text=3,334,329 bytes`、`.data=7,492 bytes`、`.bss=4,150,952 bytes`。其中地图的 1,179,648 bytes 固定像素缓冲位于 PSRAM 非缓存段，不占用片上 SRAM。目标编译已实际生成 `lsm6dsl.o`、`lsm6dsl_reg.o`、`st_lsm6dsl_sensor_v1.o`、`sensor.o`、`drv_adc.o`、`bike_pedometer.o`、`bike_compass.o`、`bike_power.o`、`bike_sound.o`、`bike_storage.o` 和 `bike_map_image.o`。
 
 ## 4. 资源占用
 
@@ -131,7 +131,7 @@ HCPU ELF 链接结果：
 
 | 区域 | 当前占用 | 链接容量 | 余量 |
 |---|---:|---:|---:|
-| 片上 SRAM 地址范围 | 356,172 bytes | 523,264 bytes | 167,092 bytes |
+| 片上 SRAM 地址范围 | 356,244 bytes | 523,264 bytes | 167,020 bytes |
 | PSRAM 可写段 | 3,828,720 bytes | 8,388,608 bytes | 4,559,888 bytes |
 
 码表新增对象文件在链接前的直接占用：
@@ -155,19 +155,19 @@ HCPU ELF 链接结果：
 | `bike_pedometer.o` | 1,299 bytes | 2,253 bytes |
 | `bike_sound.o` | 1,427 bytes | 2,937 bytes |
 | `bike_power.o` | 1,321 bytes | 1,747 bytes |
-| `bike_storage.o` | 977 bytes | 2 bytes |
-| `bike_recorder.o` | 1,301 bytes | 3,865 bytes |
+| `bike_storage.o` | 1,448 bytes | 71 bytes |
+| `bike_recorder.o` | 1,434 bytes | 3,865 bytes |
 | `bike_settings.o` | 3,402 bytes | 111 bytes |
 | `bike_sensor_ble.o` | 5,925 bytes | 2,545 bytes |
 | `bike_service.o` | 4,351 bytes | 3,930 bytes |
-| `app_bike.o` | 8,247 bytes | 1,181,496 bytes |
-| 合计 | 44,932 bytes | 1,203,477 bytes |
+| `app_bike.o` | 8,443 bytes | 1,181,496 bytes |
+| 合计 | 45,732 bytes | 1,203,546 bytes |
 
 `app_bike.o` 的 `.bss` 包含明确放入 PSRAM 的 1,179,648 bytes 地图像素缓存，不是片上 SRAM 占用。`bike_service.o` 和 `bike_recorder.o` 分别包含 3,072 bytes 静态线程栈，`bike_sensor_ble.o`、`bike_pedometer.o`、`bike_compass.o` 与 `bike_sound.o` 分别包含 2,048 bytes 静态线程栈，`bike_history.o` 与 `bike_power.o` 分别包含 1,536 bytes 静态线程栈。对象文件合计只用于描述新增模块的直接体积，不等同于最终镜像增量；最终镜像还包含本轮启用的 SDK LSM6DSL、RT-Thread sensor、GPADC1 与音频服务，并受链接消除、库引用和资源打包影响。
 
 ## 5. 验证边界
 
-本轮以 X-TRACK 上游 `c42b8e5605e50838f4c0c9828385948fa33ab485` 为对照基线，已确认主线功能逐项对照、源码静态检查、核心算法 `-Werror` 主机测试、ASan/UBSan 回归、GCC `-fanalyzer` 零告警、SF32 HCPU 完整链接和镜像生成。文件级复核补齐了此前遗漏的 `mapWGS84` 坐标系选择和地图目录最小/最大缩放级别扫描；后续验证项需要真实开发板、GPS 转接板、离线瓦片或外部传感器，不再把实机结果与代码完成状态混为一项。
+本轮以 X-TRACK 上游 `c42b8e5605e50838f4c0c9828385948fa33ab485` 为对照基线，已确认主线功能逐项对照、源码静态检查、核心算法 `-Werror` 主机测试、ASan/UBSan 回归、GCC `-fanalyzer` 零告警、SF32 HCPU 完整链接和镜像生成。文件级复核补齐了此前遗漏的 `mapWGS84` 坐标系选择、地图目录缩放级别扫描、`arrowTheme` 方向箭头和 SystemInfos 存储介质/容量信息；后续验证项需要真实开发板、GPS 转接板、离线瓦片或外部传感器，不再把实机结果与代码完成状态混为一项。
 
 本轮未确认：
 
@@ -183,7 +183,7 @@ HCPU ELF 链接结果：
 - X-TRACK 离线地图、WGS-84/GCJ-02 选择、多地图源目录/文件扩展名切换、地图目录缩放边界扫描、缩放轨迹重投影和 FAT 二进制瓦片到 PSRAM/LVGL 变量图像加载已完成源码、主机测试、静态分析与 SF32 目标构建；尚未导入两种坐标系、多个目录和自定义扩展名的实际瓦片并验证页面布局、缩放、坐标对齐、TF 读取延迟和长距离轨迹显示。
 - X-TRACK `arrowTheme` 已完成 `default/light/dark` 持久化、运行期重着色、GNSS course 旋转和无效定位隐藏的源码、主机解析测试与目标构建；尚未实机确认三种主题在明暗瓦片上的对比度、旋转方向和视觉锯齿。
 - 掉电累计记录已通过纯模型测试和目标构建，但尚未对真实 FlashDB 执行 A/B 槽交替、写入中复位、60 秒检查点精度和丢弃回滚实机测试。
-- X-TRACK 的 Micro SD 存储已完成 SPI1 驱动、独立挂载和路径回退的源码与目标构建；尚未用真实 TF 卡验证 FAT 兼容性、启动时无卡、异常拔卡、满盘和断电行为。
+- X-TRACK 的 Micro SD 存储已完成 SPI1 驱动、独立挂载、路径回退、总/剩余容量快照和 UI 诊断的源码与目标构建；尚未用真实 TF 卡验证 FAT 兼容性、启动时无卡、异常拔卡、满盘和断电行为。SDK SPI-MSD 仅启动一次性探测，当前板级无卡检测 GPIO，因此未实现运行期拔卡重枚举。
 - X-TRACK 计步已完成板载 LSM6DS3TR-C、I2C2 PA39/PA40、SDK LSM6DSL 兼容驱动、寄存器回读和 UI 状态的源码/测试/目标构建；尚未实机确认 WHO_AM_I、走动计数准确率、16 位回绕、长时间稳定性和功耗。
 - X-TRACK 磁力信息已适配板载 MMC5603NJ，并完成产品 ID、单次测量、数据就绪超时、三轴解码、运行时水平校准和 UI 状态的源码/主机测试/目标构建；尚未实机确认安装轴向、硬铁/软铁校准、磁偏角、倾斜误差、共享 I2C 稳定性和功耗。
 - X-TRACK 电源信息已适配板载 GPADC1 channel 7 与片上充电状态，并完成电压范围、低通/回差、错误传播、UI 状态和目标构建；尚未用电池和 USB 实机标定空载/负载电压曲线、充满状态、低电压阈值、ADC 校准精度、30 秒状态延迟和采样功耗，因此当前百分比只能视为电压估算。

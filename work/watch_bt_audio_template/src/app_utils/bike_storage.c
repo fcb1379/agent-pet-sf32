@@ -15,6 +15,7 @@
 #include <ulog.h>
 #else
 #include <dirent.h>
+#include <sys/statvfs.h>
 #endif
 
 #define BIKE_STORAGE_TF_DEVICE "sd0"
@@ -31,6 +32,19 @@ static bool l_bBikeStorageInitialized;
 
 /* l_bBikeTfMounted: TF 卡已挂载到独立 /sd 路径的状态标志。 */
 static bool l_bBikeTfMounted;
+
+/* l_tBikeStorageInfo: 当前介质的容量快照，目标板上只在互斥锁
+ * 保护下读写；数值范围为 0~UINT64_MAX bytes。
+ */
+static BIKE_STORAGE_INFO l_tBikeStorageInfo;
+
+#ifndef BIKE_STORAGE_HOST_BUILD
+/* l_tBikeStorageMutex: 保护记录线程更新与 UI 读取的容量快照。 */
+static struct rt_mutex l_tBikeStorageMutex;
+
+/* l_bBikeStorageMutexReady: 容量快照互斥锁可用标志。 */
+static bool l_bBikeStorageMutexReady;
+#endif
 
 /* BikeStorage_ParseMapZoom: 解析地图根目录下的纯数字缩放目录名。
  * 参数：
@@ -92,39 +106,56 @@ static bool BikeStorage_PrepareMountPoint(void)
  */
 bool BIKE_STORAGE_Init(void)
 {
+#ifndef BIKE_STORAGE_HOST_BUILD
+    rt_err_t eResult;
+#endif
+
     if (l_bBikeStorageInitialized)
     {
         return true;
     }
 
-    l_bBikeStorageInitialized = true;
     l_bBikeTfMounted = false;
+    (void)memset(&l_tBikeStorageInfo, 0, sizeof(l_tBikeStorageInfo));
+
+#ifndef BIKE_STORAGE_HOST_BUILD
+    eResult = rt_mutex_init(&l_tBikeStorageMutex, "bike_fs",
+                            RT_IPC_FLAG_FIFO);
+    if (RT_EOK != eResult)
+    {
+        LOG_E("storage mutex init failed: %d", eResult);
+        return false;
+    }
+    l_bBikeStorageMutexReady = true;
+#endif
+    l_bBikeStorageInitialized = true;
 
 #ifndef BIKE_STORAGE_HOST_BUILD
     if (NULL == rt_device_find(BIKE_STORAGE_TF_DEVICE))
     {
         LOG_W("%s unavailable; use internal storage",
               BIKE_STORAGE_TF_DEVICE);
-        return true;
     }
-    if (!BikeStorage_PrepareMountPoint())
+    else if (!BikeStorage_PrepareMountPoint())
     {
         LOG_W("TF mount point unavailable; use internal storage");
-        return true;
     }
-    if (0 != dfs_mount(BIKE_STORAGE_TF_DEVICE,
-                       BIKE_STORAGE_TF_MOUNT_POINT, "elm", 0, NULL))
+    else if (0 != dfs_mount(BIKE_STORAGE_TF_DEVICE,
+                            BIKE_STORAGE_TF_MOUNT_POINT, "elm", 0, NULL))
     {
         LOG_W("mount %s on %s failed: %d; use internal storage",
               BIKE_STORAGE_TF_DEVICE, BIKE_STORAGE_TF_MOUNT_POINT,
               rt_get_errno());
-        return true;
     }
-
-    l_bBikeTfMounted = true;
-    LOG_I("mounted %s on %s", BIKE_STORAGE_TF_DEVICE,
-          BIKE_STORAGE_TF_MOUNT_POINT);
+    else
+    {
+        l_bBikeTfMounted = true;
+        LOG_I("mounted %s on %s", BIKE_STORAGE_TF_DEVICE,
+              BIKE_STORAGE_TF_MOUNT_POINT);
+    }
 #endif
+
+    (void)BIKE_STORAGE_RefreshInfo();
 
     return true;
 }
@@ -135,6 +166,120 @@ bool BIKE_STORAGE_Init(void)
 bool BIKE_STORAGE_IsTfMounted(void)
 {
     return l_bBikeTfMounted;
+}
+
+/* BIKE_STORAGE_RefreshInfo: 从当前选中介质更新文件系统容量快照。
+ * 目标板调用可能发生文件系统 IO，不应从 ISR 或 LVGL 回调调用。
+ * 返回值：容量查询成功返回 true，否则返回 false
+ */
+bool BIKE_STORAGE_RefreshInfo(void)
+{
+    BIKE_STORAGE_INFO tInfo;
+    uint64_t udBlockSize;
+    uint64_t udBlockCount;
+    uint64_t udFreeBlockCount;
+    bool bResult;
+#ifndef BIKE_STORAGE_HOST_BUILD
+    struct statfs tFileSystem;
+    rt_err_t eResult;
+#else
+    struct statvfs tFileSystem;
+#endif
+
+    if (!l_bBikeStorageInitialized)
+    {
+        return false;
+    }
+    (void)memset(&tInfo, 0, sizeof(tInfo));
+    (void)memset(&tFileSystem, 0, sizeof(tFileSystem));
+    tInfo.eMedium = l_bBikeTfMounted ? BIKE_STORAGE_MEDIUM_TF :
+                    BIKE_STORAGE_MEDIUM_INTERNAL;
+#ifndef BIKE_STORAGE_HOST_BUILD
+    bResult = (0 == dfs_statfs(l_bBikeTfMounted ?
+                               BIKE_STORAGE_TF_MOUNT_POINT : "/",
+                               &tFileSystem));
+    udBlockSize = (uint64_t)tFileSystem.f_bsize;
+    udBlockCount = (uint64_t)tFileSystem.f_blocks;
+    udFreeBlockCount = (uint64_t)tFileSystem.f_bfree;
+#else
+    bResult = (0 == statvfs(".", &tFileSystem));
+    udBlockSize = (uint64_t)tFileSystem.f_frsize;
+    udBlockCount = (uint64_t)tFileSystem.f_blocks;
+    udFreeBlockCount = (uint64_t)tFileSystem.f_bavail;
+#endif
+    if (bResult)
+    {
+        tInfo.bAvailable = true;
+        tInfo.udTotalBytes = udBlockSize * udBlockCount;
+        tInfo.udFreeBytes = udBlockSize * udFreeBlockCount;
+    }
+
+#ifndef BIKE_STORAGE_HOST_BUILD
+    if (!l_bBikeStorageMutexReady)
+    {
+        return false;
+    }
+    eResult = rt_mutex_take(&l_tBikeStorageMutex, RT_WAITING_FOREVER);
+    if (RT_EOK != eResult)
+    {
+        LOG_E("storage mutex take failed: %d", eResult);
+        return false;
+    }
+#endif
+    tInfo.ulQueryErrorCount = l_tBikeStorageInfo.ulQueryErrorCount;
+    if ((!bResult) && (UINT32_MAX != tInfo.ulQueryErrorCount))
+    {
+        tInfo.ulQueryErrorCount++;
+    }
+    l_tBikeStorageInfo = tInfo;
+#ifndef BIKE_STORAGE_HOST_BUILD
+    eResult = rt_mutex_release(&l_tBikeStorageMutex);
+    if (RT_EOK != eResult)
+    {
+        LOG_E("storage mutex release failed: %d", eResult);
+        return false;
+    }
+#endif
+
+    return bResult;
+}
+
+/* BIKE_STORAGE_GetInfo: 读取当前介质的线程安全容量快照。
+ * 参数：
+ *   - pInfo: 输出容量快照
+ * 返回值：参数合法且快照已读取返回 true，否则返回 false
+ */
+bool BIKE_STORAGE_GetInfo(BIKE_STORAGE_INFO *pInfo)
+{
+#ifndef BIKE_STORAGE_HOST_BUILD
+    rt_err_t eResult;
+#endif
+
+    if ((NULL == pInfo) || (!l_bBikeStorageInitialized))
+    {
+        return false;
+    }
+#ifndef BIKE_STORAGE_HOST_BUILD
+    if (!l_bBikeStorageMutexReady)
+    {
+        return false;
+    }
+    eResult = rt_mutex_take(&l_tBikeStorageMutex, RT_WAITING_FOREVER);
+    if (RT_EOK != eResult)
+    {
+        return false;
+    }
+#endif
+    *pInfo = l_tBikeStorageInfo;
+#ifndef BIKE_STORAGE_HOST_BUILD
+    eResult = rt_mutex_release(&l_tBikeStorageMutex);
+    if (RT_EOK != eResult)
+    {
+        return false;
+    }
+#endif
+
+    return true;
 }
 
 /* BIKE_STORAGE_SelectTrackDirectory: 根据介质状态选择轨迹目录。

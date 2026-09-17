@@ -319,6 +319,10 @@ static void BikeRecorder_ThreadEntry(void *pParameter)
             {
                 BikeRecorder_UpdateSnapshot(BIKE_RECORDER_STATUS_IDLE, &tWriter, NULL);
             }
+            if (!BIKE_STORAGE_RefreshInfo())
+            {
+                LOG_W("storage capacity refresh failed after stop");
+            }
             break;
 
         case BIKE_RECORDER_COMMAND_DISCARD:
@@ -339,6 +343,10 @@ static void BikeRecorder_ThreadEntry(void *pParameter)
                 BIKE_GPX_Init(&tWriter);
                 BikeRecorder_UpdateSnapshot(BIKE_RECORDER_STATUS_IDLE,
                                              &tWriter, "");
+            }
+            if (!BIKE_STORAGE_RefreshInfo())
+            {
+                LOG_W("storage capacity refresh failed after discard");
             }
             break;
 

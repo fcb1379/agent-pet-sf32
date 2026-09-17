@@ -970,6 +970,10 @@ static void BikeUi_Update(void)
     char aPowerBattery[12];
     char aCompass[24];
     char aBattery[40];
+    char aStorage[48];
+    BIKE_STORAGE_INFO tStorage;
+    uint64_t udStorageTotalMiB;
+    uint64_t udStorageFreeMiB;
     const char *pAltitudeSign;
     const char *pGpsState;
     const char *pRecordState;
@@ -979,6 +983,7 @@ static void BikeUi_Update(void)
     const char *pSpeedSource;
     const char *pFileName;
     const char *pStartText;
+    const char *pStorageMedium;
 
     if (!BIKE_SERVICE_GetSnapshot(&tSnapshot))
     {
@@ -1155,6 +1160,35 @@ static void BikeUi_Update(void)
         break;
     }
 
+    (void)memset(&tStorage, 0, sizeof(tStorage));
+    pStorageMedium = "INT";
+    if (BIKE_STORAGE_GetInfo(&tStorage))
+    {
+        if (BIKE_STORAGE_MEDIUM_TF == tStorage.eMedium)
+        {
+            pStorageMedium = "TF";
+        }
+        if (tStorage.bAvailable)
+        {
+            udStorageTotalMiB = tStorage.udTotalBytes / (1024ULL * 1024ULL);
+            udStorageFreeMiB = tStorage.udFreeBytes / (1024ULL * 1024ULL);
+            (void)snprintf(aStorage, sizeof(aStorage), "%s %llu/%llu MiB",
+                           pStorageMedium,
+                           (unsigned long long)udStorageFreeMiB,
+                           (unsigned long long)udStorageTotalMiB);
+        }
+        else
+        {
+            (void)snprintf(aStorage, sizeof(aStorage), "%s ERR %lu",
+                           pStorageMedium,
+                           (unsigned long)tStorage.ulQueryErrorCount);
+        }
+    }
+    else
+    {
+        (void)snprintf(aStorage, sizeof(aStorage), "STORAGE WAIT");
+    }
+
     ulAgeMs = 0U;
     if (0U != tSnapshot.ulLastUpdateMs)
     {
@@ -1236,7 +1270,7 @@ static void BikeUi_Update(void)
                           "SAT  %u   FIX  %u   RTC  %s\nNMEA  %lu   CRC ERR  %lu   OVF  %lu\n"
                           "STEPS  %lu   IMU  %s   I2C ERR  %lu\n"
                           "MAG  %s   ERR  %lu\nXYZ  %ld  %ld  %ld mG\n"
-                          "PWR  %s\nADC ERR  %lu   CHG ERR  %lu\n"
+                          "PWR  %s\nSTORAGE  %s\nADC ERR  %lu   CHG ERR  %lu\n"
                           "LIFE  %llu.%02llu km   %llu h\nRIDES  %lu   MAX  %u.%02u km/h",
                           aLatitude, aLongitude, pAltitudeSign,
                           (unsigned long)(ulAltitudeAbsoluteCm / 100U),
@@ -1260,6 +1294,7 @@ static void BikeUi_Update(void)
                           (long)tSnapshot.tCompass.lYMilliGauss,
                           (long)tSnapshot.tCompass.lZMilliGauss,
                           aBattery,
+                          aStorage,
                           (unsigned long)tSnapshot.tPower.ulAdcErrorCount,
                           (unsigned long)tSnapshot.tPower.ulChargeErrorCount,
                           (unsigned long long)(udHistoryCentiKm / 100ULL),
