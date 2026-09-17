@@ -10,6 +10,7 @@
 #include "bike_auto_pause.h"
 #include "bike_history.h"
 #include "bike_settings.h"
+#include "bike_storage.h"
 #include "bike_time.h"
 
 #define LOG_TAG "bike.gnss"
@@ -580,6 +581,11 @@ static int BikeService_Init(void)
     BIKE_NMEA_Init(&l_tBikeParser);
     BIKE_RIDE_Init(&l_tBikeSnapshot.tRide, BIKE_RIDE_DEFAULT_WEIGHT_KG);
     l_tBikeSnapshot.ePortStatus = BIKE_GNSS_PORT_SEARCHING;
+
+    if (!BIKE_STORAGE_Init())
+    {
+        LOG_E("storage init failed");
+    }
 
     if (!BIKE_RECORDER_Init())
     {

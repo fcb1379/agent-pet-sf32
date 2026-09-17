@@ -1,4 +1,5 @@
 #include "bike_recorder.h"
+#include "bike_storage.h"
 
 #include <rtthread.h>
 #include <stdio.h>
@@ -8,7 +9,6 @@
 #define LOG_LVL LOG_LVL_INFO
 #include <ulog.h>
 
-#define BIKE_RECORDER_DIRECTORY "/tracks"
 #define BIKE_RECORDER_THREAD_STACK_SIZE (3072U)
 #define BIKE_RECORDER_THREAD_PRIORITY (21U)
 #define BIKE_RECORDER_QUEUE_DEPTH (12U)
@@ -171,7 +171,9 @@ static void BikeRecorder_HandlePoint(BIKE_GPX_WRITER *pWriter,
     if ((BIKE_GPX_STATE_IDLE == pWriter->eState) ||
             (BIKE_GPX_STATE_COMPLETE == pWriter->eState))
     {
-        bResult = BIKE_GPX_Start(pWriter, BIKE_RECORDER_DIRECTORY, &pMessage->tGnss);
+        bResult = BIKE_GPX_Start(pWriter,
+                                 BIKE_STORAGE_GetTrackDirectory(),
+                                 &pMessage->tGnss);
     }
     else
     {
@@ -206,13 +208,15 @@ static void BikeRecorder_ThreadEntry(void *pParameter)
     bool bSessionRequested;
     bool bPaused;
     bool bResult;
+    const char *pTrackDirectory;
 
     (void)pParameter;
+    pTrackDirectory = BIKE_STORAGE_GetTrackDirectory();
     BIKE_GPX_Init(&tWriter);
     bSessionRequested = false;
     bPaused = false;
     aRecoveredPath[0] = '\0';
-    eRecovery = BIKE_GPX_Recover(BIKE_RECORDER_DIRECTORY, aRecoveredPath,
+    eRecovery = BIKE_GPX_Recover(pTrackDirectory, aRecoveredPath,
                                  sizeof(aRecoveredPath));
     if (BIKE_GPX_RECOVERY_DONE == eRecovery)
     {
@@ -248,7 +252,7 @@ static void BikeRecorder_ThreadEntry(void *pParameter)
             if (BIKE_GPX_STATE_ERROR == tWriter.eState)
             {
                 aRecoveredPath[0] = '\0';
-                eRecovery = BIKE_GPX_Recover(BIKE_RECORDER_DIRECTORY,
+                eRecovery = BIKE_GPX_Recover(pTrackDirectory,
                                              aRecoveredPath,
                                              sizeof(aRecoveredPath));
                 if (BIKE_GPX_RECOVERY_ERROR == eRecovery)

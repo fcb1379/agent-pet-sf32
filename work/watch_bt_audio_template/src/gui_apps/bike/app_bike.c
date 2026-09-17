@@ -5,6 +5,7 @@
 
 #include "bike_map.h"
 #include "bike_service.h"
+#include "bike_storage.h"
 #include "gui_app_fwk.h"
 #include "littlevgl2rtt.h"
 #include "lv_ext_resource_manager.h"
@@ -20,7 +21,6 @@
 #define BIKE_UI_MAP_ZOOM_DEFAULT (16U)
 #define BIKE_UI_MAP_ZOOM_MIN (3U)
 #define BIKE_UI_MAP_ZOOM_MAX (19U)
-#define BIKE_UI_MAP_ROOT "/MAP"
 #define BIKE_UI_MAP_EXTENSION "bin"
 
 LV_IMG_DECLARE(img_workout);
@@ -135,7 +135,7 @@ static uint8_t BikeUi_MapReloadTiles(const BIKE_MAP_POINT *pPoint)
             l_tBikeUi.aaMapTileSource[ucIndex][0] = '/';
             if ((0LL <= dTileY) && ((int64_t)ulTileCount > dTileY) &&
                 BIKE_MAP_FormatTilePath(
-                    BIKE_UI_MAP_ROOT, pPoint->ucZoom, ulActualTileX,
+                    BIKE_STORAGE_GetMapRoot(), pPoint->ucZoom, ulActualTileX,
                     (uint32_t)dTileY, BIKE_UI_MAP_EXTENSION,
                     &l_tBikeUi.aaMapTileSource[ucIndex][1],
                     sizeof(l_tBikeUi.aaMapTileSource[ucIndex]) - 1U) &&

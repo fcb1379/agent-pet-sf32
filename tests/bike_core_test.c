@@ -17,9 +17,30 @@
 #include "bike_nmea.h"
 #include "bike_ride_model.h"
 #include "bike_speed_source.h"
+#include "bike_storage.h"
 #include "bike_time.h"
 
 #define TEST_GPX_DIRECTORY "/tmp/sf32_bike_gpx_test"
+
+/* Test_StoragePaths: 覆盖 TF 优先与内部文件系统回退路径。
+ * 返回值：无
+ */
+static void Test_StoragePaths(void)
+{
+    assert(0 == strcmp("/tracks",
+                       BIKE_STORAGE_SelectTrackDirectory(false)));
+    assert(0 == strcmp("/sd/tracks",
+                       BIKE_STORAGE_SelectTrackDirectory(true)));
+    assert(0 == strcmp("/MAP", BIKE_STORAGE_SelectMapRoot(false)));
+    assert(0 == strcmp("/sd/MAP", BIKE_STORAGE_SelectMapRoot(true)));
+
+    assert(BIKE_STORAGE_Init());
+    assert(!BIKE_STORAGE_IsTfMounted());
+    assert(0 == strcmp("/tracks", BIKE_STORAGE_GetTrackDirectory()));
+    assert(0 == strcmp("/MAP", BIKE_STORAGE_GetMapRoot()));
+
+    return;
+}
 
 /* Test_CountText: 统计文本中固定子串的出现次数。
  * 参数：
@@ -952,6 +973,7 @@ static void Test_HistoryRecord(void)
 
 int main(void)
 {
+    Test_StoragePaths();
     Test_NmeaParser();
     Test_RideModel();
     Test_SpeedSource();

@@ -4,7 +4,7 @@
 
 分支：`codex/feature-bike-computer`
 
-目标：在 `sf32lb52-lchspi-ulp` 开发板上建立 X-TRACK 功能移植的可构建基线，包括 DX-GP10 NMEA 输入、骑行数据模型、GPX/BLE 传感器和 LVGL 四页骑行界面。
+目标：在 `sf32lb52-lchspi-ulp` 开发板上建立 X-TRACK 功能移植的可构建基线，包括 DX-GP10 NMEA 输入、骑行数据模型、GPX/BLE 传感器、TF 存储和 LVGL 四页骑行界面。
 
 ## 1. 已实现范围
 
@@ -44,6 +44,8 @@
 - 历史总里程、移动/总时间、卡路里、骑行次数和最高速度使用带版本/序号/FNV-1a 校验和的 FlashDB A/B 双槽记录。
 - 新骑行捕获累计基线，每 60 秒以“基线 + 本次绝对值”异步落盘，重复检查点不重复累加；正常结束保存最终值，主动丢弃回滚到开始基线。
 - FlashDB 写入由 1,536 bytes 静态工作线程和固定消息队列顺序执行，GNSS 线程和 LVGL 回调仅非阻塞投递快照。
+- 已启用黄山派 SPI1 与 SDK SPI-MSD 驱动，使用板级既有 PA24/DIO、PA25/DI、PA28/CLK、PA29/CS 映射探测 `sd0`。
+- TF 卡仅挂载到独立 `/sd`，不替换内部根文件系统且不自动格式化；挂载成功时轨迹与地图分别使用 `/sd/tracks`、`/sd/MAP`，无卡、无文件系统或挂载失败时回退 `/tracks`、`/MAP`。
 
 ## 2. 主机测试
 
@@ -75,6 +77,7 @@ bike_core_test: PASS
 - 速度源仲裁覆盖 CSC 优先、GNSS 回退、非法 CSC 拒绝、来源切换、CSC 定点里程积分以及 GNSS 失效时保留有效 CSC。
 - 地图投影覆盖零点、北京坐标、经纬度/缩放边界、瓦片索引与路径穿越/截断拒绝。
 - 历史累计模型覆盖空记录、多次骑行合并、最高速度保留、校验和损坏以及 A/B 槽选择/全损坏回退。
+- 存储路径选择覆盖 TF 优先和内部文件系统回退；主机测试不执行目标板挂载操作。
 
 目标编译同时验证了设置写入的事务顺序修正：单字段在持久化成功后才更新运行态，双字段第二次写入失败时回滚首字段。摘要页字号与行距也已按当前 390 px 可用高度收紧，不以此替代最终屏幕实机验收。
 
@@ -91,10 +94,10 @@ scons: done building targets.
 
 | 产物 | 大小 |
 |---|---:|
-| `main.bin` | 3,410,896 bytes |
+| `main.bin` | 3,431,268 bytes |
 | `fs_root.bin` | 4,194,304 bytes |
 
-编译仅输出原工程已有的 `dfu` 分区未定义和 ftab 入口符号警告；新增 `bike_*` 模块在 `-Werror` 主机测试中无告警，且目标编译成功。
+完整重构建输出 SDK 既有的 FlashDB/LVGL/音频等静态告警，以及 `dfu` 分区未定义和 ftab 入口符号警告；新增 `bike_*` 模块在 `-Werror` 主机测试中无告警，且目标编译成功。生成配置已确认 `CONFIG_BSP_USING_SPI1=y` 与 `CONFIG_RT_USING_SPI_MSD=y`。
 
 ## 4. 资源占用
 
@@ -102,8 +105,8 @@ HCPU ELF 链接结果：
 
 | 区域 | 当前占用 | 链接容量 | 余量 |
 |---|---:|---:|---:|
-| 片上 SRAM 地址范围 | 349,404 bytes | 523,264 bytes | 173,860 bytes |
-| PSRAM 可写段 | 2,649,032 bytes | 8,388,608 bytes | 5,739,576 bytes |
+| 片上 SRAM 地址范围 | 350,492 bytes | 523,264 bytes | 172,772 bytes |
+| PSRAM 可写段 | 2,649,000 bytes | 8,388,608 bytes | 5,739,608 bytes |
 
 码表新增对象文件在链接前的直接占用：
 
@@ -121,12 +124,13 @@ HCPU ELF 链接结果：
 | `bike_gpx.o` | 2,966 bytes | 0 bytes |
 | `bike_history.o` | 2,157 bytes | 2,189 bytes |
 | `bike_map.o` | 708 bytes | 0 bytes |
+| `bike_storage.o` | 573 bytes | 2 bytes |
 | `bike_recorder.o` | 1,349 bytes | 3,865 bytes |
 | `bike_settings.o` | 1,924 bytes | 53 bytes |
 | `bike_sensor_ble.o` | 5,927 bytes | 2,545 bytes |
-| `bike_service.o` | 3,688 bytes | 3,857 bytes |
-| `app_bike.o` | 7,016 bytes | 4,564 bytes |
-| 合计 | 32,758 bytes | 17,202 bytes |
+| `bike_service.o` | 3,732 bytes | 3,857 bytes |
+| `app_bike.o` | 7,007 bytes | 4,564 bytes |
+| 合计 | 33,366 bytes | 17,204 bytes |
 
 `bike_service.o` 和 `bike_recorder.o` 分别包含 3,072 bytes 静态线程栈，`bike_sensor_ble.o` 包含 2,048 bytes 静态线程栈，`bike_history.o` 包含 1,536 bytes 静态线程栈与固定队列。对象文件合计只用于描述新增模块的直接体积，不等同于最终镜像增量；最终镜像还受链接消除、库引用和资源打包影响。
 
@@ -146,4 +150,5 @@ HCPU ELF 链接结果：
 - CSC/GNSS 速度仲裁已经通过主机测试与目标构建验证，但 CSC 轮速积分与 GNSS 坐标里程之间的道路误差、传感器停转通知行为和来源切换手感仍需实车验证。
 - X-TRACK 离线地图和实时轨迹已完成源码、主机测试与目标构建，尚未导入实际 `.bin` 瓦片并验证 LVGL 文件解码、页面布局、缩放和长距离轨迹显示。
 - 掉电累计记录已通过纯模型测试和目标构建，但尚未对真实 FlashDB 执行 A/B 槽交替、写入中复位、60 秒检查点精度和丢弃回滚实机测试。
-- X-TRACK 的 Micro SD 存储与计步尚未移植：当前工程未启用 TF 控制器，且尚无板载 IMU 型号/总线证据。FIT 与路线导航属于其他参考工程扩展，不是 X-TRACK 主线必备项。
+- X-TRACK 的 Micro SD 存储已完成 SPI1 驱动、独立挂载和路径回退的源码与目标构建；尚未用真实 TF 卡验证 FAT 兼容性、启动时无卡、异常拔卡、满盘和断电行为。
+- X-TRACK 计步仍缺少板载 IMU 型号/总线证据，尚未完成目标驱动绑定。FIT 与路线导航属于其他参考工程扩展，不是 X-TRACK 主线必备项。
