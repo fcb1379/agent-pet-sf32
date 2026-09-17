@@ -24,6 +24,7 @@
 #include "bike_time.h"
 
 #define TEST_GPX_DIRECTORY "/tmp/sf32_bike_gpx_test"
+#define TEST_MAP_DIRECTORY "/tmp/sf32_bike_map_test"
 
 /* Test_PowerFilter: 覆盖 X-TRACK 电压百分比边界、低通、2% 回差、
  * 满量程边界、非法电压和空指针保护。
@@ -182,6 +183,73 @@ static void Test_StoragePaths(void)
     assert(!BIKE_STORAGE_IsTfMounted());
     assert(0 == strcmp("/tracks", BIKE_STORAGE_GetTrackDirectory()));
     assert(0 == strcmp("/MAP", BIKE_STORAGE_GetMapRoot()));
+
+    return;
+}
+
+/* Test_MapZoomRange: 覆盖地图缩放目录扫描、非法目录项、普通文件、
+ * 空目录、缺失目录和空指针保护。
+ * 返回值：无
+ */
+static void Test_MapZoomRange(void)
+{
+    uint8_t ucMinimumZoom;
+    uint8_t ucMaximumZoom;
+    int lFileDescriptor;
+
+    (void)unlink(TEST_MAP_DIRECTORY "/7");
+    (void)rmdir(TEST_MAP_DIRECTORY "/3");
+    (void)rmdir(TEST_MAP_DIRECTORY "/16");
+    (void)rmdir(TEST_MAP_DIRECTORY "/19");
+    (void)rmdir(TEST_MAP_DIRECTORY "/20");
+    (void)rmdir(TEST_MAP_DIRECTORY "/not_zoom");
+    (void)rmdir(TEST_MAP_DIRECTORY);
+
+    assert(0 == mkdir(TEST_MAP_DIRECTORY, 0777));
+    ucMinimumZoom = 0x55U;
+    ucMaximumZoom = 0xAAU;
+    assert(!BIKE_STORAGE_FindMapZoomRange(TEST_MAP_DIRECTORY,
+                                          &ucMinimumZoom,
+                                          &ucMaximumZoom));
+    assert(0x55U == ucMinimumZoom);
+    assert(0xAAU == ucMaximumZoom);
+
+    assert(0 == mkdir(TEST_MAP_DIRECTORY "/3", 0777));
+    assert(0 == mkdir(TEST_MAP_DIRECTORY "/16", 0777));
+    assert(0 == mkdir(TEST_MAP_DIRECTORY "/19", 0777));
+    assert(0 == mkdir(TEST_MAP_DIRECTORY "/20", 0777));
+    assert(0 == mkdir(TEST_MAP_DIRECTORY "/not_zoom", 0777));
+    lFileDescriptor = open(TEST_MAP_DIRECTORY "/7",
+                           O_CREAT | O_WRONLY | O_TRUNC, 0666);
+    assert(0 <= lFileDescriptor);
+    assert(0 == close(lFileDescriptor));
+
+    ucMinimumZoom = 0U;
+    ucMaximumZoom = 0U;
+    assert(BIKE_STORAGE_FindMapZoomRange(TEST_MAP_DIRECTORY,
+                                         &ucMinimumZoom,
+                                         &ucMaximumZoom));
+    assert(3U == ucMinimumZoom);
+    assert(19U == ucMaximumZoom);
+    assert(!BIKE_STORAGE_FindMapZoomRange(
+        TEST_MAP_DIRECTORY "/missing", &ucMinimumZoom, &ucMaximumZoom));
+    assert(!BIKE_STORAGE_FindMapZoomRange(NULL,
+                                          &ucMinimumZoom,
+                                          &ucMaximumZoom));
+    assert(!BIKE_STORAGE_FindMapZoomRange(TEST_MAP_DIRECTORY,
+                                          NULL,
+                                          &ucMaximumZoom));
+    assert(!BIKE_STORAGE_FindMapZoomRange(TEST_MAP_DIRECTORY,
+                                          &ucMinimumZoom,
+                                          NULL));
+
+    assert(0 == unlink(TEST_MAP_DIRECTORY "/7"));
+    assert(0 == rmdir(TEST_MAP_DIRECTORY "/3"));
+    assert(0 == rmdir(TEST_MAP_DIRECTORY "/16"));
+    assert(0 == rmdir(TEST_MAP_DIRECTORY "/19"));
+    assert(0 == rmdir(TEST_MAP_DIRECTORY "/20"));
+    assert(0 == rmdir(TEST_MAP_DIRECTORY "/not_zoom"));
+    assert(0 == rmdir(TEST_MAP_DIRECTORY));
 
     return;
 }
@@ -1184,6 +1252,7 @@ int main(void)
     Test_CompassCalibration();
     Test_PedometerAccumulator();
     Test_StoragePaths();
+    Test_MapZoomRange();
     Test_NmeaParser();
     Test_RideModel();
     Test_SpeedSource();

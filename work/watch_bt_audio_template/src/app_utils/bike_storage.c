@@ -1,5 +1,8 @@
 #include "bike_storage.h"
 
+#include <stdio.h>
+#include <sys/stat.h>
+
 #ifndef BIKE_STORAGE_HOST_BUILD
 #include <dfs_fs.h>
 #include <dfs_posix.h>
@@ -9,6 +12,8 @@
 #define LOG_TAG "bike.storage"
 #define LOG_LVL LOG_LVL_INFO
 #include <ulog.h>
+#else
+#include <dirent.h>
 #endif
 
 #define BIKE_STORAGE_TF_DEVICE "sd0"
@@ -17,12 +22,47 @@
 #define BIKE_STORAGE_TF_TRACK_DIRECTORY "/sd/tracks"
 #define BIKE_STORAGE_INTERNAL_MAP_ROOT "/MAP"
 #define BIKE_STORAGE_TF_MAP_ROOT "/sd/MAP"
+#define BIKE_STORAGE_MAP_PATH_MAX (128U)
+#define BIKE_STORAGE_MAP_ZOOM_MAX (19U)
 
 /* l_bBikeStorageInitialized: 存储选择已完成标志，只在系统初始化阶段写入。 */
 static bool l_bBikeStorageInitialized;
 
 /* l_bBikeTfMounted: TF 卡已挂载到独立 /sd 路径的状态标志。 */
 static bool l_bBikeTfMounted;
+
+/* BikeStorage_ParseMapZoom: 解析地图根目录下的纯数字缩放目录名。
+ * 参数：
+ *   - pName: 目录项名称
+ *   - pZoom: 解析后的缩放级别，范围 0~19
+ * 返回值：合法缩放目录名返回 true，否则返回 false
+ */
+static bool BikeStorage_ParseMapZoom(const char *pName, uint8_t *pZoom)
+{
+    uint32_t ulZoom;
+
+    if ((NULL == pName) || (NULL == pZoom) || ('\0' == pName[0]))
+    {
+        return false;
+    }
+    ulZoom = 0U;
+    while ('\0' != *pName)
+    {
+        if (('0' > *pName) || ('9' < *pName))
+        {
+            return false;
+        }
+        ulZoom = (ulZoom * 10U) + (uint32_t)(*pName - '0');
+        if (BIKE_STORAGE_MAP_ZOOM_MAX < ulZoom)
+        {
+            return false;
+        }
+        pName++;
+    }
+    *pZoom = (uint8_t)ulZoom;
+
+    return true;
+}
 
 #ifndef BIKE_STORAGE_HOST_BUILD
 /* BikeStorage_PrepareMountPoint: 在内部文件系统创建 TF 卡挂载点。
@@ -132,4 +172,83 @@ const char *BIKE_STORAGE_GetTrackDirectory(void)
 const char *BIKE_STORAGE_GetMapRoot(void)
 {
     return BIKE_STORAGE_SelectMapRoot(l_bBikeTfMounted);
+}
+
+/* BIKE_STORAGE_FindMapZoomRange: 扫描地图根目录下实际存在的缩放目录。
+ * 参数：
+ *   - pMapRoot: 地图根目录
+ *   - pMinimumZoom/pMaximumZoom: 检出的最小和最大缩放级别
+ * 返回值：至少发现一个 0~19 级纯数字目录返回 true，否则返回 false
+ */
+bool BIKE_STORAGE_FindMapZoomRange(const char *pMapRoot,
+                                   uint8_t *pMinimumZoom,
+                                   uint8_t *pMaximumZoom)
+{
+    DIR *pDirectory;
+    struct dirent *pEntry;
+    struct stat tStatus;
+    char aEntryPath[BIKE_STORAGE_MAP_PATH_MAX];
+    uint8_t ucMinimumZoom;
+    uint8_t ucMaximumZoom;
+    uint8_t ucZoom;
+    int lLength;
+    bool bFound;
+
+    if ((NULL == pMapRoot) || ('\0' == pMapRoot[0]) ||
+        (NULL == pMinimumZoom) || (NULL == pMaximumZoom))
+    {
+        return false;
+    }
+    pDirectory = opendir(pMapRoot);
+    if (NULL == pDirectory)
+    {
+        return false;
+    }
+    ucMinimumZoom = BIKE_STORAGE_MAP_ZOOM_MAX;
+    ucMaximumZoom = 0U;
+    bFound = false;
+    pEntry = readdir(pDirectory);
+    while (NULL != pEntry)
+    {
+        if (BikeStorage_ParseMapZoom(pEntry->d_name, &ucZoom))
+        {
+            lLength = snprintf(aEntryPath, sizeof(aEntryPath), "%s/%s",
+                               pMapRoot, pEntry->d_name);
+            if ((0 < lLength) && ((size_t)lLength < sizeof(aEntryPath)) &&
+                (0 == stat(aEntryPath, &tStatus)) &&
+                S_ISDIR(tStatus.st_mode))
+            {
+                if ((!bFound) || (ucMinimumZoom > ucZoom))
+                {
+                    ucMinimumZoom = ucZoom;
+                }
+                if ((!bFound) || (ucMaximumZoom < ucZoom))
+                {
+                    ucMaximumZoom = ucZoom;
+                }
+                bFound = true;
+            }
+        }
+        pEntry = readdir(pDirectory);
+    }
+    (void)closedir(pDirectory);
+    if (bFound)
+    {
+        *pMinimumZoom = ucMinimumZoom;
+        *pMaximumZoom = ucMaximumZoom;
+    }
+
+    return bFound;
+}
+
+/* BIKE_STORAGE_GetMapZoomRange: 扫描当前选中地图介质的缩放范围。
+ * 参数：
+ *   - pMinimumZoom/pMaximumZoom: 检出的最小和最大缩放级别
+ * 返回值：检测到合法缩放目录返回 true，否则返回 false
+ */
+bool BIKE_STORAGE_GetMapZoomRange(uint8_t *pMinimumZoom,
+                                  uint8_t *pMaximumZoom)
+{
+    return BIKE_STORAGE_FindMapZoomRange(BIKE_STORAGE_GetMapRoot(),
+                                         pMinimumZoom, pMaximumZoom);
 }

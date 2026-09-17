@@ -20,8 +20,6 @@
 #define BIKE_UI_MAP_TRACK_POINT_MAX (128U)
 #define BIKE_UI_MAP_PATH_MAX (96U)
 #define BIKE_UI_MAP_ZOOM_DEFAULT (16U)
-#define BIKE_UI_MAP_ZOOM_MIN (3U)
-#define BIKE_UI_MAP_ZOOM_MAX (19U)
 #define BIKE_UI_MAP_TRACK_LEVEL (16U)
 #define BIKE_UI_MAP_TRACK_OFFSET_THRESHOLD_PX (2U)
 #define BIKE_UI_MAP_EXTENSION "bin"
@@ -55,6 +53,7 @@ typedef struct _BIKE_UI_MAP_TRACK_POINT
  *   - pMapContainer/apMapTiles: 离线地图瓦片容器和 3 x 3 固定瓦片
  *   - pMapTrackLine/pMapMarker: 实时轨迹线和当前位置标记
  *   - aMapTrackPoints/aMapLinePoints: 固定级别轨迹点和可见线段点
+ *   - ucMapZoomMin/ucMapZoomMax: 当前地图介质实际可用的缩放范围
  *   - bMapUseWgs84: 当前离线瓦片坐标系选择
  *   - pTimer: 500 ms UI 刷新定时器
  */
@@ -84,6 +83,8 @@ typedef struct _BIKE_UI_CONTEXT
     uint32_t ulMapCenterTileX;
     uint32_t ulMapCenterTileY;
     uint8_t ucMapZoom;
+    uint8_t ucMapZoomMin;
+    uint8_t ucMapZoomMax;
     uint8_t ucMapLoadedCount;
     BIKE_RIDE_MODE ePreviousRideMode;
     bool bMapTilesLoaded;
@@ -410,8 +411,8 @@ static void BikeUi_MapChangeZoom(int8_t cDelta)
     int16_t sNewZoom;
 
     sNewZoom = (int16_t)l_tBikeUi.ucMapZoom + cDelta;
-    if ((BIKE_UI_MAP_ZOOM_MIN <= sNewZoom) &&
-        (BIKE_UI_MAP_ZOOM_MAX >= sNewZoom))
+    if (((int16_t)l_tBikeUi.ucMapZoomMin <= sNewZoom) &&
+        ((int16_t)l_tBikeUi.ucMapZoomMax >= sNewZoom))
     {
         l_tBikeUi.ucMapZoom = (uint8_t)sNewZoom;
         l_tBikeUi.bMapTilesLoaded = false;
@@ -1384,7 +1385,22 @@ static void BikeUi_OnStart(void)
     uint8_t ucIndex;
 
     (void)memset(&l_tBikeUi, 0, sizeof(l_tBikeUi));
-    l_tBikeUi.ucMapZoom = BIKE_UI_MAP_ZOOM_DEFAULT;
+    l_tBikeUi.ucMapZoomMin = BIKE_MAP_ZOOM_MIN;
+    l_tBikeUi.ucMapZoomMax = BIKE_MAP_ZOOM_MAX;
+    (void)BIKE_STORAGE_GetMapZoomRange(&l_tBikeUi.ucMapZoomMin,
+                                       &l_tBikeUi.ucMapZoomMax);
+    if (l_tBikeUi.ucMapZoomMin > BIKE_UI_MAP_ZOOM_DEFAULT)
+    {
+        l_tBikeUi.ucMapZoom = l_tBikeUi.ucMapZoomMin;
+    }
+    else if (l_tBikeUi.ucMapZoomMax < BIKE_UI_MAP_ZOOM_DEFAULT)
+    {
+        l_tBikeUi.ucMapZoom = l_tBikeUi.ucMapZoomMax;
+    }
+    else
+    {
+        l_tBikeUi.ucMapZoom = BIKE_UI_MAP_ZOOM_DEFAULT;
+    }
     l_tBikeUi.ePreviousRideMode = BIKE_RIDE_MODE_STOPPED;
     l_tBikeUi.pRoot = lv_tileview_create(lv_scr_act());
     RT_ASSERT(NULL != l_tBikeUi.pRoot);
@@ -1520,7 +1536,9 @@ static void BikeUi_OnStart(void)
 
     l_tBikeUi.pMapStatusLabel = lv_label_create(pMapPage);
     RT_ASSERT(NULL != l_tBikeUi.pMapStatusLabel);
-    lv_label_set_text(l_tBikeUi.pMapStatusLabel, "MAP GCJ Z16  WAIT FIX");
+    lv_label_set_text_fmt(l_tBikeUi.pMapStatusLabel,
+                          "MAP GCJ Z%u  WAIT FIX",
+                          (unsigned int)l_tBikeUi.ucMapZoom);
     lv_obj_set_style_text_color(l_tBikeUi.pMapStatusLabel,
                                 lv_color_hex(0xFFFFFF), LV_PART_MAIN);
     lv_obj_set_style_bg_color(l_tBikeUi.pMapStatusLabel,
