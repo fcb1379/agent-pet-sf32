@@ -15,6 +15,14 @@
 #define BIKE_MAP_CHINA_LONGITUDE_MIN_E7 (720040000)
 #define BIKE_MAP_CHINA_LONGITUDE_MAX_E7 (1378347000)
 
+/* l_apBikeMapArrowThemeNames: 与 X-TRACK 配置兼容的稳定主题名称。 */
+static const char *const l_apBikeMapArrowThemeNames[BIKE_MAP_ARROW_THEME_COUNT] =
+{
+    "default",
+    "light",
+    "dark",
+};
+
 /* BikeMap_TransformLatitude: 计算 WGS-84 到 GCJ-02 的纬度偏移中间量。
  * 参数：
  *   - dLongitudeOffset/dLatitudeOffset: 相对 105E/35N 的角度偏移
@@ -182,6 +190,50 @@ bool BIKE_MAP_IsExtensionValid(const char *pExtension)
     }
 
     return false;
+}
+
+/* BIKE_MAP_ParseArrowTheme: 将配置字符串解析为受支持的箭头主题。
+ * 参数：
+ *   - pName: 主题名称，仅支持 default/light/dark
+ *   - pTheme: 输出主题枚举
+ * 返回值：完整匹配返回 true，否则返回 false
+ */
+bool BIKE_MAP_ParseArrowTheme(const char *pName,
+                              BIKE_MAP_ARROW_THEME *pTheme)
+{
+    BIKE_MAP_ARROW_THEME eTheme;
+
+    if ((NULL == pName) || (NULL == pTheme))
+    {
+        return false;
+    }
+    for (eTheme = BIKE_MAP_ARROW_THEME_DEFAULT;
+         eTheme < BIKE_MAP_ARROW_THEME_COUNT;
+         eTheme = (BIKE_MAP_ARROW_THEME)(eTheme + 1))
+    {
+        if (0 == strcmp(pName, l_apBikeMapArrowThemeNames[eTheme]))
+        {
+            *pTheme = eTheme;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/* BIKE_MAP_GetArrowThemeName: 获取箭头主题的稳定配置名称。
+ * 参数：
+ *   - eTheme: 箭头主题枚举
+ * 返回值：合法主题返回静态字符串，否则返回 NULL
+ */
+const char *BIKE_MAP_GetArrowThemeName(BIKE_MAP_ARROW_THEME eTheme)
+{
+    if ((uint32_t)eTheme >= (uint32_t)BIKE_MAP_ARROW_THEME_COUNT)
+    {
+        return NULL;
+    }
+
+    return l_apBikeMapArrowThemeNames[eTheme];
 }
 
 /* BIKE_MAP_Project: 将 WGS84 定点经纬度投影到 Web Mercator 瓦片平面。

@@ -21,6 +21,7 @@ extern "C" {
 #define BIKE_SETTINGS_DEFAULT_MAP_USE_WGS84 (false)
 #define BIKE_SETTINGS_DEFAULT_MAP_DIRECTORY "/MAP"
 #define BIKE_SETTINGS_DEFAULT_MAP_EXTENSION "bin"
+#define BIKE_SETTINGS_DEFAULT_ARROW_THEME "default"
 #define BIKE_SETTINGS_DEFAULT_SOUND_ENABLED (true)
 
 /* BIKE_SETTINGS_SNAPSHOT: 码表运行参数的一致性快照。
@@ -36,6 +37,7 @@ extern "C" {
  *   - bSoundEnabled: 是否播放 X-TRACK 事件提示音
  *   - aMapDirectory: 当前介质内的地图逻辑绝对路径
  *   - aMapExtension: 不含点号的瓦片文件扩展名
+ *   - aArrowTheme: X-TRACK 地图定位箭头主题
  *   - bStorageReady: 参数持久化存储是否可用
  */
 typedef struct _BIKE_SETTINGS_SNAPSHOT
@@ -52,6 +54,7 @@ typedef struct _BIKE_SETTINGS_SNAPSHOT
     bool bStorageReady;
     char aMapDirectory[BIKE_STORAGE_MAP_DIRECTORY_MAX];
     char aMapExtension[BIKE_MAP_EXTENSION_MAX];
+    char aArrowTheme[BIKE_MAP_ARROW_THEME_NAME_MAX];
 } BIKE_SETTINGS_SNAPSHOT;
 
 rt_err_t BIKE_SETTINGS_Init(void);
@@ -65,6 +68,7 @@ rt_err_t BIKE_SETTINGS_SetDisplay(uint8_t ucBrightnessPercent,
 rt_err_t BIKE_SETTINGS_SetMapUseWgs84(bool bUseWgs84);
 rt_err_t BIKE_SETTINGS_SetMapDirectory(const char *pDirectory);
 rt_err_t BIKE_SETTINGS_SetMapExtension(const char *pExtension);
+rt_err_t BIKE_SETTINGS_SetArrowTheme(const char *pTheme);
 rt_err_t BIKE_SETTINGS_SetSoundEnabled(bool bEnabled);
 
 #ifdef __cplusplus

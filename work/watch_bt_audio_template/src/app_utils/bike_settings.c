@@ -41,6 +41,7 @@
 #define BIKE_SETTINGS_KEY_MAP_WGS84 "map_wgs84"
 #define BIKE_SETTINGS_KEY_MAP_DIRECTORY "map_dir"
 #define BIKE_SETTINGS_KEY_MAP_EXTENSION "map_ext"
+#define BIKE_SETTINGS_KEY_ARROW_THEME "arrow_theme"
 #define BIKE_SETTINGS_KEY_SOUND_ENABLED "sound_en"
 
 /* l_aBikeSettingsPrefName: FlashDB 命名空间，数组固定 32 字节以规避 SDK
@@ -160,8 +161,11 @@ rt_err_t BIKE_SETTINGS_Init(void)
 #ifdef BSP_SHARE_PREFS
     char aStoredMapDirectory[BIKE_STORAGE_MAP_DIRECTORY_MAX];
     char aStoredMapExtension[BIKE_MAP_EXTENSION_MAX];
+    char aStoredArrowTheme[BIKE_MAP_ARROW_THEME_NAME_MAX];
     int32_t lMapDirectoryLength;
     int32_t lMapExtensionLength;
+    int32_t lArrowThemeLength;
+    BIKE_MAP_ARROW_THEME eStoredArrowTheme;
 #endif
     rt_err_t eResult;
 
@@ -195,6 +199,9 @@ rt_err_t BIKE_SETTINGS_Init(void)
     (void)memcpy(l_tBikeSettings.aMapExtension,
                  BIKE_SETTINGS_DEFAULT_MAP_EXTENSION,
                  sizeof(BIKE_SETTINGS_DEFAULT_MAP_EXTENSION));
+    (void)memcpy(l_tBikeSettings.aArrowTheme,
+                 BIKE_SETTINGS_DEFAULT_ARROW_THEME,
+                 sizeof(BIKE_SETTINGS_DEFAULT_ARROW_THEME));
 
 #ifdef BSP_SHARE_PREFS
     l_pBikeSettingsPrefs = share_prefs_open(l_aBikeSettingsPrefName,
@@ -273,11 +280,28 @@ rt_err_t BIKE_SETTINGS_Init(void)
                              (size_t)lMapExtensionLength + 1U);
             }
         }
+        lArrowThemeLength = share_prefs_get_string(
+            l_pBikeSettingsPrefs, BIKE_SETTINGS_KEY_ARROW_THEME,
+            aStoredArrowTheme, sizeof(aStoredArrowTheme) - 1U);
+        if ((0 < lArrowThemeLength) &&
+            ((int32_t)sizeof(aStoredArrowTheme) > lArrowThemeLength))
+        {
+            aStoredArrowTheme[lArrowThemeLength] = '\0';
+            if (BIKE_MAP_ParseArrowTheme(aStoredArrowTheme,
+                                         &eStoredArrowTheme))
+            {
+                (void)memset(l_tBikeSettings.aArrowTheme, 0,
+                             sizeof(l_tBikeSettings.aArrowTheme));
+                (void)memcpy(l_tBikeSettings.aArrowTheme,
+                             aStoredArrowTheme,
+                             (size_t)lArrowThemeLength + 1U);
+            }
+        }
     }
 #endif
 
     l_bBikeSettingsReady = true;
-    LOG_I("ready storage=%u timezone=%d wheel=%u weight=%u auto=%u/%u display=%u/%u sound=%u map=%u/%s/*.%s",
+    LOG_I("ready storage=%u timezone=%d wheel=%u weight=%u auto=%u/%u display=%u/%u sound=%u map=%u/%s/*.%s arrow=%s",
           l_tBikeSettings.bStorageReady, l_tBikeSettings.sTimeZoneMinutes,
           l_tBikeSettings.usWheelCircumferenceMm,
           l_tBikeSettings.ucRiderWeightKg,
@@ -288,7 +312,8 @@ rt_err_t BIKE_SETTINGS_Init(void)
           l_tBikeSettings.bSoundEnabled,
           l_tBikeSettings.bMapUseWgs84,
           l_tBikeSettings.aMapDirectory,
-          l_tBikeSettings.aMapExtension);
+          l_tBikeSettings.aMapExtension,
+          l_tBikeSettings.aArrowTheme);
 
     return RT_EOK;
 }
@@ -656,6 +681,61 @@ rt_err_t BIKE_SETTINGS_SetMapExtension(const char *pExtension)
     return eResult;
 }
 
+/* BIKE_SETTINGS_SetArrowTheme: 更新并保存地图定位箭头主题。
+ * 参数：
+ *   - pTheme: default/light/dark 之一
+ * 返回值：保存成功返回 RT_EOK，参数或存储错误返回错误码
+ */
+rt_err_t BIKE_SETTINGS_SetArrowTheme(const char *pTheme)
+{
+    BIKE_MAP_ARROW_THEME eTheme;
+    const char *pCanonicalName;
+    size_t ulLength;
+    rt_err_t eResult;
+
+    if (!BIKE_MAP_ParseArrowTheme(pTheme, &eTheme))
+    {
+        return -RT_EINVAL;
+    }
+    pCanonicalName = BIKE_MAP_GetArrowThemeName(eTheme);
+    if (NULL == pCanonicalName)
+    {
+        return -RT_EINVAL;
+    }
+    eResult = BIKE_SETTINGS_Init();
+    if (RT_EOK != eResult)
+    {
+        return eResult;
+    }
+    ulLength = strlen(pCanonicalName);
+    eResult = rt_mutex_take(&l_tBikeSettingsMutex, RT_WAITING_FOREVER);
+    if (RT_EOK == eResult)
+    {
+#ifdef BSP_SHARE_PREFS
+        if (NULL != l_pBikeSettingsPrefs)
+        {
+            eResult = share_prefs_set_string(l_pBikeSettingsPrefs,
+                                             BIKE_SETTINGS_KEY_ARROW_THEME,
+                                             pCanonicalName);
+        }
+        else
+#endif
+        {
+            eResult = -RT_ERROR;
+        }
+        if (RT_EOK == eResult)
+        {
+            (void)memset(l_tBikeSettings.aArrowTheme, 0,
+                         sizeof(l_tBikeSettings.aArrowTheme));
+            (void)memcpy(l_tBikeSettings.aArrowTheme, pCanonicalName,
+                         ulLength + 1U);
+        }
+        BikeSettings_Unlock();
+    }
+
+    return eResult;
+}
+
 /* BIKE_SETTINGS_SetSoundEnabled: 更新并保存事件提示音开关。
  * 参数：
  *   - bEnabled: true 开启提示音，false 静音
@@ -704,16 +784,18 @@ static void BikeSettings_Command(int lArgumentCount, char **pArguments)
         eResult = BIKE_SETTINGS_GetSnapshot(&tSnapshot);
         rt_kprintf("bike settings ret=%d storage=%u timezone=%d wheel=%u weight=%u "
                    "auto=%u threshold=%u brightness=%u screen=%u sound=%u map_wgs84=%u "
-                   "map_dir=%s map_ext=%s\n",
+                   "map_dir=%s map_ext=%s arrow=%s\n",
                    eResult, tSnapshot.bStorageReady, tSnapshot.sTimeZoneMinutes,
                    tSnapshot.usWheelCircumferenceMm,
                    tSnapshot.ucRiderWeightKg, tSnapshot.bAutoPauseEnabled,
                    tSnapshot.usAutoPauseCentiKph, tSnapshot.ucBrightnessPercent,
                    tSnapshot.usScreenTimeoutSeconds, tSnapshot.bSoundEnabled,
                    tSnapshot.bMapUseWgs84,
-                   tSnapshot.aMapDirectory, tSnapshot.aMapExtension);
+                   tSnapshot.aMapDirectory, tSnapshot.aMapExtension,
+                   tSnapshot.aArrowTheme);
         rt_kprintf("usage: bikeset timezone <min> | wheel <mm> | weight <kg> | "
                    "sound <0|1> | map <0|1> | mapdir </path> | mapext <ext> | "
+                   "arrow <default|light|dark> | "
                    "autopause <0|1> <centi-kph> | "
                    "display <1-100> <sec>\n");
         return;
@@ -759,6 +841,11 @@ static void BikeSettings_Command(int lArgumentCount, char **pArguments)
              (0 == strcmp(pArguments[1], "mapext")))
     {
         eResult = BIKE_SETTINGS_SetMapExtension(pArguments[2]);
+    }
+    else if ((3 == lArgumentCount) &&
+             (0 == strcmp(pArguments[1], "arrow")))
+    {
+        eResult = BIKE_SETTINGS_SetArrowTheme(pArguments[2]);
     }
     else if ((4 == lArgumentCount) &&
              BikeSettings_ParseInt32(pArguments[2], &lFirstValue) &&

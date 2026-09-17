@@ -35,6 +35,35 @@
  */
 static uint8_t l_aMapImageTestBuffer[BIKE_MAP_IMAGE_DATA_SIZE];
 
+/* Test_MapArrowTheme: 覆盖 X-TRACK 地图箭头主题解析和稳定名称。
+ * 返回值：无
+ */
+static void Test_MapArrowTheme(void)
+{
+    BIKE_MAP_ARROW_THEME eTheme;
+
+    assert(BIKE_MAP_ParseArrowTheme("default", &eTheme));
+    assert(BIKE_MAP_ARROW_THEME_DEFAULT == eTheme);
+    assert(BIKE_MAP_ParseArrowTheme("light", &eTheme));
+    assert(BIKE_MAP_ARROW_THEME_LIGHT == eTheme);
+    assert(BIKE_MAP_ParseArrowTheme("dark", &eTheme));
+    assert(BIKE_MAP_ARROW_THEME_DARK == eTheme);
+    assert(!BIKE_MAP_ParseArrowTheme(NULL, &eTheme));
+    assert(!BIKE_MAP_ParseArrowTheme("default", NULL));
+    assert(!BIKE_MAP_ParseArrowTheme("Default", &eTheme));
+    assert(!BIKE_MAP_ParseArrowTheme("dark-extra", &eTheme));
+    assert(!BIKE_MAP_ParseArrowTheme("", &eTheme));
+    assert(0 == strcmp("default", BIKE_MAP_GetArrowThemeName(
+                                    BIKE_MAP_ARROW_THEME_DEFAULT)));
+    assert(0 == strcmp("light", BIKE_MAP_GetArrowThemeName(
+                                  BIKE_MAP_ARROW_THEME_LIGHT)));
+    assert(0 == strcmp("dark", BIKE_MAP_GetArrowThemeName(
+                                 BIKE_MAP_ARROW_THEME_DARK)));
+    assert(NULL == BIKE_MAP_GetArrowThemeName(BIKE_MAP_ARROW_THEME_COUNT));
+
+    return;
+}
+
 /* Test_SoundPatterns: 覆盖 X-TRACK 提示音名称、序列、静音节点和非法参数。
  * 返回值：无
  */
@@ -1538,6 +1567,7 @@ static void Test_HistoryRecord(void)
 
 int main(void)
 {
+    Test_MapArrowTheme();
     Test_SoundPatterns();
     Test_PowerFilter();
     Test_CompassCalibration();

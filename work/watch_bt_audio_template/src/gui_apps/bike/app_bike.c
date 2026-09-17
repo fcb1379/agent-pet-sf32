@@ -24,6 +24,10 @@
 #define BIKE_UI_MAP_ZOOM_DEFAULT (16U)
 #define BIKE_UI_MAP_TRACK_LEVEL (16U)
 #define BIKE_UI_MAP_TRACK_OFFSET_THRESHOLD_PX (2U)
+#define BIKE_UI_MAP_MARKER_WIDTH_PX (16U)
+#define BIKE_UI_MAP_MARKER_HEIGHT_PX (20U)
+#define BIKE_UI_MAP_MARKER_X (187)
+#define BIKE_UI_MAP_MARKER_Y (215)
 
 #if 16 != LV_COLOR_DEPTH
 #error "Bike map tiles require LVGL RGB565 color depth"
@@ -67,6 +71,7 @@ typedef struct _BIKE_UI_MAP_TRACK_POINT
  *   - aMapDirectory/aMapRoot/aMapExtension: 地图目录、实际路径和扩展名
  *   - ucMapZoomMin/ucMapZoomMax: 当前地图介质实际可用的缩放范围
  *   - bMapUseWgs84: 当前离线瓦片坐标系选择
+ *   - eMapArrowTheme: 当前定位箭头主题
  *   - pTimer: 500 ms UI 刷新定时器
  */
 typedef struct _BIKE_UI_CONTEXT
@@ -102,6 +107,7 @@ typedef struct _BIKE_UI_CONTEXT
     uint8_t ucMapZoomMax;
     uint8_t ucMapLoadedCount;
     BIKE_RIDE_MODE ePreviousRideMode;
+    BIKE_MAP_ARROW_THEME eMapArrowTheme;
     bool bMapTilesLoaded;
     bool bMapUseWgs84;
     lv_timer_t *pTimer;
@@ -109,6 +115,46 @@ typedef struct _BIKE_UI_CONTEXT
 
 /* l_tBikeUi: 仅由 LVGL GUI 线程访问的码表页面上下文。 */
 static BIKE_UI_CONTEXT l_tBikeUi;
+
+/* l_aBikeMapMarkerAlpha: 16 x 20 单色向上箭头的 1-bit Alpha 蒙版。
+ * 取值范围 0x00~0xFF；仅在编译期固定，主题颜色由 LVGL recolor 设置。
+ */
+static const uint8_t l_aBikeMapMarkerAlpha[] =
+{
+    0x01U, 0x80U,
+    0x03U, 0xC0U,
+    0x07U, 0xE0U,
+    0x0FU, 0xF0U,
+    0x1FU, 0xF8U,
+    0x3FU, 0xFCU,
+    0x7FU, 0xFEU,
+    0xFFU, 0xFFU,
+    0x0FU, 0xF0U,
+    0x07U, 0xE0U,
+    0x07U, 0xE0U,
+    0x07U, 0xE0U,
+    0x07U, 0xE0U,
+    0x07U, 0xE0U,
+    0x07U, 0xE0U,
+    0x07U, 0xE0U,
+    0x07U, 0xE0U,
+    0x07U, 0xE0U,
+    0x07U, 0xE0U,
+    0x07U, 0xE0U,
+};
+
+/* l_tBikeMapMarkerImage: 无像素颜色的固定箭头描述符，旋转时由 LVGL
+ * 将 Alpha 蒙版和当前主题颜色组合，不占用运行期像素缓冲。
+ */
+static const lv_img_dsc_t l_tBikeMapMarkerImage =
+{
+    .header.always_zero = 0U,
+    .header.w = BIKE_UI_MAP_MARKER_WIDTH_PX,
+    .header.h = BIKE_UI_MAP_MARKER_HEIGHT_PX,
+    .data_size = sizeof(l_aBikeMapMarkerAlpha),
+    .header.cf = LV_IMG_CF_ALPHA_1BIT,
+    .data = l_aBikeMapMarkerAlpha,
+};
 
 /* l_aaBikeMapTileData: 九块 256 x 256 RGB565 离线瓦片像素缓存，
  * 每块固定 131072 bytes，总计 1179648 bytes；仅由 LVGL GUI 线程读写，
@@ -122,6 +168,43 @@ L2_NON_RET_BSS_SECT(
 L2_NON_RET_BSS_SECT_END
 
 static void BikeUi_Update(void);
+
+/* BikeUi_MapApplyArrowTheme: 将 X-TRACK 主题映射为定位箭头颜色。
+ * 参数：
+ *   - eTheme: default/light/dark 主题
+ * 返回值：主题合法且已应用返回 true，否则返回 false
+ */
+static bool BikeUi_MapApplyArrowTheme(BIKE_MAP_ARROW_THEME eTheme)
+{
+    lv_color_t tColor;
+
+    if (NULL == l_tBikeUi.pMapMarker)
+    {
+        return false;
+    }
+    if (BIKE_MAP_ARROW_THEME_DEFAULT == eTheme)
+    {
+        tColor = lv_color_hex(0xFF7A00);
+    }
+    else if (BIKE_MAP_ARROW_THEME_LIGHT == eTheme)
+    {
+        tColor = lv_color_hex(0xFFFFFF);
+    }
+    else if (BIKE_MAP_ARROW_THEME_DARK == eTheme)
+    {
+        tColor = lv_color_hex(0x142F44);
+    }
+    else
+    {
+        return false;
+    }
+    lv_obj_set_style_img_recolor(l_tBikeUi.pMapMarker, tColor, LV_PART_MAIN);
+    lv_obj_set_style_img_recolor_opa(l_tBikeUi.pMapMarker, LV_OPA_COVER,
+                                     LV_PART_MAIN);
+    l_tBikeUi.eMapArrowTheme = eTheme;
+
+    return true;
+}
 
 /* BikeUi_MapApplySource: 应用地图目录和扩展名并重新扫描可用缩放级别。
  * 参数：
@@ -418,11 +501,13 @@ static void BikeUi_MapUpdate(const BIKE_SERVICE_SNAPSHOT *pSnapshot)
     BIKE_MAP_POINT tPoint;
     BIKE_SETTINGS_SNAPSHOT tSettings;
     BIKE_MAP_COORDINATE_SYSTEM eCoordinateSystem;
+    BIKE_MAP_ARROW_THEME eArrowTheme;
     const char *pCoordinateName;
     uint8_t ucLoadedCount;
 
     if ((NULL == pSnapshot) || (NULL == l_tBikeUi.pMapStatusLabel) ||
-        (NULL == l_tBikeUi.pMapContainer))
+        (NULL == l_tBikeUi.pMapContainer) ||
+        (NULL == l_tBikeUi.pMapMarker))
     {
         return;
     }
@@ -432,14 +517,20 @@ static void BikeUi_MapUpdate(const BIKE_SERVICE_SNAPSHOT *pSnapshot)
         BikeUi_MapClearTrack();
     }
     l_tBikeUi.ePreviousRideMode = pSnapshot->tRide.eMode;
-    if ((RT_EOK == BIKE_SETTINGS_GetSnapshot(&tSettings)) &&
-        ((l_tBikeUi.bMapUseWgs84 != tSettings.bMapUseWgs84) ||
-         (0 != strcmp(l_tBikeUi.aMapDirectory,
-                      tSettings.aMapDirectory)) ||
-         (0 != strcmp(l_tBikeUi.aMapExtension,
-                      tSettings.aMapExtension))))
+    if (RT_EOK == BIKE_SETTINGS_GetSnapshot(&tSettings))
     {
-        if (BikeUi_MapApplySource(tSettings.aMapDirectory,
+        if (BIKE_MAP_ParseArrowTheme(tSettings.aArrowTheme,
+                                     &eArrowTheme) &&
+            (l_tBikeUi.eMapArrowTheme != eArrowTheme))
+        {
+            (void)BikeUi_MapApplyArrowTheme(eArrowTheme);
+        }
+        if (((l_tBikeUi.bMapUseWgs84 != tSettings.bMapUseWgs84) ||
+             (0 != strcmp(l_tBikeUi.aMapDirectory,
+                          tSettings.aMapDirectory)) ||
+             (0 != strcmp(l_tBikeUi.aMapExtension,
+                          tSettings.aMapExtension))) &&
+            BikeUi_MapApplySource(tSettings.aMapDirectory,
                                   tSettings.aMapExtension))
         {
             l_tBikeUi.bMapUseWgs84 = tSettings.bMapUseWgs84;
@@ -462,6 +553,7 @@ static void BikeUi_MapUpdate(const BIKE_SERVICE_SNAPSHOT *pSnapshot)
                                      l_tBikeUi.ucMapZoom, eCoordinateSystem,
                                      &tPoint)))
     {
+        lv_obj_add_flag(l_tBikeUi.pMapMarker, LV_OBJ_FLAG_HIDDEN);
         lv_label_set_text_fmt(l_tBikeUi.pMapStatusLabel,
                               "MAP %s Z%u  WAIT FIX", pCoordinateName,
                               (unsigned int)l_tBikeUi.ucMapZoom);
@@ -481,6 +573,9 @@ static void BikeUi_MapUpdate(const BIKE_SERVICE_SNAPSHOT *pSnapshot)
     lv_obj_set_pos(l_tBikeUi.pMapContainer,
                    (lv_coord_t)(195 - 256 - tPoint.usOffsetX),
                    (lv_coord_t)(225 - 256 - tPoint.usOffsetY));
+    lv_img_set_angle(l_tBikeUi.pMapMarker,
+                     (int16_t)pSnapshot->tGnss.usCourseDeg10);
+    lv_obj_clear_flag(l_tBikeUi.pMapMarker, LV_OBJ_FLAG_HIDDEN);
     if (BIKE_RIDE_MODE_RUNNING == pSnapshot->tRide.eMode)
     {
         BikeUi_MapAppendTrack(&tPoint);
@@ -1468,22 +1563,33 @@ static void BikeUi_CreatePageTitle(lv_obj_t *pPage, const char *pTitle, const ch
 static void BikeUi_OnStart(void)
 {
     BIKE_SETTINGS_SNAPSHOT tSettings;
+    BIKE_MAP_ARROW_THEME eArrowTheme;
     lv_obj_t *pDashboardPage;
     lv_obj_t *pLocationPage;
     lv_obj_t *pMapPage;
     lv_obj_t *pSummaryPage;
     lv_obj_t *pTile;
     uint8_t ucIndex;
+    bool bMapSourceReady;
 
     (void)memset(&l_tBikeUi, 0, sizeof(l_tBikeUi));
     l_tBikeUi.ucMapZoom = BIKE_UI_MAP_ZOOM_DEFAULT;
-    if ((RT_EOK == BIKE_SETTINGS_GetSnapshot(&tSettings)) &&
-        BikeUi_MapApplySource(tSettings.aMapDirectory,
-                              tSettings.aMapExtension))
+    l_tBikeUi.eMapArrowTheme = BIKE_MAP_ARROW_THEME_DEFAULT;
+    bMapSourceReady = false;
+    if (RT_EOK == BIKE_SETTINGS_GetSnapshot(&tSettings))
     {
-        l_tBikeUi.bMapUseWgs84 = tSettings.bMapUseWgs84;
+        if (BIKE_MAP_ParseArrowTheme(tSettings.aArrowTheme, &eArrowTheme))
+        {
+            l_tBikeUi.eMapArrowTheme = eArrowTheme;
+        }
+        if (BikeUi_MapApplySource(tSettings.aMapDirectory,
+                                  tSettings.aMapExtension))
+        {
+            l_tBikeUi.bMapUseWgs84 = tSettings.bMapUseWgs84;
+            bMapSourceReady = true;
+        }
     }
-    else
+    if (!bMapSourceReady)
     {
         l_tBikeUi.bMapUseWgs84 = BIKE_SETTINGS_DEFAULT_MAP_USE_WGS84;
         (void)BikeUi_MapApplySource(BIKE_SETTINGS_DEFAULT_MAP_DIRECTORY,
@@ -1600,20 +1706,17 @@ static void BikeUi_OnStart(void)
                                   LV_PART_MAIN);
     lv_obj_add_flag(l_tBikeUi.pMapTrackLine, LV_OBJ_FLAG_HIDDEN);
 
-    l_tBikeUi.pMapMarker = lv_obj_create(pMapPage);
+    l_tBikeUi.pMapMarker = lv_img_create(pMapPage);
     RT_ASSERT(NULL != l_tBikeUi.pMapMarker);
-    lv_obj_set_size(l_tBikeUi.pMapMarker, 18, 18);
-    lv_obj_set_pos(l_tBikeUi.pMapMarker, 186, 216);
-    lv_obj_set_style_radius(l_tBikeUi.pMapMarker, 9, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(l_tBikeUi.pMapMarker,
-                              lv_color_hex(0xFF7A00), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(l_tBikeUi.pMapMarker, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_border_color(l_tBikeUi.pMapMarker,
-                                  lv_color_hex(0xFFFFFF), LV_PART_MAIN);
-    lv_obj_set_style_border_width(l_tBikeUi.pMapMarker, 3, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(l_tBikeUi.pMapMarker, 0, LV_PART_MAIN);
-    lv_obj_clear_flag(l_tBikeUi.pMapMarker, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_clear_flag(l_tBikeUi.pMapMarker, LV_OBJ_FLAG_CLICKABLE);
+    lv_img_set_src(l_tBikeUi.pMapMarker, &l_tBikeMapMarkerImage);
+    lv_img_set_pivot(l_tBikeUi.pMapMarker,
+                     BIKE_UI_MAP_MARKER_WIDTH_PX / 2U,
+                     BIKE_UI_MAP_MARKER_HEIGHT_PX / 2U);
+    lv_img_set_antialias(l_tBikeUi.pMapMarker, true);
+    lv_obj_set_pos(l_tBikeUi.pMapMarker, BIKE_UI_MAP_MARKER_X,
+                   BIKE_UI_MAP_MARKER_Y);
+    (void)BikeUi_MapApplyArrowTheme(l_tBikeUi.eMapArrowTheme);
+    lv_obj_add_flag(l_tBikeUi.pMapMarker, LV_OBJ_FLAG_HIDDEN);
 
     l_tBikeUi.pMapStatusLabel = lv_label_create(pMapPage);
     RT_ASSERT(NULL != l_tBikeUi.pMapStatusLabel);

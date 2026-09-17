@@ -13,6 +13,7 @@ extern "C" {
 #define BIKE_MAP_ZOOM_MAX (19U)
 #define BIKE_MAP_TILE_SIZE_PX (256U)
 #define BIKE_MAP_EXTENSION_MAX (8U)
+#define BIKE_MAP_ARROW_THEME_NAME_MAX (16U)
 
 /* BIKE_MAP_COORDINATE_SYSTEM: 离线瓦片采用的地理坐标系。 */
 typedef enum _BIKE_MAP_COORDINATE_SYSTEM
@@ -20,6 +21,15 @@ typedef enum _BIKE_MAP_COORDINATE_SYSTEM
     BIKE_MAP_COORDINATE_WGS84 = 0,
     BIKE_MAP_COORDINATE_GCJ02
 } BIKE_MAP_COORDINATE_SYSTEM;
+
+/* BIKE_MAP_ARROW_THEME: X-TRACK 实时地图定位箭头主题。 */
+typedef enum _BIKE_MAP_ARROW_THEME
+{
+    BIKE_MAP_ARROW_THEME_DEFAULT = 0,
+    BIKE_MAP_ARROW_THEME_LIGHT,
+    BIKE_MAP_ARROW_THEME_DARK,
+    BIKE_MAP_ARROW_THEME_COUNT
+} BIKE_MAP_ARROW_THEME;
 
 /* BIKE_MAP_POINT: 地图坐标在 Web Mercator 瓦片平面上的定位结果。
  * 成员说明：
@@ -56,6 +66,9 @@ bool BIKE_MAP_ConvertPixelLevel(uint32_t ulSourcePixelX,
                                 uint32_t *pDestinationPixelX,
                                 uint32_t *pDestinationPixelY);
 bool BIKE_MAP_IsExtensionValid(const char *pExtension);
+bool BIKE_MAP_ParseArrowTheme(const char *pName,
+                              BIKE_MAP_ARROW_THEME *pTheme);
+const char *BIKE_MAP_GetArrowThemeName(BIKE_MAP_ARROW_THEME eTheme);
 bool BIKE_MAP_FormatTilePath(const char *pRoot, uint8_t ucZoom,
                              uint32_t ulTileX, uint32_t ulTileY,
                              const char *pExtension, char *pPath,
