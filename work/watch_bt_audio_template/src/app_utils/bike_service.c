@@ -7,6 +7,7 @@
 #include <rtthread.h>
 #include <string.h>
 
+#include "bike_settings.h"
 #include "bike_time.h"
 
 #define LOG_TAG "bike.gnss"
@@ -19,10 +20,6 @@
 #define BIKE_GNSS_THREAD_STACK_SIZE (3072U)
 #define BIKE_GNSS_THREAD_PRIORITY (20U)
 #define BIKE_GNSS_STALE_TIMEOUT_MS (3000U)
-
-#ifndef CONFIG_BIKE_TIMEZONE_MINUTES
-#define CONFIG_BIKE_TIMEZONE_MINUTES (480)
-#endif
 
 /* l_tBikeSnapshot: 码表服务共享快照，只能在 l_tBikeMutex 保护下访问。 */
 static BIKE_SERVICE_SNAPSHOT l_tBikeSnapshot;
@@ -62,6 +59,7 @@ static void BikeService_Unlock(void);
  */
 static bool BikeService_SyncRtc(const BIKE_GNSS_DATA *pGnss)
 {
+    BIKE_SETTINGS_SNAPSHOT tSettings;
     BIKE_LOCAL_TIME tLocalTime;
     rt_err_t eResult;
 
@@ -69,7 +67,13 @@ static bool BikeService_SyncRtc(const BIKE_GNSS_DATA *pGnss)
     {
         return true;
     }
-    if (!BIKE_TIME_ConvertUtc(pGnss, (int16_t)CONFIG_BIKE_TIMEZONE_MINUTES, &tLocalTime))
+    eResult = BIKE_SETTINGS_GetSnapshot(&tSettings);
+    if (RT_EOK != eResult)
+    {
+        LOG_E("settings read failed: %d", eResult);
+        return false;
+    }
+    if (!BIKE_TIME_ConvertUtc(pGnss, tSettings.sTimeZoneMinutes, &tLocalTime))
     {
         return false;
     }
@@ -94,7 +98,7 @@ static bool BikeService_SyncRtc(const BIKE_GNSS_DATA *pGnss)
     LOG_I("RTC synchronized: %04u-%02u-%02u %02u:%02u:%02u UTC%+dmin",
           tLocalTime.usYear, tLocalTime.ucMonth, tLocalTime.ucDay,
           tLocalTime.ucHour, tLocalTime.ucMinute, tLocalTime.ucSecond,
-          CONFIG_BIKE_TIMEZONE_MINUTES);
+          tSettings.sTimeZoneMinutes);
 
     return true;
 }
@@ -276,6 +280,11 @@ static int BikeService_Init(void)
     rt_err_t eResult;
 
     (void)memset(&l_tBikeSnapshot, 0, sizeof(l_tBikeSnapshot));
+    eResult = BIKE_SETTINGS_Init();
+    if (RT_EOK != eResult)
+    {
+        LOG_E("settings init failed: %d", eResult);
+    }
     BIKE_NMEA_Init(&l_tBikeParser);
     BIKE_RIDE_Init(&l_tBikeSnapshot.tRide, BIKE_RIDE_DEFAULT_WEIGHT_KG);
     l_tBikeSnapshot.ePortStatus = BIKE_GNSS_PORT_SEARCHING;
