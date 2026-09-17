@@ -6,19 +6,16 @@
 #include <rtthread.h>
 
 #include "bike_ble_advertising.h"
+#ifdef BSP_BLE_SIBLES
+#include "bike_ble_gatt_client.h"
+#endif
 #include "bike_settings.h"
 #include "bf0_ble_gap.h"
 
-#if defined(BSP_BLE_HRPC) || defined(BSP_BLE_CSCPC)
+#ifdef BSP_BLE_SIBLES
 #include "bf0_ble_common.h"
 #include "bf0_sibles.h"
 #include "ble_connection_manager.h"
-#endif
-#ifdef BSP_BLE_HRPC
-#include "bf0_ble_hrpc.h"
-#endif
-#ifdef BSP_BLE_CSCPC
-#include "bf0_ble_cscpc.h"
 #endif
 #ifdef BSP_SHARE_PREFS
 #include "share_prefs.h"
@@ -58,6 +55,7 @@ typedef enum _BIKE_SENSOR_BLE_EVENT
     BIKE_SENSOR_BLE_EVENT_CONNECT_RESULT,
     BIKE_SENSOR_BLE_EVENT_CONNECTED,
     BIKE_SENSOR_BLE_EVENT_DISCONNECTED,
+    BIKE_SENSOR_BLE_EVENT_GATT_READY,
     BIKE_SENSOR_BLE_EVENT_FORCE_SCAN,
     BIKE_SENSOR_BLE_EVENT_CLEAR_PEERS
 } BIKE_SENSOR_BLE_EVENT;
@@ -216,7 +214,7 @@ static void BikeSensorBle_Unlock(void)
     return;
 }
 
-#if defined(BSP_BLE_HRPC) || defined(BSP_BLE_CSCPC)
+#ifdef BSP_BLE_SIBLES
 /* BikeSensorBle_AddressEqual: 比较两个 BLE 地址及其类型。
  * 参数：
  *   - pLeft/pRight: 待比较地址
@@ -526,18 +524,14 @@ static uint8_t BikeSensorBle_GetNeededMask(const BIKE_SENSOR_BLE_MANAGER *pManag
         return 0U;
     }
     ucMask = 0U;
-#ifdef BSP_BLE_HRPC
     if (BIKE_SENSOR_BLE_INVALID_CONN_INDEX == pManager->ucHeartRateConnIndex)
     {
         ucMask |= BIKE_BLE_SERVICE_HEART_RATE;
     }
-#endif
-#ifdef BSP_BLE_CSCPC
     if (BIKE_SENSOR_BLE_INVALID_CONN_INDEX == pManager->ucCscConnIndex)
     {
         ucMask |= BIKE_BLE_SERVICE_CSC;
     }
-#endif
 
     return ucMask;
 }
@@ -700,25 +694,28 @@ static bool BikeSensorBle_StartConnection(BIKE_SENSOR_BLE_MANAGER *pManager,
 }
 #endif
 
-#ifdef BSP_BLE_HRPC
-/* BikeSensorBle_HandleHeartRate: 提交 SDK 已解码的心率通知。
+#ifdef BSP_BLE_SIBLES
+/* BikeSensorBle_HandleHeartRate: 提交项目 GATT 客户端已校验的心率通知。
  * 参数：
- *   - pHeartRate: SDK 心率通知
+ *   - ucConnIndex: 通知所属连接
+ *   - usHeartRateBpm: 心率，单位 bpm
  * 返回值：无
  */
-static void BikeSensorBle_HandleHeartRate(const ble_hrpc_heart_rate_t *pHeartRate)
+static void BikeSensorBle_HandleHeartRate(uint8_t ucConnIndex,
+                                          uint16_t usHeartRateBpm)
 {
-    if (NULL == pHeartRate)
-    {
-        return;
-    }
     if (!BikeSensorBle_Lock())
     {
         BikeSensorBle_CountDroppedEvent();
         return;
     }
+    if (ucConnIndex != l_tBikeSensorSnapshot.ucHeartRateConnIndex)
+    {
+        BikeSensorBle_Unlock();
+        return;
+    }
 
-    l_tBikeSensorSnapshot.usHeartRateBpm = pHeartRate->heart_rate;
+    l_tBikeSensorSnapshot.usHeartRateBpm = usHeartRateBpm;
     l_tBikeSensorSnapshot.ulHeartRateUpdateMs =
         (uint32_t)rt_tick_get_millisecond();
     l_tBikeSensorSnapshot.bHeartRateValid = true;
@@ -726,31 +723,22 @@ static void BikeSensorBle_HandleHeartRate(const ble_hrpc_heart_rate_t *pHeartRat
 
     return;
 }
-#endif
 
-#ifdef BSP_BLE_CSCPC
-/* BikeSensorBle_HandleCsc: 提交 SDK 已解码的 CSC 通知并计算轮速/踏频。
+/* BikeSensorBle_HandleCsc: 提交项目 GATT 客户端已校验的 CSC 通知。
  * 参数：
- *   - pCsc: SDK CSC 通知
+ *   - ucConnIndex: 通知所属连接
+ *   - pMeasurement: 标准 CSC 累计测量值
  * 返回值：无
  */
-static void BikeSensorBle_HandleCsc(const ble_csc_meas_value_ind *pCsc)
+static void BikeSensorBle_HandleCsc(
+    uint8_t ucConnIndex, const BIKE_CSC_MEASUREMENT *pMeasurement)
 {
-    BIKE_CSC_MEASUREMENT tMeasurement;
     BIKE_SETTINGS_SNAPSHOT tSettings;
 
-    if (NULL == pCsc)
+    if (NULL == pMeasurement)
     {
         return;
     }
-    (void)memset(&tMeasurement, 0, sizeof(tMeasurement));
-    tMeasurement.ucFlags = pCsc->csc_meas.flags;
-    tMeasurement.usCumulativeCrankRevolutions =
-        pCsc->csc_meas.cumul_crank_rev;
-    tMeasurement.usLastCrankEventTime = pCsc->csc_meas.last_crank_evt_time;
-    tMeasurement.usLastWheelEventTime = pCsc->csc_meas.last_wheel_evt_time;
-    tMeasurement.ulCumulativeWheelRevolutions =
-        pCsc->csc_meas.cumul_wheel_rev;
     if (RT_EOK != BIKE_SETTINGS_GetSnapshot(&tSettings))
     {
         tSettings.usWheelCircumferenceMm = BIKE_SETTINGS_DEFAULT_WHEEL_MM;
@@ -760,7 +748,12 @@ static void BikeSensorBle_HandleCsc(const ble_csc_meas_value_ind *pCsc)
         BikeSensorBle_CountDroppedEvent();
         return;
     }
-    BIKE_CSC_Update(&l_tBikeCscState, &tMeasurement,
+    if (ucConnIndex != l_tBikeSensorSnapshot.ucCscConnIndex)
+    {
+        BikeSensorBle_Unlock();
+        return;
+    }
+    BIKE_CSC_Update(&l_tBikeCscState, pMeasurement,
                     tSettings.usWheelCircumferenceMm);
     l_tBikeSensorSnapshot.bWheelSpeedValid = l_tBikeCscState.bWheelSpeedValid;
     l_tBikeSensorSnapshot.bCadenceValid = l_tBikeCscState.bCadenceValid;
@@ -772,9 +765,33 @@ static void BikeSensorBle_HandleCsc(const ble_csc_meas_value_ind *pCsc)
 
     return;
 }
-#endif
 
-#if defined(BSP_BLE_HRPC) || defined(BSP_BLE_CSCPC)
+/* BikeSensorBle_HandleGattReady: 将 GATT 订阅结果投递给连接管理线程。
+ * 参数：
+ *   - ucConnIndex: 服务所属连接
+ *   - ucServiceMask: HR 或 CSC 服务位
+ *   - bReady: 订阅是否成功
+ * 返回值：无
+ */
+static void BikeSensorBle_HandleGattReady(uint8_t ucConnIndex,
+                                          uint8_t ucServiceMask,
+                                          bool bReady)
+{
+    BIKE_SENSOR_BLE_MESSAGE tMessage;
+
+    (void)memset(&tMessage, 0, sizeof(tMessage));
+    tMessage.eEvent = BIKE_SENSOR_BLE_EVENT_GATT_READY;
+    tMessage.ucConnIndex = ucConnIndex;
+    tMessage.ucServiceMask = ucServiceMask;
+    tMessage.ucStatus = bReady ? HL_ERR_NO_ERROR : 1U;
+    if (!BikeSensorBle_PostMessage(&tMessage))
+    {
+        connection_manager_disconnect(ucConnIndex);
+    }
+
+    return;
+}
+
 /* BikeSensorBle_TryNextAction: 优先重连已知设备，否则扫描目标服务。
  * 参数：
  *   - pManager: 连接管理状态
@@ -886,6 +903,13 @@ static void BikeSensorBle_AssignConnection(BIKE_SENSOR_BLE_MANAGER *pManager,
     BikeSensorBle_SavePeer(&pMessage->tAddress, ucMask);
     BikeSensorBle_PublishManager(pManager);
 
+    if (!BIKE_BLE_GATT_Attach(pMessage->ucConnIndex, ucMask))
+    {
+        LOG_E("GATT attach failed conn=%u mask=0x%02x",
+              pMessage->ucConnIndex, ucMask);
+        connection_manager_disconnect(pMessage->ucConnIndex);
+        return;
+    }
     ucResult = sibles_exchange_mtu(pMessage->ucConnIndex);
     if (HL_ERR_NO_ERROR != ucResult)
     {
@@ -933,6 +957,12 @@ static void BikeSensorBle_HandleAdvertisement(BIKE_SENSOR_BLE_MANAGER *pManager,
             pManager->bCscPeerKnown = true;
             BikeSensorBle_SavePeer(&pMessage->tAddress, BIKE_BLE_SERVICE_CSC);
             BikeSensorBle_PublishManager(pManager);
+            if (!BIKE_BLE_GATT_Attach(pManager->ucHeartRateConnIndex,
+                                      BIKE_BLE_SERVICE_CSC))
+            {
+                connection_manager_disconnect(
+                    pManager->ucHeartRateConnIndex);
+            }
         }
         return;
     }
@@ -947,6 +977,11 @@ static void BikeSensorBle_HandleAdvertisement(BIKE_SENSOR_BLE_MANAGER *pManager,
             BikeSensorBle_SavePeer(&pMessage->tAddress,
                                    BIKE_BLE_SERVICE_HEART_RATE);
             BikeSensorBle_PublishManager(pManager);
+            if (!BIKE_BLE_GATT_Attach(pManager->ucCscConnIndex,
+                                      BIKE_BLE_SERVICE_HEART_RATE))
+            {
+                connection_manager_disconnect(pManager->ucCscConnIndex);
+            }
         }
         return;
     }
@@ -999,6 +1034,7 @@ static void BikeSensorBle_HandleDisconnect(BIKE_SENSOR_BLE_MANAGER *pManager,
     {
         return;
     }
+    BIKE_BLE_GATT_Detach(ucConnIndex);
     pManager->ucKnownAttemptMask &= (uint8_t)(~ucDisconnectedMask);
     pManager->ulNextActionMs = (uint32_t)rt_tick_get_millisecond() +
                                BIKE_SENSOR_BLE_RETRY_DELAY_MS;
@@ -1046,11 +1082,13 @@ static void BikeSensorBle_ClearManagerPeers(BIKE_SENSOR_BLE_MANAGER *pManager)
     ucCscIndex = pManager->ucCscConnIndex;
     if (BIKE_SENSOR_BLE_INVALID_CONN_INDEX != ucHeartRateIndex)
     {
+        BIKE_BLE_GATT_Detach(ucHeartRateIndex);
         connection_manager_disconnect(ucHeartRateIndex);
     }
     if ((BIKE_SENSOR_BLE_INVALID_CONN_INDEX != ucCscIndex) &&
         (ucHeartRateIndex != ucCscIndex))
     {
+        BIKE_BLE_GATT_Detach(ucCscIndex);
         connection_manager_disconnect(ucCscIndex);
     }
     pManager->ucHeartRateConnIndex = BIKE_SENSOR_BLE_INVALID_CONN_INDEX;
@@ -1167,6 +1205,21 @@ static void BikeSensorBle_ProcessMessage(BIKE_SENSOR_BLE_MANAGER *pManager,
         BikeSensorBle_HandleDisconnect(pManager, pMessage->ucConnIndex);
         break;
 
+    case BIKE_SENSOR_BLE_EVENT_GATT_READY:
+        if (HL_ERR_NO_ERROR != pMessage->ucStatus)
+        {
+            LOG_E("GATT service failed conn=%u mask=0x%02x",
+                  pMessage->ucConnIndex, pMessage->ucServiceMask);
+            BIKE_BLE_GATT_Detach(pMessage->ucConnIndex);
+            connection_manager_disconnect(pMessage->ucConnIndex);
+        }
+        else
+        {
+            LOG_I("GATT service ready conn=%u mask=0x%02x",
+                  pMessage->ucConnIndex, pMessage->ucServiceMask);
+        }
+        break;
+
     case BIKE_SENSOR_BLE_EVENT_FORCE_SCAN:
         pManager->bScanRequested = true;
         pManager->ucKnownAttemptMask = BikeSensorBle_GetNeededMask(pManager);
@@ -1213,7 +1266,7 @@ static void BikeSensorBle_ThreadEntry(void *pParameter)
     }
 }
 
-/* BikeSensorBle_EventHandler: 接收 SiFli HRPC/CSCPC 发布的已解码事件。
+/* BikeSensorBle_EventHandler: 接收连接管理和 GAP 事件。
  * 参数：
  *   - usEventId: BLE 事件编号
  *   - pData: 事件数据
@@ -1232,12 +1285,6 @@ static int BikeSensorBle_EventHandler(uint16_t usEventId, uint8_t *pData,
     switch (usEventId)
     {
     case BLE_POWER_ON_IND:
-#ifdef BSP_BLE_HRPC
-        ble_hrpc_init(true);
-#endif
-#ifdef BSP_BLE_CSCPC
-        ble_cscpc_init(true);
-#endif
         tMessage.eEvent = BIKE_SENSOR_BLE_EVENT_POWER_ON;
         (void)BikeSensorBle_PostMessage(&tMessage);
         break;
@@ -1381,32 +1428,6 @@ static int BikeSensorBle_EventHandler(uint16_t usEventId, uint8_t *pData,
         }
         break;
 
-#ifdef BSP_BLE_HRPC
-    case BLE_HRPC_HREAT_RATE_NOTIFY:
-        if (sizeof(ble_hrpc_heart_rate_t) <= usLength)
-        {
-            BikeSensorBle_HandleHeartRate((const ble_hrpc_heart_rate_t *)pData);
-        }
-        else
-        {
-            BikeSensorBle_CountDroppedEvent();
-        }
-        break;
-#endif
-
-#ifdef BSP_BLE_CSCPC
-    case BLE_CSCPC_CSC_MEASUREMENT_NOTIFY:
-        if (sizeof(ble_csc_meas_value_ind) <= usLength)
-        {
-            BikeSensorBle_HandleCsc((const ble_csc_meas_value_ind *)pData);
-        }
-        else
-        {
-            BikeSensorBle_CountDroppedEvent();
-        }
-        break;
-#endif
-
     default:
         break;
     }
@@ -1453,7 +1474,16 @@ bool BIKE_SENSOR_BLE_Init(void)
         (void)rt_mutex_detach(&l_tBikeSensorMutex);
         return false;
     }
-#if defined(BSP_BLE_HRPC) || defined(BSP_BLE_CSCPC)
+#ifdef BSP_BLE_SIBLES
+    if (!BIKE_BLE_GATT_Init(BikeSensorBle_HandleGattReady,
+                            BikeSensorBle_HandleHeartRate,
+                            BikeSensorBle_HandleCsc))
+    {
+        LOG_E("GATT client init failed");
+        (void)rt_mq_detach(&l_tBikeSensorQueue);
+        (void)rt_mutex_detach(&l_tBikeSensorMutex);
+        return false;
+    }
     eResult = rt_thread_init(&l_tBikeSensorThread, "bike_ble",
                              BikeSensorBle_ThreadEntry, NULL,
                              l_aBikeSensorThreadStack,
@@ -1531,7 +1561,7 @@ bool BIKE_SENSOR_BLE_GetSnapshot(BIKE_SENSOR_BLE_SNAPSHOT *pSnapshot)
  */
 bool BIKE_SENSOR_BLE_RequestScan(void)
 {
-#if defined(BSP_BLE_HRPC) || defined(BSP_BLE_CSCPC)
+#ifdef BSP_BLE_SIBLES
     BIKE_SENSOR_BLE_MESSAGE tMessage;
 
     (void)memset(&tMessage, 0, sizeof(tMessage));
@@ -1547,7 +1577,7 @@ bool BIKE_SENSOR_BLE_RequestScan(void)
  */
 bool BIKE_SENSOR_BLE_ClearPeers(void)
 {
-#if defined(BSP_BLE_HRPC) || defined(BSP_BLE_CSCPC)
+#ifdef BSP_BLE_SIBLES
     BIKE_SENSOR_BLE_MESSAGE tMessage;
 
     (void)memset(&tMessage, 0, sizeof(tMessage));

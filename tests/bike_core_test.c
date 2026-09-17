@@ -10,6 +10,7 @@
 #include "bike_gpx.h"
 #include "bike_auto_pause.h"
 #include "bike_ble_advertising.h"
+#include "bike_ble_measurement.h"
 #include "bike_csc.h"
 #include "bike_nmea.h"
 #include "bike_ride_model.h"
@@ -403,6 +404,76 @@ static void Test_BleAdvertising(void)
     return;
 }
 
+/* Test_BleMeasurement: 覆盖标准 HR/CSC 测量解析和畸形长度拒绝。
+ * 返回值：无
+ */
+static void Test_BleMeasurement(void)
+{
+    static const uint8_t aHeartRate8[] = {0x00U, 72U};
+    static const uint8_t aHeartRate16[] = {0x01U, 0x2CU, 0x01U};
+    static const uint8_t aHeartRateEnergyRr[] = {
+        0x18U, 80U, 0x34U, 0x12U, 0x00U, 0x04U
+    };
+    static const uint8_t aHeartRateTruncated[] = {0x01U, 0x2CU};
+    static const uint8_t aHeartRateOddRr[] = {0x10U, 80U, 0x01U};
+    static const uint8_t aHeartRateTrailing[] = {0x00U, 80U, 0x01U};
+    static const uint8_t aCscCombined[] = {
+        0x03U, 0x78U, 0x56U, 0x34U, 0x12U, 0xBCU, 0x9AU,
+        0x57U, 0x13U, 0x68U, 0x24U
+    };
+    static const uint8_t aCscTruncated[] = {0x01U, 0x01U, 0x00U};
+    static const uint8_t aCscReservedFlag[] = {0x04U};
+    static const uint8_t aCscTrailing[] = {0x00U, 0x01U};
+    BIKE_CSC_MEASUREMENT tMeasurement;
+    uint16_t usHeartRateBpm;
+
+    usHeartRateBpm = 0U;
+    assert(BIKE_BLE_MEAS_ParseHeartRate(aHeartRate8,
+                                        sizeof(aHeartRate8),
+                                        &usHeartRateBpm));
+    assert(72U == usHeartRateBpm);
+    assert(BIKE_BLE_MEAS_ParseHeartRate(aHeartRate16,
+                                        sizeof(aHeartRate16),
+                                        &usHeartRateBpm));
+    assert(300U == usHeartRateBpm);
+    assert(BIKE_BLE_MEAS_ParseHeartRate(aHeartRateEnergyRr,
+                                        sizeof(aHeartRateEnergyRr),
+                                        &usHeartRateBpm));
+    assert(80U == usHeartRateBpm);
+    assert(!BIKE_BLE_MEAS_ParseHeartRate(aHeartRateTruncated,
+                                         sizeof(aHeartRateTruncated),
+                                         &usHeartRateBpm));
+    assert(!BIKE_BLE_MEAS_ParseHeartRate(aHeartRateOddRr,
+                                         sizeof(aHeartRateOddRr),
+                                         &usHeartRateBpm));
+    assert(!BIKE_BLE_MEAS_ParseHeartRate(aHeartRateTrailing,
+                                         sizeof(aHeartRateTrailing),
+                                         &usHeartRateBpm));
+    assert(!BIKE_BLE_MEAS_ParseHeartRate(NULL, 0U, &usHeartRateBpm));
+    assert(!BIKE_BLE_MEAS_ParseHeartRate(aHeartRate8,
+                                         sizeof(aHeartRate8), NULL));
+
+    (void)memset(&tMeasurement, 0, sizeof(tMeasurement));
+    assert(BIKE_BLE_MEAS_ParseCsc(aCscCombined, sizeof(aCscCombined),
+                                  &tMeasurement));
+    assert((BIKE_CSC_WHEEL_DATA_PRESENT | BIKE_CSC_CRANK_DATA_PRESENT) ==
+           tMeasurement.ucFlags);
+    assert(0x12345678U == tMeasurement.ulCumulativeWheelRevolutions);
+    assert(0x9ABCU == tMeasurement.usLastWheelEventTime);
+    assert(0x1357U == tMeasurement.usCumulativeCrankRevolutions);
+    assert(0x2468U == tMeasurement.usLastCrankEventTime);
+    assert(!BIKE_BLE_MEAS_ParseCsc(aCscTruncated, sizeof(aCscTruncated),
+                                   &tMeasurement));
+    assert(!BIKE_BLE_MEAS_ParseCsc(aCscReservedFlag,
+                                   sizeof(aCscReservedFlag), &tMeasurement));
+    assert(!BIKE_BLE_MEAS_ParseCsc(aCscTrailing, sizeof(aCscTrailing),
+                                   &tMeasurement));
+    assert(!BIKE_BLE_MEAS_ParseCsc(NULL, 0U, &tMeasurement));
+    assert(!BIKE_BLE_MEAS_ParseCsc(aCscCombined, sizeof(aCscCombined), NULL));
+
+    return;
+}
+
 /* Test_TimeConversion: 覆盖正负时区、跨年和闰日转换。
  * 返回值：无
  */
@@ -539,6 +610,7 @@ int main(void)
     Test_SpeedSource();
     Test_AutoPause();
     Test_BleAdvertising();
+    Test_BleMeasurement();
     Test_CscCalculation();
     Test_TimeConversion();
     Test_GpxWriter();

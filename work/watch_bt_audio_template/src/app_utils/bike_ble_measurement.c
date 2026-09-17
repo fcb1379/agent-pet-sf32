@@ -1,0 +1,145 @@
+#include "bike_ble_measurement.h"
+
+#include <stddef.h>
+#include <string.h>
+
+#define BIKE_BLE_HR_FLAG_VALUE_16BIT (0x01U)
+#define BIKE_BLE_HR_FLAG_ENERGY_PRESENT (0x08U)
+#define BIKE_BLE_HR_FLAG_RR_PRESENT (0x10U)
+#define BIKE_BLE_CSC_KNOWN_FLAGS (BIKE_CSC_WHEEL_DATA_PRESENT | \
+                                  BIKE_CSC_CRANK_DATA_PRESENT)
+
+/* BikeBleMeas_Read16: 读取小端 16 位整数。
+ * 参数：
+ *   - pData: 至少两个字节的输入
+ * 返回值：小端整数
+ */
+static uint16_t BikeBleMeas_Read16(const uint8_t *pData)
+{
+    return (uint16_t)pData[0] | ((uint16_t)pData[1] << 8U);
+}
+
+/* BikeBleMeas_Read32: 读取小端 32 位整数。
+ * 参数：
+ *   - pData: 至少四个字节的输入
+ * 返回值：小端整数
+ */
+static uint32_t BikeBleMeas_Read32(const uint8_t *pData)
+{
+    return (uint32_t)pData[0] |
+           ((uint32_t)pData[1] << 8U) |
+           ((uint32_t)pData[2] << 16U) |
+           ((uint32_t)pData[3] << 24U);
+}
+
+/* BIKE_BLE_MEAS_ParseHeartRate: 安全解析 Heart Rate Measurement。
+ * 参数：
+ *   - pData: GATT characteristic value
+ *   - usLength: 数据长度
+ *   - pHeartRateBpm: 输出心率
+ * 返回值：完整且合法返回 true，否则返回 false
+ */
+bool BIKE_BLE_MEAS_ParseHeartRate(const uint8_t *pData, uint16_t usLength,
+                                  uint16_t *pHeartRateBpm)
+{
+    uint16_t usOffset;
+    uint8_t ucFlags;
+
+    if ((NULL == pData) || (NULL == pHeartRateBpm) || (2U > usLength))
+    {
+        return false;
+    }
+    ucFlags = pData[0];
+    usOffset = 1U;
+    if (0U != (ucFlags & BIKE_BLE_HR_FLAG_VALUE_16BIT))
+    {
+        if (2U > (uint16_t)(usLength - usOffset))
+        {
+            return false;
+        }
+        *pHeartRateBpm = BikeBleMeas_Read16(&pData[usOffset]);
+        usOffset = (uint16_t)(usOffset + 2U);
+    }
+    else
+    {
+        *pHeartRateBpm = pData[usOffset];
+        usOffset++;
+    }
+
+    if (0U != (ucFlags & BIKE_BLE_HR_FLAG_ENERGY_PRESENT))
+    {
+        if (2U > (uint16_t)(usLength - usOffset))
+        {
+            return false;
+        }
+        usOffset = (uint16_t)(usOffset + 2U);
+    }
+    if (0U != (ucFlags & BIKE_BLE_HR_FLAG_RR_PRESENT))
+    {
+        if ((2U > (uint16_t)(usLength - usOffset)) ||
+            (0U != ((usLength - usOffset) & 1U)))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    return usOffset == usLength;
+}
+
+/* BIKE_BLE_MEAS_ParseCsc: 安全解析 CSC Measurement。
+ * 参数：
+ *   - pData: GATT characteristic value
+ *   - usLength: 数据长度
+ *   - pMeasurement: 输出的累计轮/曲柄数据
+ * 返回值：完整且仅含已知字段返回 true，否则返回 false
+ */
+bool BIKE_BLE_MEAS_ParseCsc(const uint8_t *pData, uint16_t usLength,
+                           BIKE_CSC_MEASUREMENT *pMeasurement)
+{
+    uint16_t usOffset;
+    uint8_t ucFlags;
+
+    if ((NULL == pData) || (NULL == pMeasurement) || (1U > usLength))
+    {
+        return false;
+    }
+    (void)memset(pMeasurement, 0, sizeof(*pMeasurement));
+    ucFlags = pData[0];
+    if (0U != (ucFlags & (uint8_t)(~BIKE_BLE_CSC_KNOWN_FLAGS)))
+    {
+        return false;
+    }
+    pMeasurement->ucFlags = ucFlags;
+    usOffset = 1U;
+
+    if (0U != (ucFlags & BIKE_CSC_WHEEL_DATA_PRESENT))
+    {
+        if (6U > (uint16_t)(usLength - usOffset))
+        {
+            return false;
+        }
+        pMeasurement->ulCumulativeWheelRevolutions =
+            BikeBleMeas_Read32(&pData[usOffset]);
+        usOffset = (uint16_t)(usOffset + 4U);
+        pMeasurement->usLastWheelEventTime =
+            BikeBleMeas_Read16(&pData[usOffset]);
+        usOffset = (uint16_t)(usOffset + 2U);
+    }
+    if (0U != (ucFlags & BIKE_CSC_CRANK_DATA_PRESENT))
+    {
+        if (4U > (uint16_t)(usLength - usOffset))
+        {
+            return false;
+        }
+        pMeasurement->usCumulativeCrankRevolutions =
+            BikeBleMeas_Read16(&pData[usOffset]);
+        usOffset = (uint16_t)(usOffset + 2U);
+        pMeasurement->usLastCrankEventTime =
+            BikeBleMeas_Read16(&pData[usOffset]);
+        usOffset = (uint16_t)(usOffset + 2U);
+    }
+
+    return usOffset == usLength;
+}

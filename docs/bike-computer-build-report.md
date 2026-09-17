@@ -25,7 +25,8 @@
 - 自动暂停使用独立防抖状态机：低于阈值持续 5 秒暂停，高于阈值 1 km/h 持续 2 秒恢复；手动暂停不会被速度变化自动恢复。
 - GUI 启动和设置变化后应用持久化 LCD 亮度，并以持久化秒数替代模板固定 10 秒熄屏；0 秒可关闭自动熄屏。
 - 屏幕休眠时 KEY2 第一次短按或长按只唤醒界面，不会在不可见状态下改变骑行或轨迹记录状态。
-- 已启用 SiFli HRPC 和 CSCPC，使用固定容量快照聚合心率、CSC 轮速和踏频通知，并在 5 秒无新数据后使结果失效。
+- 使用项目自有的固定两槽 GATT client 分别维护 HR 和 CSC 服务，避免 SDK HRPC/CSCPC 单例环境覆盖不同连接；支持独立心率计、独立 CSC 以及单连接组合传感器，并在 5 秒无新数据后使结果失效。
+- Heart Rate Measurement 和 CSC Measurement 均由有界纯解析器校验 flags、字段长度及尾随数据；协议回调只做校验、固定快照更新或非阻塞投递。
 - CSC 派生算法按持久化轮周计算轮速，处理 32 位轮转累计值、16 位曲柄累计值和 16 位事件时间回绕，并过滤超过 200 km/h 或 300 rpm 的异常结果。
 - BLE 传感器管理使用 2,048 bytes 静态线程栈和固定深度消息队列；协议回调仅解析、复制并非阻塞投递，扫描、连接、配对和重连在工作线程执行。
 - 广播解析支持 16-bit UUID 列表和 Service Data，可识别 Heart Rate(0x180D) 与 CSC(0x1816)，并拒绝越界或截断的 AD 结构。
@@ -38,7 +39,7 @@
 
 ## 2. 主机测试
 
-测试对象：NMEA、骑行模型、GPX、时间/自动暂停、BLE 广播解析和 CSC 派生算法。
+测试对象：NMEA、骑行模型、GPX、时间/自动暂停、BLE 广播与 HR/CSC Measurement 解析和 CSC 派生算法。
 
 ```text
 gcc -std=c11 -Wall -Wextra -Werror ... -lm -o /tmp/bike_core_test
@@ -57,6 +58,7 @@ bike_core_test: PASS
 - 自动暂停覆盖低速防抖、恢复回差、定位失效、计时回绕和手动暂停隔离。
 - CSC 覆盖首帧基线、轮速/踏频计算以及 16/32 位累计值自然回绕。
 - BLE 广播解析覆盖完整/短 UUID 列表、Service Data、HR/CSC 组合广播和畸形长度拒绝。
+- BLE Measurement 解析覆盖 8/16 位心率、Energy/RR 可选字段、HR 截断/奇数 RR/非法尾随数据，以及 CSC 轮/曲柄组合数据、保留 flags、截断和尾随数据拒绝。
 - 速度源仲裁覆盖 CSC 优先、GNSS 回退、非法 CSC 拒绝、来源切换、CSC 定点里程积分以及 GNSS 失效时保留有效 CSC。
 
 ## 3. SF32 整机编译
@@ -72,7 +74,7 @@ scons: done building targets.
 
 | 产物 | 大小 |
 |---|---:|
-| `main.bin` | 3,400,852 bytes |
+| `main.bin` | 3,399,204 bytes |
 | `fs_root.bin` | 4,194,304 bytes |
 
 编译仍输出 SDK/原模板已有的 FlashDB、LVGL、蓝牙音频和汇编兼容性警告；新增 `bike_*` 模块在 `-Werror` 主机测试中无告警，且目标编译成功。
@@ -83,7 +85,7 @@ HCPU ELF 链接结果：
 
 | 区域 | 当前占用 | 链接容量 | 余量 |
 |---|---:|---:|---:|
-| 片上 SRAM 地址范围 | 342,524 bytes | 523,264 bytes | 180,740 bytes |
+| 片上 SRAM 地址范围 | 342,492 bytes | 523,264 bytes | 180,772 bytes |
 | PSRAM 可写段 | 2,649,032 bytes | 8,388,608 bytes | 5,739,576 bytes |
 
 码表新增对象文件在链接前的直接占用：
@@ -96,14 +98,16 @@ HCPU ELF 链接结果：
 | `bike_ride_model.o` | 940 bytes | 0 bytes |
 | `bike_auto_pause.o` | 174 bytes | 0 bytes |
 | `bike_ble_advertising.o` | 166 bytes | 0 bytes |
+| `bike_ble_measurement.o` | 184 bytes | 0 bytes |
+| `bike_ble_gatt_client.o` | 1,703 bytes | 45 bytes |
 | `bike_csc.o` | 216 bytes | 0 bytes |
 | `bike_gpx.o` | 2,710 bytes | 0 bytes |
 | `bike_recorder.o` | 1,301 bytes | 3,865 bytes |
 | `bike_settings.o` | 1,770 bytes | 53 bytes |
-| `bike_sensor_ble.o` | 4,504 bytes | 2,525 bytes |
+| `bike_sensor_ble.o` | 4,906 bytes | 2,525 bytes |
 | `bike_service.o` | 2,306 bytes | 3,756 bytes |
 | `app_bike.o` | 4,157 bytes | 52 bytes |
-| 合计 | 20,120 bytes | 10,251 bytes |
+| 合计 | 22,409 bytes | 10,296 bytes |
 
 `bike_service.o` 和 `bike_recorder.o` 分别包含 3,072 bytes 静态线程栈，`bike_sensor_ble.o` 包含 2,048 bytes 静态线程栈以及固定消息队列和连接状态。对象文件合计只用于描述新增模块的直接体积，不等同于最终镜像增量；最终镜像还受链接消除、库引用和资源打包影响。
 
@@ -119,8 +123,7 @@ HCPU ELF 链接结果：
 - RTC 校时和 KEY2 控制已通过代码与目标构建验证，尚未做实板按键电平、长按阈值和 RTC 走时验证。
 - 设置项、自动暂停和显示策略已通过代码、主机测试与目标构建验证，尚未验证 FlashDB 掉电保存、自动暂停道路行为、LCD 亮度范围和熄屏/唤醒的实机行为。
 - GPX 已完成源码、主机测试和目标构建验证，但尚未在板载 Elm FAT 上进行复位中断和空间耗尽实机测试。
-- BLE 广播解析、扫描、连接、配对、地址保存、断线重连、通知解析和显示已经通过主机测试或目标构建验证，但尚未接真实传感器验证射频、配对交互、长时间重连、功耗和手机/传感器多连接稳定性。
-- SDK 自带 HRPC/CSCPC 各使用单个全局 client 环境，连接多只独立传感器时会以最后一条主机链路覆盖内部 `conn_idx`。组合式 HR+CSC 单链路可直接使用；“独立心率计 + 独立 CSC”尚不能声明可靠，需改为项目内逐连接 GATT client，或经两只真实设备验证 SDK 行为后修正。
+- BLE 广播解析、扫描、连接、配对、地址保存、断线重连、项目自有逐连接 GATT client、通知解析和显示已经通过主机测试或目标构建验证，但尚未接真实传感器验证射频、配对交互、两只独立设备/组合设备订阅、长时间重连、功耗和手机/传感器多连接稳定性。
 - BLE 电池服务尚未接入；当前只能显示 HR/CSC 测量值和连接状态。
 - CSC/GNSS 速度仲裁已经通过主机测试与目标构建验证，但 CSC 轮速积分与 GNSS 坐标里程之间的道路误差、传感器停转通知行为和来源切换手感仍需实车验证。
 - X-TRACK 的离线地图、FIT、TF 卡和导航等后续功能尚未移植。
