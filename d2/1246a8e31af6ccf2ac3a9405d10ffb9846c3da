@@ -1,0 +1,44 @@
+work/watch_bt_audio_template/project/proj.conf
+  s_8e23440d3d99c8::t_06da08c1bf479b 19
+work/watch_bt_audio_template/src/app_utils/bike_ride_model.h
+  s_8e23440d3d99c8::t_f62d0aa4695269 1-76
+work/watch_bt_audio_template/project/Kconfig.proj
+  s_8e23440d3d99c8::t_06da08c1bf479b 15-18
+work/watch_bt_audio_template/src/app_utils/bike_nmea.c
+  s_8e23440d3d99c8::t_d37d65887e0a67 1-321,323,325-409,411,422-641
+  s_8e23440d3d99c8::t_6e233148cf486a 322,324
+  s_8e23440d3d99c8::t_c70dbc8cec1102 410,412-421
+work/watch_bt_audio_template/src/app_utils/bike_service.c
+  s_8e23440d3d99c8::t_f28591a08a440b 88,190-191
+  s_8e23440d3d99c8::t_51f866cac35d37 1-87,89-189,192-374
+work/watch_bt_audio_template/boards/sf32lb52-lchspi-ulp/hcpu/board.conf
+  s_8e23440d3d99c8::t_06da08c1bf479b 5-6
+work/watch_bt_audio_template/src/app_utils/bike_service.h
+  s_8e23440d3d99c8::t_51f866cac35d37 1-53
+work/watch_bt_audio_template/src/app_utils/SConscript
+  s_8e23440d3d99c8::t_06da08c1bf479b 9-11
+work/watch_bt_audio_template/src/app_utils/bike_nmea.h
+  s_8e23440d3d99c8::t_d37d65887e0a67 1-81
+work/watch_bt_audio_template/src/app_utils/bike_ride_model.c
+  s_8e23440d3d99c8::t_f62d0aa4695269 1-302
+tests/bike_core_test.c
+  s_8e23440d3d99c8::t_63405033c88b87 104
+  s_8e23440d3d99c8::t_d1114a833bf3a6 97
+  s_8e23440d3d99c8::t_6e233148cf486a 1-96,98-103,105-123
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d21246a8e31af6ccf2ac3a9405d10ffb9846c3da",
+  "prompts": {},
+  "sessions": {
+    "s_8e23440d3d99c8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ad75-ee73-78f0-b559-493bc936de00",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}
