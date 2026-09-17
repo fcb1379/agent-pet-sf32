@@ -514,7 +514,6 @@ static lv_obj_t *BikeUi_CreateMetric(lv_obj_t *pParent, const char *pTitle,
     lv_obj_align(pTitleLabel, LV_ALIGN_TOP_LEFT, 0, 0);
     lv_label_set_text(pValueLabel, "--");
     lv_obj_set_style_text_color(pValueLabel, lv_color_hex(0xF5F7FA), LV_PART_MAIN);
-    lv_obj_set_style_text_font(pValueLabel, &lv_font_montserrat_20, LV_PART_MAIN);
     lv_obj_align(pValueLabel, LV_ALIGN_BOTTOM_LEFT, 0, 0);
 
     return pValueLabel;
@@ -1269,7 +1268,6 @@ static lv_obj_t *BikeUi_CreateButton(lv_obj_t *pParent, const char *pText, lv_co
     if (NULL != pLabel)
     {
         lv_label_set_text(pLabel, pText);
-        lv_obj_set_style_text_font(pLabel, &lv_font_montserrat_20, LV_PART_MAIN);
         lv_obj_center(pLabel);
     }
 
@@ -1310,8 +1308,6 @@ static lv_obj_t *BikeUi_CreateMapButton(lv_obj_t *pParent, const char *pText,
     if (NULL != pLabel)
     {
         lv_label_set_text(pLabel, pText);
-        lv_obj_set_style_text_font(pLabel, &lv_font_montserrat_24,
-                                   LV_PART_MAIN);
         lv_obj_center(pLabel);
     }
 
@@ -1356,7 +1352,6 @@ static void BikeUi_CreatePageTitle(lv_obj_t *pPage, const char *pTitle, const ch
     pLabel = lv_label_create(pPage);
     RT_ASSERT(NULL != pLabel);
     lv_label_set_text(pLabel, pTitle);
-    lv_obj_set_style_text_font(pLabel, &lv_font_montserrat_24, LV_PART_MAIN);
     lv_obj_set_style_text_color(pLabel, lv_color_hex(0xF5F7FA), LV_PART_MAIN);
     lv_obj_align(pLabel, LV_ALIGN_TOP_MID, 0, 16);
 
@@ -1429,8 +1424,6 @@ static void BikeUi_OnStart(void)
     lv_label_set_text(l_tBikeUi.pGpsLabel, "SEARCHING S0 A0s");
     lv_obj_set_width(l_tBikeUi.pGpsLabel, 176);
     lv_label_set_long_mode(l_tBikeUi.pGpsLabel, LV_LABEL_LONG_DOT);
-    lv_obj_set_style_text_font(l_tBikeUi.pGpsLabel, &lv_font_montserrat_16,
-                               LV_PART_MAIN);
     lv_obj_set_style_text_color(l_tBikeUi.pGpsLabel, lv_color_hex(0x45D483), LV_PART_MAIN);
     lv_obj_align(l_tBikeUi.pGpsLabel, LV_ALIGN_TOP_LEFT, 16, 14);
 
@@ -1439,8 +1432,6 @@ static void BikeUi_OnStart(void)
     lv_label_set_text(l_tBikeUi.pPowerLabel, "IDLE 0 | PWR --");
     lv_obj_set_width(l_tBikeUi.pPowerLabel, 176);
     lv_label_set_long_mode(l_tBikeUi.pPowerLabel, LV_LABEL_LONG_DOT);
-    lv_obj_set_style_text_font(l_tBikeUi.pPowerLabel,
-                               &lv_font_montserrat_16, LV_PART_MAIN);
     lv_obj_set_style_text_align(l_tBikeUi.pPowerLabel, LV_TEXT_ALIGN_RIGHT,
                                 LV_PART_MAIN);
     lv_obj_set_style_text_color(l_tBikeUi.pPowerLabel,
@@ -1450,7 +1441,6 @@ static void BikeUi_OnStart(void)
     l_tBikeUi.pSpeedLabel = lv_label_create(pDashboardPage);
     lv_label_set_text(l_tBikeUi.pSpeedLabel, "0.00");
     lv_obj_set_style_text_color(l_tBikeUi.pSpeedLabel, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
-    lv_obj_set_style_text_font(l_tBikeUi.pSpeedLabel, &lv_font_montserrat_36, LV_PART_MAIN);
     lv_obj_align(l_tBikeUi.pSpeedLabel, LV_ALIGN_TOP_MID, -18, 54);
 
     l_tBikeUi.pSpeedUnit = lv_label_create(pDashboardPage);
@@ -1484,8 +1474,6 @@ static void BikeUi_OnStart(void)
     lv_obj_set_pos(l_tBikeUi.pLocationLabel, 20, 66);
     lv_obj_set_width(l_tBikeUi.pLocationLabel, 350);
     lv_label_set_long_mode(l_tBikeUi.pLocationLabel, LV_LABEL_LONG_WRAP);
-    lv_obj_set_style_text_font(l_tBikeUi.pLocationLabel, &lv_font_montserrat_16,
-                               LV_PART_MAIN);
     lv_obj_set_style_text_color(l_tBikeUi.pLocationLabel, lv_color_hex(0xDCE6F0),
                                 LV_PART_MAIN);
     lv_obj_set_style_text_line_space(l_tBikeUi.pLocationLabel, 4, LV_PART_MAIN);
@@ -1559,8 +1547,6 @@ static void BikeUi_OnStart(void)
     lv_obj_set_pos(l_tBikeUi.pSummaryLabel, 20, 60);
     lv_obj_set_width(l_tBikeUi.pSummaryLabel, 350);
     lv_label_set_long_mode(l_tBikeUi.pSummaryLabel, LV_LABEL_LONG_WRAP);
-    lv_obj_set_style_text_font(l_tBikeUi.pSummaryLabel, &lv_font_montserrat_16,
-                               LV_PART_MAIN);
     lv_obj_set_style_text_color(l_tBikeUi.pSummaryLabel, lv_color_hex(0xDCE6F0),
                                 LV_PART_MAIN);
     lv_obj_set_style_text_line_space(l_tBikeUi.pSummaryLabel, 2, LV_PART_MAIN);
