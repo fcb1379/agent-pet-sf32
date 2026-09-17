@@ -1,0 +1,34 @@
+docs/bike-computer-implementation-plan.md
+  s_8e23440d3d99c8::t_afc6322dd4cb59 111
+  s_8e23440d3d99c8::t_6e388d85c53af2 141
+tests/bike_core_test.c
+  s_8e23440d3d99c8::t_8499f4ba630176 674,688-689,692
+work/watch_bt_audio_template/src/app_utils/bike_settings.c
+  s_8e23440d3d99c8::t_6e388d85c53af2 25-26,36,176,197-202,229,232,337-370,526,529-530,533,554-557
+  s_8e23440d3d99c8::t_857f4b2358337e 558
+work/watch_bt_audio_template/src/app_utils/bike_settings.h
+  s_8e23440d3d99c8::t_6e388d85c53af2 14,24,39,49
+work/watch_bt_audio_template/src/app_utils/bike_service.c
+  s_8e23440d3d99c8::t_6e388d85c53af2 559,561,581-585,592,744,747,750,772-777
+docs/bike-computer-build-report.md
+  s_8e23440d3d99c8::t_6e388d85c53af2 28
+  s_8e23440d3d99c8::t_afc6322dd4cb59 114,119,127,152,154,156
+work/watch_bt_audio_template/src/app_utils/bike_ride_model.h
+  s_8e23440d3d99c8::t_6e388d85c53af2 14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "4be23fcff75c81c25b66ce4639c6cec086593893",
+  "prompts": {},
+  "sessions": {
+    "s_8e23440d3d99c8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ad75-ee73-78f0-b559-493bc936de00",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}

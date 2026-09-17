@@ -1,0 +1,35 @@
+docs/bike-computer-build-report.md
+  s_8e23440d3d99c8::t_51c5797b5750c3 44,91,126-127,154,157,174
+  s_8e23440d3d99c8::t_4550bd502fbb83 113,118,145,155
+work/watch_bt_audio_template/src/app_utils/bike_map_image.c
+  s_8e23440d3d99c8::t_6f27743e398501 13-14,67,98-99,104
+  s_8e23440d3d99c8::t_fb528120961338 1-12,15-66,68-97,100-103,105-126
+work/watch_bt_audio_template/src/app_utils/bike_map_image.h
+  s_8e23440d3d99c8::t_fb528120961338 1-42
+work/watch_bt_audio_template/src/gui_apps/bike/app_bike.c
+  s_8e23440d3d99c8::t_fb528120961338 6,14,66,92,109-119,143-144,177,182-185,187-198,200
+  s_8e23440d3d99c8::t_30f1a9ba34ed8c 28-35
+  s_8e23440d3d99c8::t_3c8fbdb7c6533e 36
+tests/bike_core_test.c
+  s_8e23440d3d99c8::t_eb446d2e3da198 13,29-35,265-295,297-302,304-314,316-347,349-364,366-374,376-381,383,391-394,396-400,402-407,409-434,1434
+  s_8e23440d3d99c8::t_b730033e6a21b2 296
+  s_8e23440d3d99c8::t_6f27743e398501 303,315,348,365,375,382,384-390,395,401,408
+work/watch_bt_audio_template/src/app_utils/SConscript
+  s_8e23440d3d99c8::t_fb528120961338 10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e52bd4edaddf17fd8f105892b2c9bab5b3f9447f",
+  "prompts": {},
+  "sessions": {
+    "s_8e23440d3d99c8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ad75-ee73-78f0-b559-493bc936de00",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}

@@ -1,0 +1,43 @@
+tests/bike_core_test.c
+  s_8e23440d3d99c8::t_1cf8f1cad55ef3 12,240-271,273,275-288,423
+  s_8e23440d3d99c8::t_82acddd4067091 272,274
+work/watch_bt_audio_template/src/app_utils/bike_settings.c
+  s_8e23440d3d99c8::t_82acddd4067091 243
+docs/bike-computer-build-report.md
+  s_8e23440d3d99c8::t_b7a578a94ff6c8 28-30,51,66,77,88,92-95,111-112
+work/watch_bt_audio_template/src/app_utils/bike_service.c
+  s_8e23440d3d99c8::t_1cf8f1cad55ef3 428
+work/watch_bt_audio_template/project/proj.conf
+  s_8e23440d3d99c8::t_1cf8f1cad55ef3 66-67
+work/watch_bt_audio_template/src/app_utils/bike_csc.h
+  s_8e23440d3d99c8::t_1cf8f1cad55ef3 1-56
+work/watch_bt_audio_template/src/app_utils/bike_sensor_ble.h
+  s_8e23440d3d99c8::t_1cf8f1cad55ef3 1-44
+work/watch_bt_audio_template/src/app_utils/bike_sensor_ble.c
+  s_8e23440d3d99c8::t_82acddd4067091 38-74,114,160,206-209,218-221,257-263,265,282
+  s_8e23440d3d99c8::t_1cf8f1cad55ef3 1-37,75-113,115-159,161-205,210-217,222-256,264,266-281,283-299
+work/watch_bt_audio_template/src/app_utils/bike_csc.c
+  s_8e23440d3d99c8::t_1cf8f1cad55ef3 1-149
+work/watch_bt_audio_template/src/app_utils/bike_service.h
+  s_8e23440d3d99c8::t_1cf8f1cad55ef3 10,35,49
+work/watch_bt_audio_template/src/app_utils/SConscript
+  s_8e23440d3d99c8::t_1cf8f1cad55ef3 10
+work/watch_bt_audio_template/src/gui_apps/bike/app_bike.c
+  s_8e23440d3d99c8::t_1cf8f1cad55ef3 226-228,388-390,394-395,406-410
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "22d5a81f002e9b33cbbbe11ceea37c186dcacf46",
+  "prompts": {},
+  "sessions": {
+    "s_8e23440d3d99c8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ad75-ee73-78f0-b559-493bc936de00",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}

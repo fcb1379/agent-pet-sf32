@@ -1,0 +1,44 @@
+work/watch_bt_audio_template/src/gui_apps/bike/app_bike.c
+  s_8e23440d3d99c8::t_1923f31319b93d 23,39,306,372-387,402-403,715,717-721
+  s_8e23440d3d99c8::t_2354535426bd26 716
+docs/bike-computer-build-report.md
+  s_8e23440d3d99c8::t_ca91e30b9525d5 36-37,60,86,95-96,105,125
+  s_8e23440d3d99c8::t_3c7997843ac6f3 75,104,106
+work/watch_bt_audio_template/src/app_utils/bike_service.c
+  s_8e23440d3d99c8::t_4eeb8647fc1105 62-64,69-71,192,209,221,279,388-389
+  s_8e23440d3d99c8::t_a27ff9329606a4 24,60-61,68,72,176-191,193-208,210-220,222-254,278,291,320,386-387
+  s_8e23440d3d99c8::t_2811cc9dcfbeab 57-59,65-67
+work/watch_bt_audio_template/src/app_utils/bike_ride_model.c
+  s_8e23440d3d99c8::t_2db5bea0635208 9,167,185,193,196-223,227-230,232,235,237,242-249,251,253,256,258-263,289-296,307-319,325,327,334-370,386-390
+work/watch_bt_audio_template/src/app_utils/SConscript
+  s_8e23440d3d99c8::t_027b2063ee747d 10
+work/watch_bt_audio_template/src/app_utils/bike_speed_source.c
+  s_8e23440d3d99c8::t_f84fb56efda94f 1-49
+work/watch_bt_audio_template/src/app_utils/bike_ride_model.h
+  s_8e23440d3d99c8::t_2db5bea0635208 8,27,47,71-74
+work/watch_bt_audio_template/src/app_utils/bike_speed_source.h
+  s_8e23440d3d99c8::t_f84fb56efda94f 1-54
+tests/bike_core_test.c
+  s_8e23440d3d99c8::t_027b2063ee747d 16,178-235,238-239,258-259,261-264,539
+  s_8e23440d3d99c8::t_2811cc9dcfbeab 236-237,240-257,260
+docs/bike-computer-implementation-plan.md
+  s_8e23440d3d99c8::t_ca91e30b9525d5 92
+work/watch_bt_audio_template/src/app_utils/bike_sensor_ble.c
+  s_8e23440d3d99c8::t_a7098c0007a6ae 1504
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "3961cda3a300617a7146ca618aa1d5e8abbc6ab7",
+  "prompts": {},
+  "sessions": {
+    "s_8e23440d3d99c8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ad75-ee73-78f0-b559-493bc936de00",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}

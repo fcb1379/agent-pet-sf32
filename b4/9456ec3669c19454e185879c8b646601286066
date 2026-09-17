@@ -1,0 +1,47 @@
+work/watch_bt_audio_template/src/app_utils/SConscript
+  s_8e23440d3d99c8::t_f3f59e770cdade 10-13
+work/watch_bt_audio_template/src/app_utils/bike_ble_measurement.h
+  s_8e23440d3d99c8::t_43ce8634c0b44f 1-22
+docs/bike-computer-build-report.md
+  s_8e23440d3d99c8::t_57a4e826605da6 77,102,110
+  s_8e23440d3d99c8::t_c76be238d82967 28-29,42,61,88,101,107,126
+work/watch_bt_audio_template/src/app_utils/bike_ble_gatt_client.c
+  s_8e23440d3d99c8::t_2da0d28634436a 1-540,545-612,614,616-617,620-635,649-690
+  s_8e23440d3d99c8::t_6cf88574298cd3 541-544,613,615,618-619,636-644
+  s_8e23440d3d99c8::t_341f0759d845e0 645-648
+docs/bike-computer-implementation-plan.md
+  s_8e23440d3d99c8::t_c76be238d82967 92
+work/watch_bt_audio_template/src/app_utils/bike_sensor_ble.c
+  s_8e23440d3d99c8::t_2715e8eb9d8335 906-912,960-965,980-984,1037,1085,1091,1208-1220
+  s_8e23440d3d99c8::t_255fb1159eaec1 1269,1477-1486,1564,1580
+  s_8e23440d3d99c8::t_6b5e9e602f6691 697-698,700-701,704-705,707,709,712,714,718,727,729-730,733-734,738,751-756,769-790
+  s_8e23440d3d99c8::t_394c58e4dada6c 9-11,15,58,217
+  s_8e23440d3d99c8::t_41bcb6fef57a93 791-793
+  s_8e23440d3d99c8::t_91b36a01ae8fe9 1221-1222
+  s_8e23440d3d99c8::t_d5af97dc6cd4fd 794
+work/watch_bt_audio_template/src/app_utils/bike_ble_gatt_client.h
+  s_8e23440d3d99c8::t_2da0d28634436a 1-32
+tests/bike_core_test.c
+  s_8e23440d3d99c8::t_f3f59e770cdade 13,407-476,613
+work/watch_bt_audio_template/src/app_utils/bike_ble_measurement.c
+  s_8e23440d3d99c8::t_43ce8634c0b44f 1-76,78,86-87,89-145
+  s_8e23440d3d99c8::t_f3f59e770cdade 77,79-85,88
+work/watch_bt_audio_template/project/proj.conf
+  s_8e23440d3d99c8::t_f3f59e770cdade 66-70
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "b49456ec3669c19454e185879c8b646601286066",
+  "prompts": {},
+  "sessions": {
+    "s_8e23440d3d99c8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ad75-ee73-78f0-b559-493bc936de00",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}

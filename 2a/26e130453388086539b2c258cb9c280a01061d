@@ -1,0 +1,42 @@
+work/watch_bt_audio_template/src/app_utils/bike_power.h
+  s_8e23440d3d99c8::t_33cb505eb49be7 1-74
+docs/bike-computer-build-report.md
+  s_8e23440d3d99c8::t_f596ad5a6f3891 7,54-56,60,91,111,121,142,151,172
+  s_8e23440d3d99c8::t_2c9aa94abc7c1f 108,113,148-149
+work/watch_bt_audio_template/src/app_utils/SConscript
+  s_8e23440d3d99c8::t_14e16b37e635c1 10
+docs/dx-gp10-hardware-adaptation.md
+  s_8e23440d3d99c8::t_f596ad5a6f3891 45-46,57-58,76
+tests/bike_core_test.c
+  s_8e23440d3d99c8::t_14e16b37e635c1 20,28-78,1120
+work/watch_bt_audio_template/boards/sf32lb52-lchspi-ulp/hcpu/board.conf
+  s_8e23440d3d99c8::t_14e16b37e635c1 20
+  s_8e23440d3d99c8::t_3046e05c243aa0 44-45
+work/watch_bt_audio_template/src/app_utils/bike_service.c
+  s_8e23440d3d99c8::t_14e16b37e635c1 12,605-608,724
+work/watch_bt_audio_template/src/app_utils/bike_service.h
+  s_8e23440d3d99c8::t_14e16b37e635c1 11,42,61
+work/watch_bt_audio_template/src/gui_apps/bike/app_bike.c
+  s_8e23440d3d99c8::t_dfefaf89a3cbf6 1360,1371
+  s_8e23440d3d99c8::t_8a427a321a849b 1358-1359,1361,1368-1370,1372-1373
+  s_8e23440d3d99c8::t_a4ca0183a93e68 32,51,726,732,866-911,917,920-935,993,1016-1018,1357,1363-1367,1374-1376,1415,1419
+work/watch_bt_audio_template/src/app_utils/bike_power.c
+  s_8e23440d3d99c8::t_33cb505eb49be7 1-135,140-141,145-146,150-151,155-156,160-162,166-167,171-172,176-493
+  s_8e23440d3d99c8::t_2b9aa3ec14504b 136-139,142-144,147-149,152-154,157-159,163-165,168-170,173-175
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "2a26e130453388086539b2c258cb9c280a01061d",
+  "prompts": {},
+  "sessions": {
+    "s_8e23440d3d99c8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ad75-ee73-78f0-b559-493bc936de00",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}

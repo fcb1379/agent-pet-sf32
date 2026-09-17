@@ -1,0 +1,26 @@
+work/watch_bt_audio_template/src/gui_apps/bike/app_bike.c
+  s_8e23440d3d99c8::t_97c94ef98134a6 2,28-30,43-45,149-205
+  s_8e23440d3d99c8::t_af3ca6d66fb11b 217-220,224-225,274-289,325-326,330-332,336-390
+  s_8e23440d3d99c8::t_3a680f43e7b105 327-329,333-335,626
+  s_8e23440d3d99c8::t_c51dbd3b9a194b 206,496-550,555-557,561,569-581,586,592,597,599,601,603,608,610,614-625,627-642
+  s_8e23440d3d99c8::t_56ef33166875ea 207
+  s_8e23440d3d99c8::t_4c0992246aca56 643
+docs/bike-computer-build-report.md
+  s_8e23440d3d99c8::t_bf21e4cfcef0c0 7,15-16,57,68-69,81-82,92
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e2c3d82df01ac0e660542c6f2af2a37daeddfb3a",
+  "prompts": {},
+  "sessions": {
+    "s_8e23440d3d99c8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ad75-ee73-78f0-b559-493bc936de00",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}

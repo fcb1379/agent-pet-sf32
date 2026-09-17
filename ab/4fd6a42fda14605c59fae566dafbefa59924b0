@@ -1,0 +1,26 @@
+docs/bike-computer-build-report.md
+  s_8e23440d3d99c8::t_fc2c11539baee7 62,73
+  s_8e23440d3d99c8::t_64c1c3dc35f9bb 26-27,103
+work/watch_bt_audio_template/src/gui_apps/watch_demo.c
+  s_8e23440d3d99c8::t_31c44006a461f0 278-321
+  s_8e23440d3d99c8::t_64c1c3dc35f9bb 642
+  s_8e23440d3d99c8::t_831604993c16d3 17,30,54-62
+  s_8e23440d3d99c8::t_1f25b16ddeae07 171-179
+  s_8e23440d3d99c8::t_3b0f9ff34daae8 384,388-391,438
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ab4fd6a42fda14605c59fae566dafbefa59924b0",
+  "prompts": {},
+  "sessions": {
+    "s_8e23440d3d99c8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ad75-ee73-78f0-b559-493bc936de00",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}

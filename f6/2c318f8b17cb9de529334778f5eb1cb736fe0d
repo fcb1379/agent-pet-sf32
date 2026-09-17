@@ -1,0 +1,51 @@
+work/watch_bt_audio_template/src/app_utils/bike_ble_advertising.h
+  s_8e23440d3d99c8::t_6542e3b80bc4d3 12
+work/watch_bt_audio_template/src/app_utils/bike_sensor_ble.c
+  s_8e23440d3d99c8::t_f1fe4f85d85da6 1890,1901-1905
+  s_8e23440d3d99c8::t_d61cfc1dc88482 735-806
+  s_8e23440d3d99c8::t_a881a5c1acc523 807-838,1042-1064,1077-1083,1094-1102,1105-1116
+  s_8e23440d3d99c8::t_24214c7bcf0327 1151-1152,1195,1210-1212,1214-1218,1220
+  s_8e23440d3d99c8::t_e60f33a4f8db00 47,97,100,108,384-394,440-449,480-485,534-535,538,569-572,615-617
+  s_8e23440d3d99c8::t_e3074ef4e313f3 913-941,975-978
+  s_8e23440d3d99c8::t_6115ed4e66a1f4 980,1269-1273,1303-1310,1329,1337,1349-1354,1357,1360,1370-1371,1375,1378,1381,1728,1733,1755,1831-1836,1841
+  s_8e23440d3d99c8::t_7c97b9a12ff25f 979
+work/watch_bt_audio_template/src/app_utils/bike_ble_advertising.c
+  s_8e23440d3d99c8::t_6542e3b80bc4d3 10,30-33,38
+docs/bike-computer-implementation-plan.md
+  s_8e23440d3d99c8::t_59ff1c26082f1b 98,102
+docs/bike-computer-build-report.md
+  s_8e23440d3d99c8::t_59ff1c26082f1b 30-32,35,39,45,63-64,80,91,103-105,110,112-113,129
+tests/bike_core_test.c
+  s_8e23440d3d99c8::t_6542e3b80bc4d3 404,412,421-422,433,456-462,464,512-538
+  s_8e23440d3d99c8::t_ced4b52849096f 539
+work/watch_bt_audio_template/src/app_utils/bike_ble_measurement.h
+  s_8e23440d3d99c8::t_6542e3b80bc4d3 17-19
+work/watch_bt_audio_template/src/app_utils/bike_ble_measurement.c
+  s_8e23440d3d99c8::t_6542e3b80bc4d3 11-21,158-238
+  s_8e23440d3d99c8::t_7d96deb8c30aaf 239-240
+work/watch_bt_audio_template/src/app_utils/bike_ble_gatt_client.c
+  s_8e23440d3d99c8::t_8a2664cfdd0663 18-19,65,77-79,185-190,719,754-762,841,846,853,857-858,866,869-872,876,896-897,911,925
+work/watch_bt_audio_template/src/app_utils/bike_ble_gatt_client.h
+  s_8e23440d3d99c8::t_8a2664cfdd0663 21-22,29
+work/watch_bt_audio_template/src/gui_apps/bike/app_bike.c
+  s_8e23440d3d99c8::t_ed3935c176f383 246-281,374-375,581-588,593,607
+work/watch_bt_audio_template/src/app_utils/bike_sensor_ble.h
+  s_8e23440d3d99c8::t_dad22c0e3233e4 18-19,21,25-27,29
+  s_8e23440d3d99c8::t_e60f33a4f8db00 40-41,47,51,54,57,61
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f62c318f8b17cb9de529334778f5eb1cb736fe0d",
+  "prompts": {},
+  "sessions": {
+    "s_8e23440d3d99c8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ad75-ee73-78f0-b559-493bc936de00",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}
