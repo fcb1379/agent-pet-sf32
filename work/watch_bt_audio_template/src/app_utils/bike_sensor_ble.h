@@ -15,11 +15,13 @@ extern "C" {
  *   - bHeartRateValid: 心率在超时范围内有效
  *   - bWheelSpeedValid: CSC 轮速在超时范围内有效
  *   - bCadenceValid: CSC 踏频在超时范围内有效
+ *   - bHeartRateBatteryValid/bCscBatteryValid: 对应连接已读取 BAS 电量
  *   - bPowerOn/bScanning/bConnecting: BLE 中央设备连接管理状态
  *   - bHeartRateConnected/bCscConnected: 对应传感器链路状态
  *   - usHeartRateBpm: 心率，单位 bpm
  *   - usWheelSpeedCentiKph: CSC 轮速，单位 0.01 km/h
  *   - usCadenceRpm: 踏频，单位 rpm
+ *   - ucHeartRateBatteryPercent/ucCscBatteryPercent: 传感器电量百分比
  *   - ucHeartRateConnIndex/ucCscConnIndex: SDK 连接索引，无连接时为 0xFF
  *   - cLastRssi: 最近发现目标传感器的 RSSI
  *   - ulHeartRateUpdateMs/ulCscUpdateMs: 最近通知的单调时间戳
@@ -31,6 +33,8 @@ typedef struct _BIKE_SENSOR_BLE_SNAPSHOT
     bool bHeartRateValid;
     bool bWheelSpeedValid;
     bool bCadenceValid;
+    bool bHeartRateBatteryValid;
+    bool bCscBatteryValid;
     bool bPowerOn;
     bool bScanning;
     bool bConnecting;
@@ -39,6 +43,8 @@ typedef struct _BIKE_SENSOR_BLE_SNAPSHOT
     uint16_t usHeartRateBpm;
     uint16_t usWheelSpeedCentiKph;
     uint16_t usCadenceRpm;
+    uint8_t ucHeartRateBatteryPercent;
+    uint8_t ucCscBatteryPercent;
     uint8_t ucHeartRateConnIndex;
     uint8_t ucCscConnIndex;
     int8_t cLastRssi;

@@ -143,3 +143,24 @@ bool BIKE_BLE_MEAS_ParseCsc(const uint8_t *pData, uint16_t usLength,
 
     return usOffset == usLength;
 }
+
+/* BIKE_BLE_MEAS_ParseBatteryLevel: 校验标准 Battery Level 值。
+ * 参数：
+ *   - pData: GATT characteristic value
+ *   - usLength: 数据长度，标准值必须正好一个字节
+ *   - pBatteryPercent: 输出电量百分比
+ * 返回值：0~100 的单字节值返回 true，否则返回 false
+ */
+bool BIKE_BLE_MEAS_ParseBatteryLevel(const uint8_t *pData,
+                                     uint16_t usLength,
+                                     uint8_t *pBatteryPercent)
+{
+    if ((NULL == pData) || (NULL == pBatteryPercent) || (1U != usLength) ||
+        (100U < pData[0]))
+    {
+        return false;
+    }
+    *pBatteryPercent = pData[0];
+
+    return true;
+}

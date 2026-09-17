@@ -15,8 +15,10 @@
 #define LOG_LVL LOG_LVL_INFO
 #include <ulog.h>
 
-#define BIKE_BLE_GATT_SLOT_COUNT (2U)
+#define BIKE_BLE_GATT_SLOT_COUNT (4U)
+#define BIKE_BLE_GATT_BATTERY_SLOT_FIRST (2U)
 #define BIKE_BLE_GATT_INVALID_CONN_INDEX (0xFFU)
+#define BIKE_BLE_GATT_SERVICE_BATTERY (0x80U)
 
 /* BIKE_BLE_GATT_STATE: 单个远端标准服务的发现和订阅状态。 */
 typedef enum _BIKE_BLE_GATT_STATE
@@ -26,17 +28,20 @@ typedef enum _BIKE_BLE_GATT_STATE
     BIKE_BLE_GATT_STATE_WAIT_SECURITY,
     BIKE_BLE_GATT_STATE_REGISTERING,
     BIKE_BLE_GATT_STATE_SUBSCRIBING,
+    BIKE_BLE_GATT_STATE_READING,
     BIKE_BLE_GATT_STATE_READY,
     BIKE_BLE_GATT_STATE_FAILED
 } BIKE_BLE_GATT_STATE;
 
-/* BIKE_BLE_GATT_SLOT: 一个 HR 或 CSC service 的逐连接固定实例。
+/* BIKE_BLE_GATT_SLOT: 一个 HR、CSC 或可选 BAS 的逐连接固定实例。
  * 成员说明：
  *   - eState: service discovery/register/subscribe 状态
  *   - ucServiceMask: BIKE_BLE_SERVICE_* 单个位
  *   - ucConnIndex: SDK 连接索引，空闲时为 0xFF
  *   - bRequested: 当前连接是否请求此服务
  *   - bSecuritySeen: 已收到配对或加密结果
+ *   - bSubscribed: 可选 BAS 已完成通知订阅
+ *   - ucProperties: 远端 characteristic properties
  *   - usServiceStart/usServiceEnd: 远端服务 handle 范围
  *   - usRemoteHandle: SIBLES 远端服务注册句柄
  *   - usValueHandle/usCccdHandle: 测量值和 CCCD handle
@@ -48,6 +53,8 @@ typedef struct _BIKE_BLE_GATT_SLOT
     uint8_t ucConnIndex;
     bool bRequested;
     bool bSecuritySeen;
+    bool bSubscribed;
+    uint8_t ucProperties;
     uint16_t usServiceStart;
     uint16_t usServiceEnd;
     uint16_t usRemoteHandle;
@@ -55,7 +62,7 @@ typedef struct _BIKE_BLE_GATT_SLOT
     uint16_t usCccdHandle;
 } BIKE_BLE_GATT_SLOT;
 
-/* l_aBikeBleGattSlots: 固定两个逐连接 service slot，分别用于 HR 和 CSC。 */
+/* l_aBikeBleGattSlots: HR、CSC 各一槽，BAS 按连接固定两槽。 */
 static BIKE_BLE_GATT_SLOT l_aBikeBleGattSlots[BIKE_BLE_GATT_SLOT_COUNT];
 
 /* l_pBikeBleGattReadyCallback: service 就绪或失败回调。 */
@@ -67,11 +74,15 @@ static BIKE_BLE_GATT_HEART_RATE_CALLBACK l_pBikeBleGattHeartRateCallback;
 /* l_pBikeBleGattCscCallback: 已校验 CSC 测量回调。 */
 static BIKE_BLE_GATT_CSC_CALLBACK l_pBikeBleGattCscCallback;
 
+/* l_pBikeBleGattBatteryCallback: 已校验传感器电量回调。 */
+static BIKE_BLE_GATT_BATTERY_CALLBACK l_pBikeBleGattBatteryCallback;
+
 /* l_bBikeBleGattReady: 固定 slot 和回调已经初始化。 */
 static bool l_bBikeBleGattReady;
 
 static int BikeBleGatt_RemoteEventHandler(uint16_t usEventId, uint8_t *pData,
                                           uint16_t usLength);
+static bool BikeBleGatt_ReadBattery(BIKE_BLE_GATT_SLOT *pSlot);
 
 /* BikeBleGatt_ResetSlot: 清除 slot 并保留服务类型。
  * 参数：
@@ -113,6 +124,36 @@ static BIKE_BLE_GATT_SLOT *BikeBleGatt_GetSlotByMask(uint8_t ucServiceMask)
     return NULL;
 }
 
+/* BikeBleGatt_GetBatterySlot: 获取连接已有 BAS 槽或一个空闲 BAS 槽。
+ * 参数：
+ *   - ucConnIndex: SDK 连接索引
+ *   - bAllowFree: 未找到连接时是否允许返回空闲槽
+ * 返回值：匹配/空闲槽；容量耗尽时返回 NULL
+ */
+static BIKE_BLE_GATT_SLOT *BikeBleGatt_GetBatterySlot(uint8_t ucConnIndex,
+                                                      bool bAllowFree)
+{
+    BIKE_BLE_GATT_SLOT *pFreeSlot;
+    uint8_t ucIndex;
+
+    pFreeSlot = NULL;
+    for (ucIndex = BIKE_BLE_GATT_BATTERY_SLOT_FIRST;
+         ucIndex < BIKE_BLE_GATT_SLOT_COUNT; ucIndex++)
+    {
+        if (l_aBikeBleGattSlots[ucIndex].bRequested &&
+            (ucConnIndex == l_aBikeBleGattSlots[ucIndex].ucConnIndex))
+        {
+            return &l_aBikeBleGattSlots[ucIndex];
+        }
+        if ((!l_aBikeBleGattSlots[ucIndex].bRequested) && (NULL == pFreeSlot))
+        {
+            pFreeSlot = &l_aBikeBleGattSlots[ucIndex];
+        }
+    }
+
+    return bAllowFree ? pFreeSlot : NULL;
+}
+
 /* BikeBleGatt_GetUuid: 返回服务和测量 characteristic UUID。
  * 参数：
  *   - ucServiceMask: HR 或 CSC 单个位
@@ -138,6 +179,12 @@ static bool BikeBleGatt_GetUuid(uint8_t ucServiceMask, uint16_t *pServiceUuid,
         *pValueUuid = ATT_UUID_16(ATT_CHAR_CSC_MEAS);
         return true;
     }
+    if (BIKE_BLE_GATT_SERVICE_BATTERY == ucServiceMask)
+    {
+        *pServiceUuid = ATT_UUID_16(ATT_SVC_BATTERY_SERVICE);
+        *pValueUuid = ATT_UUID_16(ATT_CHAR_BATTERY_LEVEL);
+        return true;
+    }
 
     return false;
 }
@@ -151,7 +198,9 @@ static bool BikeBleGatt_GetUuid(uint8_t ucServiceMask, uint16_t *pServiceUuid,
 static void BikeBleGatt_NotifyReady(const BIKE_BLE_GATT_SLOT *pSlot,
                                     bool bReady)
 {
-    if ((NULL != pSlot) && (NULL != l_pBikeBleGattReadyCallback))
+    if ((NULL != pSlot) &&
+        (BIKE_BLE_GATT_SERVICE_BATTERY != pSlot->ucServiceMask) &&
+        (NULL != l_pBikeBleGattReadyCallback))
     {
         l_pBikeBleGattReadyCallback(pSlot->ucConnIndex,
                                     pSlot->ucServiceMask, bReady);
@@ -160,7 +209,7 @@ static void BikeBleGatt_NotifyReady(const BIKE_BLE_GATT_SLOT *pSlot,
     return;
 }
 
-/* BikeBleGatt_StartNext: 同一连接串行发现 HR/CSC，避免响应无法区分。
+/* BikeBleGatt_StartNext: 同一连接串行发现 HR/CSC/BAS，避免响应无法区分。
  * 参数：
  *   - ucConnIndex: SDK 连接索引
  * 返回值：命令提交成功或无需动作返回 true
@@ -180,6 +229,7 @@ static bool BikeBleGatt_StartNext(uint8_t ucConnIndex)
             ((BIKE_BLE_GATT_STATE_SEARCHING == pSlot->eState) ||
              (BIKE_BLE_GATT_STATE_REGISTERING == pSlot->eState) ||
              (BIKE_BLE_GATT_STATE_SUBSCRIBING == pSlot->eState) ||
+             (BIKE_BLE_GATT_STATE_READING == pSlot->eState) ||
              (BIKE_BLE_GATT_STATE_WAIT_SECURITY == pSlot->eState)))
         {
             return true;
@@ -251,9 +301,64 @@ static bool BikeBleGatt_Subscribe(BIKE_BLE_GATT_SLOT *pSlot)
                         BIKE_BLE_GATT_STATE_WAIT_SECURITY;
         LOG_W("CCCD submit failed conn=%u mask=0x%02x ret=%d",
               pSlot->ucConnIndex, pSlot->ucServiceMask, cResult);
+        if ((BIKE_BLE_GATT_SERVICE_BATTERY == pSlot->ucServiceMask) &&
+            pSlot->bSecuritySeen &&
+            (0U != (pSlot->ucProperties & ATT_CHAR_PROP_RD)))
+        {
+            return BikeBleGatt_ReadBattery(pSlot);
+        }
         if (BIKE_BLE_GATT_STATE_FAILED == pSlot->eState)
         {
             BikeBleGatt_NotifyReady(pSlot, false);
+            (void)BikeBleGatt_StartNext(pSlot->ucConnIndex);
+        }
+        return false;
+    }
+
+    return true;
+}
+
+/* BikeBleGatt_ReadBattery: 读取 BAS Battery Level 初始值。
+ * 参数：
+ *   - pSlot: 已注册的 BAS slot
+ * 返回值：读命令提交成功返回 true，否则返回 false
+ */
+static bool BikeBleGatt_ReadBattery(BIKE_BLE_GATT_SLOT *pSlot)
+{
+    sibles_read_remote_value_req_t tValue;
+    int8_t cResult;
+
+    if ((NULL == pSlot) ||
+        (BIKE_BLE_GATT_SERVICE_BATTERY != pSlot->ucServiceMask) ||
+        (0U == (pSlot->ucProperties & ATT_CHAR_PROP_RD)) ||
+        (0U == pSlot->usValueHandle) ||
+        (SIBLES_ERROR_REMOTE_HANDLE == pSlot->usRemoteHandle))
+    {
+        return false;
+    }
+    (void)memset(&tValue, 0, sizeof(tValue));
+    tValue.read_type = SIBLES_READ;
+    tValue.handle = pSlot->usValueHandle;
+    pSlot->eState = BIKE_BLE_GATT_STATE_READING;
+    cResult = sibles_read_remote_value(pSlot->usRemoteHandle,
+                                       pSlot->ucConnIndex, &tValue);
+    if (0 != cResult)
+    {
+        if (pSlot->bSubscribed)
+        {
+            pSlot->eState = BIKE_BLE_GATT_STATE_READY;
+        }
+        else
+        {
+            pSlot->eState = pSlot->bSecuritySeen ?
+                            BIKE_BLE_GATT_STATE_FAILED :
+                            BIKE_BLE_GATT_STATE_WAIT_SECURITY;
+        }
+        LOG_W("battery read submit failed conn=%u ret=%d",
+              pSlot->ucConnIndex, cResult);
+        if (BIKE_BLE_GATT_STATE_WAIT_SECURITY != pSlot->eState)
+        {
+            (void)BikeBleGatt_StartNext(pSlot->ucConnIndex);
         }
         return false;
     }
@@ -304,9 +409,16 @@ static void BikeBleGatt_HandleSearch(const sibles_svc_search_rsp_t *pResponse)
     if ((HL_ERR_NO_ERROR != pResponse->result) || (NULL == pResponse->svc) ||
         (NULL == pResponse->svc->att_db))
     {
-        pSlot->eState = pSlot->bSecuritySeen ?
-                        BIKE_BLE_GATT_STATE_FAILED :
-                        BIKE_BLE_GATT_STATE_WAIT_SECURITY;
+        if (BIKE_BLE_GATT_SERVICE_BATTERY == pSlot->ucServiceMask)
+        {
+            pSlot->eState = BIKE_BLE_GATT_STATE_FAILED;
+        }
+        else
+        {
+            pSlot->eState = pSlot->bSecuritySeen ?
+                            BIKE_BLE_GATT_STATE_FAILED :
+                            BIKE_BLE_GATT_STATE_WAIT_SECURITY;
+        }
         if (BIKE_BLE_GATT_STATE_FAILED == pSlot->eState)
         {
             BikeBleGatt_NotifyReady(pSlot, false);
@@ -319,6 +431,7 @@ static void BikeBleGatt_HandleSearch(const sibles_svc_search_rsp_t *pResponse)
     pSlot->usServiceEnd = pResponse->svc->hdl_end;
     pSlot->usValueHandle = 0U;
     pSlot->usCccdHandle = 0U;
+    pSlot->ucProperties = 0U;
     pCharacteristic = (sibles_svc_search_char_t *)pResponse->svc->att_db;
     for (ulIndex = 0U; ulIndex < pResponse->svc->char_count; ulIndex++)
     {
@@ -327,6 +440,7 @@ static void BikeBleGatt_HandleSearch(const sibles_svc_search_rsp_t *pResponse)
                          ATT_UUID_16_LEN)))
         {
             pSlot->usValueHandle = pCharacteristic->pointer_hdl;
+            pSlot->ucProperties = pCharacteristic->prop;
             pSlot->usCccdHandle = sibles_descriptor_handle_find(
                 pCharacteristic, ATT_DESC_CLIENT_CHAR_CFG);
         }
@@ -336,7 +450,13 @@ static void BikeBleGatt_HandleSearch(const sibles_svc_search_rsp_t *pResponse)
         pCharacteristic = (sibles_svc_search_char_t *)(
             (uint8_t *)pCharacteristic + usOffset);
     }
-    if ((0U == pSlot->usValueHandle) || (0U == pSlot->usCccdHandle))
+    if ((0U == pSlot->usValueHandle) ||
+        ((BIKE_BLE_GATT_SERVICE_BATTERY != pSlot->ucServiceMask) &&
+         (0U == pSlot->usCccdHandle)) ||
+        ((BIKE_BLE_GATT_SERVICE_BATTERY == pSlot->ucServiceMask) &&
+         (0U == (pSlot->ucProperties & ATT_CHAR_PROP_RD)) &&
+         ((0U == (pSlot->ucProperties & ATT_CHAR_PROP_NTF)) ||
+          (0U == pSlot->usCccdHandle))))
     {
         pSlot->eState = BIKE_BLE_GATT_STATE_FAILED;
         BikeBleGatt_NotifyReady(pSlot, false);
@@ -376,8 +496,29 @@ static void BikeBleGatt_SecurityReady(uint8_t ucConnIndex)
             pSlot->bSecuritySeen = true;
             if (BIKE_BLE_GATT_STATE_WAIT_SECURITY == pSlot->eState)
             {
-                if ((0U != pSlot->usCccdHandle) &&
+                if ((BIKE_BLE_GATT_SERVICE_BATTERY ==
+                     pSlot->ucServiceMask) &&
                     (SIBLES_ERROR_REMOTE_HANDLE != pSlot->usRemoteHandle))
+                {
+                    if ((!pSlot->bSubscribed) &&
+                        (0U != (pSlot->ucProperties & ATT_CHAR_PROP_NTF)) &&
+                        (0U != pSlot->usCccdHandle))
+                    {
+                        (void)BikeBleGatt_Subscribe(pSlot);
+                    }
+                    else if (0U !=
+                             (pSlot->ucProperties & ATT_CHAR_PROP_RD))
+                    {
+                        (void)BikeBleGatt_ReadBattery(pSlot);
+                    }
+                    else
+                    {
+                        pSlot->eState = BIKE_BLE_GATT_STATE_FAILED;
+                    }
+                }
+                else if ((0U != pSlot->usCccdHandle) &&
+                         (SIBLES_ERROR_REMOTE_HANDLE !=
+                          pSlot->usRemoteHandle))
                 {
                     (void)BikeBleGatt_Subscribe(pSlot);
                 }
@@ -423,7 +564,30 @@ static int BikeBleGatt_RemoteEventHandler(uint16_t usEventId, uint8_t *pData,
             {
                 if (HL_ERR_NO_ERROR == pResponse->status)
                 {
-                    (void)BikeBleGatt_Subscribe(pSlot);
+                    if (BIKE_BLE_GATT_SERVICE_BATTERY ==
+                        pSlot->ucServiceMask)
+                    {
+                        if ((0U != (pSlot->ucProperties & ATT_CHAR_PROP_NTF)) &&
+                            (0U != pSlot->usCccdHandle))
+                        {
+                            (void)BikeBleGatt_Subscribe(pSlot);
+                        }
+                        else if (0U !=
+                                 (pSlot->ucProperties & ATT_CHAR_PROP_RD))
+                        {
+                            (void)BikeBleGatt_ReadBattery(pSlot);
+                        }
+                        else
+                        {
+                            pSlot->eState = BIKE_BLE_GATT_STATE_FAILED;
+                            (void)BikeBleGatt_StartNext(
+                                pSlot->ucConnIndex);
+                        }
+                    }
+                    else
+                    {
+                        (void)BikeBleGatt_Subscribe(pSlot);
+                    }
                 }
                 else
                 {
@@ -449,8 +613,25 @@ static int BikeBleGatt_RemoteEventHandler(uint16_t usEventId, uint8_t *pData,
             {
                 if (HL_ERR_NO_ERROR == pResponse->result)
                 {
-                    pSlot->eState = BIKE_BLE_GATT_STATE_READY;
-                    BikeBleGatt_NotifyReady(pSlot, true);
+                    if (BIKE_BLE_GATT_SERVICE_BATTERY ==
+                        pSlot->ucServiceMask)
+                    {
+                        pSlot->bSubscribed = true;
+                        if (0U !=
+                            (pSlot->ucProperties & ATT_CHAR_PROP_RD))
+                        {
+                            (void)BikeBleGatt_ReadBattery(pSlot);
+                        }
+                        else
+                        {
+                            pSlot->eState = BIKE_BLE_GATT_STATE_READY;
+                        }
+                    }
+                    else
+                    {
+                        pSlot->eState = BIKE_BLE_GATT_STATE_READY;
+                        BikeBleGatt_NotifyReady(pSlot, true);
+                    }
                 }
                 else if (!pSlot->bSecuritySeen)
                 {
@@ -458,12 +639,59 @@ static int BikeBleGatt_RemoteEventHandler(uint16_t usEventId, uint8_t *pData,
                 }
                 else
                 {
-                    pSlot->eState = BIKE_BLE_GATT_STATE_FAILED;
-                    BikeBleGatt_NotifyReady(pSlot, false);
+                    if ((BIKE_BLE_GATT_SERVICE_BATTERY ==
+                         pSlot->ucServiceMask) &&
+                        (0U != (pSlot->ucProperties & ATT_CHAR_PROP_RD)))
+                    {
+                        (void)BikeBleGatt_ReadBattery(pSlot);
+                    }
+                    else
+                    {
+                        pSlot->eState = BIKE_BLE_GATT_STATE_FAILED;
+                        BikeBleGatt_NotifyReady(pSlot, false);
+                    }
                 }
                 (void)BikeBleGatt_StartNext(pSlot->ucConnIndex);
                 break;
             }
+        }
+    }
+    else if ((SIBLES_READ_REMOTE_VALUE_RSP == usEventId) &&
+             (sizeof(sibles_read_remote_value_rsp_t) <= usLength))
+    {
+        const sibles_read_remote_value_rsp_t *pResponse;
+
+        pResponse = (const sibles_read_remote_value_rsp_t *)pData;
+        for (ucIndex = 0U; ucIndex < BIKE_BLE_GATT_SLOT_COUNT; ucIndex++)
+        {
+            uint8_t ucBatteryPercent;
+
+            pSlot = &l_aBikeBleGattSlots[ucIndex];
+            if ((pResponse->conn_idx != pSlot->ucConnIndex) ||
+                (BIKE_BLE_GATT_STATE_READING != pSlot->eState) ||
+                (pResponse->handle != pSlot->usValueHandle))
+            {
+                continue;
+            }
+            if (BIKE_BLE_MEAS_ParseBatteryLevel(pResponse->value,
+                                                pResponse->length,
+                                                &ucBatteryPercent) &&
+                (NULL != l_pBikeBleGattBatteryCallback))
+            {
+                l_pBikeBleGattBatteryCallback(pSlot->ucConnIndex,
+                                              ucBatteryPercent);
+                pSlot->eState = BIKE_BLE_GATT_STATE_READY;
+            }
+            else if (pSlot->bSubscribed)
+            {
+                pSlot->eState = BIKE_BLE_GATT_STATE_READY;
+            }
+            else
+            {
+                pSlot->eState = BIKE_BLE_GATT_STATE_FAILED;
+            }
+            (void)BikeBleGatt_StartNext(pSlot->ucConnIndex);
+            break;
         }
     }
     else if ((SIBLES_REMOTE_EVENT_IND == usEventId) &&
@@ -479,10 +707,18 @@ static int BikeBleGatt_RemoteEventHandler(uint16_t usEventId, uint8_t *pData,
         for (ucIndex = 0U; ucIndex < BIKE_BLE_GATT_SLOT_COUNT; ucIndex++)
         {
             uint16_t usHeartRateBpm;
+            uint8_t ucBatteryPercent;
+            bool bDataState;
             BIKE_CSC_MEASUREMENT tMeasurement;
 
             pSlot = &l_aBikeBleGattSlots[ucIndex];
-            if ((BIKE_BLE_GATT_STATE_READY != pSlot->eState) ||
+            bDataState = (BIKE_BLE_GATT_STATE_READY == pSlot->eState) ||
+                         ((BIKE_BLE_GATT_SERVICE_BATTERY ==
+                           pSlot->ucServiceMask) &&
+                          ((BIKE_BLE_GATT_STATE_SUBSCRIBING ==
+                            pSlot->eState) ||
+                           (BIKE_BLE_GATT_STATE_READING == pSlot->eState)));
+            if ((!pSlot->bRequested) || (!bDataState) ||
                 (pIndication->conn_idx != pSlot->ucConnIndex) ||
                 (pIndication->handle != pSlot->usValueHandle))
             {
@@ -504,6 +740,16 @@ static int BikeBleGatt_RemoteEventHandler(uint16_t usEventId, uint8_t *pData,
                      (NULL != l_pBikeBleGattCscCallback))
             {
                 l_pBikeBleGattCscCallback(pSlot->ucConnIndex, &tMeasurement);
+            }
+            else if ((BIKE_BLE_GATT_SERVICE_BATTERY ==
+                      pSlot->ucServiceMask) &&
+                     BIKE_BLE_MEAS_ParseBatteryLevel(pIndication->value,
+                                                     pIndication->length,
+                                                     &ucBatteryPercent) &&
+                     (NULL != l_pBikeBleGattBatteryCallback))
+            {
+                l_pBikeBleGattBatteryCallback(pSlot->ucConnIndex,
+                                              ucBatteryPercent);
             }
             break;
         }
@@ -573,28 +819,35 @@ static int BikeBleGatt_EventHandler(uint16_t usEventId, uint8_t *pData,
 }
 BLE_EVENT_REGISTER(BikeBleGatt_EventHandler, NULL);
 
-/* BIKE_BLE_GATT_Init: 初始化两个逐连接标准服务 slot。
+/* BIKE_BLE_GATT_Init: 初始化 HR/CSC 与按连接 BAS 的固定服务槽。
  * 参数：
  *   - pReadyCallback: service 就绪/失败回调
  *   - pHeartRateCallback: 心率测量回调
  *   - pCscCallback: CSC 测量回调
+ *   - pBatteryCallback: BAS 电量回调
  * 返回值：参数有效返回 true，否则返回 false
  */
 bool BIKE_BLE_GATT_Init(BIKE_BLE_GATT_READY_CALLBACK pReadyCallback,
                         BIKE_BLE_GATT_HEART_RATE_CALLBACK pHeartRateCallback,
-                        BIKE_BLE_GATT_CSC_CALLBACK pCscCallback)
+                        BIKE_BLE_GATT_CSC_CALLBACK pCscCallback,
+                        BIKE_BLE_GATT_BATTERY_CALLBACK pBatteryCallback)
 {
     if ((NULL == pReadyCallback) || (NULL == pHeartRateCallback) ||
-        (NULL == pCscCallback))
+        (NULL == pCscCallback) || (NULL == pBatteryCallback))
     {
         return false;
     }
     BikeBleGatt_ResetSlot(&l_aBikeBleGattSlots[0],
                           BIKE_BLE_SERVICE_HEART_RATE);
     BikeBleGatt_ResetSlot(&l_aBikeBleGattSlots[1], BIKE_BLE_SERVICE_CSC);
+    BikeBleGatt_ResetSlot(&l_aBikeBleGattSlots[2],
+                          BIKE_BLE_GATT_SERVICE_BATTERY);
+    BikeBleGatt_ResetSlot(&l_aBikeBleGattSlots[3],
+                          BIKE_BLE_GATT_SERVICE_BATTERY);
     l_pBikeBleGattReadyCallback = pReadyCallback;
     l_pBikeBleGattHeartRateCallback = pHeartRateCallback;
     l_pBikeBleGattCscCallback = pCscCallback;
+    l_pBikeBleGattBatteryCallback = pBatteryCallback;
     l_bBikeBleGattReady = true;
 
     return true;
@@ -608,6 +861,7 @@ bool BIKE_BLE_GATT_Init(BIKE_BLE_GATT_READY_CALLBACK pReadyCallback,
  */
 bool BIKE_BLE_GATT_Attach(uint8_t ucConnIndex, uint8_t ucServiceMask)
 {
+    BIKE_BLE_GATT_SLOT *pBatterySlot;
     BIKE_BLE_GATT_SLOT *pSlot;
     uint8_t ucMask;
     uint8_t ucSupportedMask;
@@ -617,6 +871,11 @@ bool BIKE_BLE_GATT_Attach(uint8_t ucConnIndex, uint8_t ucServiceMask)
         (BIKE_BLE_GATT_INVALID_CONN_INDEX == ucConnIndex) ||
         (0U == ucServiceMask) ||
         (0U != (ucServiceMask & (uint8_t)(~ucSupportedMask))))
+    {
+        return false;
+    }
+    pBatterySlot = BikeBleGatt_GetBatterySlot(ucConnIndex, true);
+    if (NULL == pBatterySlot)
     {
         return false;
     }
@@ -652,6 +911,13 @@ bool BIKE_BLE_GATT_Attach(uint8_t ucConnIndex, uint8_t ucServiceMask)
             pSlot->bRequested = true;
             pSlot->ucConnIndex = ucConnIndex;
         }
+    }
+    if (!pBatterySlot->bRequested)
+    {
+        BikeBleGatt_ResetSlot(pBatterySlot,
+                              BIKE_BLE_GATT_SERVICE_BATTERY);
+        pBatterySlot->bRequested = true;
+        pBatterySlot->ucConnIndex = ucConnIndex;
     }
 
     return BikeBleGatt_StartNext(ucConnIndex);

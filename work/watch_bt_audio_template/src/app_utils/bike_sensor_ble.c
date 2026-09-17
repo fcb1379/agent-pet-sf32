@@ -766,6 +766,48 @@ static void BikeSensorBle_HandleCsc(
     return;
 }
 
+/* BikeSensorBle_HandleBattery: 将 BAS 电量写入同一连接对应的传感器槽。
+ * 参数：
+ *   - ucConnIndex: 电量所属连接
+ *   - ucBatteryPercent: 0~100 电量百分比
+ * 返回值：无
+ */
+static void BikeSensorBle_HandleBattery(uint8_t ucConnIndex,
+                                        uint8_t ucBatteryPercent)
+{
+    bool bMatched;
+
+    if (100U < ucBatteryPercent)
+    {
+        return;
+    }
+    if (!BikeSensorBle_Lock())
+    {
+        BikeSensorBle_CountDroppedEvent();
+        return;
+    }
+    bMatched = false;
+    if (ucConnIndex == l_tBikeSensorSnapshot.ucHeartRateConnIndex)
+    {
+        l_tBikeSensorSnapshot.ucHeartRateBatteryPercent = ucBatteryPercent;
+        l_tBikeSensorSnapshot.bHeartRateBatteryValid = true;
+        bMatched = true;
+    }
+    if (ucConnIndex == l_tBikeSensorSnapshot.ucCscConnIndex)
+    {
+        l_tBikeSensorSnapshot.ucCscBatteryPercent = ucBatteryPercent;
+        l_tBikeSensorSnapshot.bCscBatteryValid = true;
+        bMatched = true;
+    }
+    BikeSensorBle_Unlock();
+    if (!bMatched)
+    {
+        LOG_W("battery from unknown conn=%u", ucConnIndex);
+    }
+
+    return;
+}
+
 /* BikeSensorBle_HandleGattReady: 将 GATT 订阅结果投递给连接管理线程。
  * 参数：
  *   - ucConnIndex: 服务所属连接
@@ -1043,15 +1085,19 @@ static void BikeSensorBle_HandleDisconnect(BIKE_SENSOR_BLE_MANAGER *pManager,
         if (0U != (ucDisconnectedMask & BIKE_BLE_SERVICE_HEART_RATE))
         {
             l_tBikeSensorSnapshot.bHeartRateValid = false;
+            l_tBikeSensorSnapshot.bHeartRateBatteryValid = false;
             l_tBikeSensorSnapshot.usHeartRateBpm = 0U;
+            l_tBikeSensorSnapshot.ucHeartRateBatteryPercent = 0U;
             l_tBikeSensorSnapshot.ulHeartRateUpdateMs = 0U;
         }
         if (0U != (ucDisconnectedMask & BIKE_BLE_SERVICE_CSC))
         {
             l_tBikeSensorSnapshot.bWheelSpeedValid = false;
             l_tBikeSensorSnapshot.bCadenceValid = false;
+            l_tBikeSensorSnapshot.bCscBatteryValid = false;
             l_tBikeSensorSnapshot.usWheelSpeedCentiKph = 0U;
             l_tBikeSensorSnapshot.usCadenceRpm = 0U;
+            l_tBikeSensorSnapshot.ucCscBatteryPercent = 0U;
             l_tBikeSensorSnapshot.ulCscUpdateMs = 0U;
             BIKE_CSC_Init(&l_tBikeCscState);
         }
@@ -1102,9 +1148,13 @@ static void BikeSensorBle_ClearManagerPeers(BIKE_SENSOR_BLE_MANAGER *pManager)
         l_tBikeSensorSnapshot.bHeartRateValid = false;
         l_tBikeSensorSnapshot.bWheelSpeedValid = false;
         l_tBikeSensorSnapshot.bCadenceValid = false;
+        l_tBikeSensorSnapshot.bHeartRateBatteryValid = false;
+        l_tBikeSensorSnapshot.bCscBatteryValid = false;
         l_tBikeSensorSnapshot.usHeartRateBpm = 0U;
         l_tBikeSensorSnapshot.usWheelSpeedCentiKph = 0U;
         l_tBikeSensorSnapshot.usCadenceRpm = 0U;
+        l_tBikeSensorSnapshot.ucHeartRateBatteryPercent = 0U;
+        l_tBikeSensorSnapshot.ucCscBatteryPercent = 0U;
         l_tBikeSensorSnapshot.ulHeartRateUpdateMs = 0U;
         l_tBikeSensorSnapshot.ulCscUpdateMs = 0U;
         BIKE_CSC_Init(&l_tBikeCscState);
@@ -1477,7 +1527,8 @@ bool BIKE_SENSOR_BLE_Init(void)
 #ifdef BSP_BLE_SIBLES
     if (!BIKE_BLE_GATT_Init(BikeSensorBle_HandleGattReady,
                             BikeSensorBle_HandleHeartRate,
-                            BikeSensorBle_HandleCsc))
+                            BikeSensorBle_HandleCsc,
+                            BikeSensorBle_HandleBattery))
     {
         LOG_E("GATT client init failed");
         (void)rt_mq_detach(&l_tBikeSensorQueue);
@@ -1604,13 +1655,18 @@ static void BikeSensorBle_Command(int lArgumentCount, char **pArguments)
         (void)memset(&tSnapshot, 0, sizeof(tSnapshot));
         bResult = BIKE_SENSOR_BLE_GetSnapshot(&tSnapshot);
         rt_kprintf("bike sensor ret=%u power=%u scan=%u connecting=%u "
-                   "hr=%u/%u/%u csc=%u/%u/%u rpm=%u attempts=%lu "
+                   "hr=%u/%u/%u hb=%u/%u csc=%u/%u/%u rpm=%u cb=%u/%u "
+                   "attempts=%lu "
                    "rssi=%d dropped=%lu\n",
                    bResult, tSnapshot.bPowerOn, tSnapshot.bScanning,
                    tSnapshot.bConnecting, tSnapshot.bHeartRateConnected,
                    tSnapshot.ucHeartRateConnIndex, tSnapshot.usHeartRateBpm,
+                   tSnapshot.bHeartRateBatteryValid,
+                   tSnapshot.ucHeartRateBatteryPercent,
                    tSnapshot.bCscConnected, tSnapshot.ucCscConnIndex,
                    tSnapshot.usWheelSpeedCentiKph, tSnapshot.usCadenceRpm,
+                   tSnapshot.bCscBatteryValid,
+                   tSnapshot.ucCscBatteryPercent,
                    (unsigned long)tSnapshot.ulConnectionAttemptCount,
                    tSnapshot.cLastRssi,
                    (unsigned long)tSnapshot.ulDroppedEventCount);

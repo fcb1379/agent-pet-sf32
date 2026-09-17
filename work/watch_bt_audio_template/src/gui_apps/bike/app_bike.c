@@ -283,6 +283,42 @@ static void BikeUi_FormatSpeedSensor(bool bConnected, bool bValid,
     return;
 }
 
+/* BikeUi_FormatBattery: 格式化传感器 BAS 电量或连接状态。
+ * 参数：
+ *   - bConnected: 传感器链路是否已建立
+ *   - bValid: 已读取有效 BAS 电量
+ *   - ucPercent: 电量百分比
+ *   - pBuffer/ulBufferSize: 输出缓冲及容量
+ * 返回值：无
+ */
+static void BikeUi_FormatBattery(bool bConnected, bool bValid,
+                                 uint8_t ucPercent, char *pBuffer,
+                                 size_t ulBufferSize)
+{
+    int lLength;
+
+    if ((NULL == pBuffer) || (0U == ulBufferSize))
+    {
+        return;
+    }
+    if (bValid && (100U >= ucPercent))
+    {
+        lLength = snprintf(pBuffer, ulBufferSize, "%u%%",
+                           (unsigned int)ucPercent);
+    }
+    else
+    {
+        lLength = snprintf(pBuffer, ulBufferSize, "%s",
+                           bConnected ? "N/A" : "--");
+    }
+    if ((0 >= lLength) || ((size_t)lLength >= ulBufferSize))
+    {
+        pBuffer[0] = '\0';
+    }
+
+    return;
+}
+
 /* BikeUi_Update: 从线程安全快照刷新现有对象，不在每帧重建控件。
  * 返回值：无
  */
@@ -297,7 +333,9 @@ static void BikeUi_Update(void)
     char aMovingTime[16];
     char aElapsedTime[16];
     char aHeartRate[16];
+    char aHeartRateBattery[12];
     char aCadence[16];
+    char aCscBattery[12];
     char aCscSpeed[20];
     const char *pAltitudeSign;
     const char *pGpsState;
@@ -493,11 +531,20 @@ static void BikeUi_Update(void)
                              tSnapshot.tSensors.bWheelSpeedValid,
                              tSnapshot.tSensors.usWheelSpeedCentiKph,
                              aCscSpeed, sizeof(aCscSpeed));
+    BikeUi_FormatBattery(tSnapshot.tSensors.bHeartRateConnected,
+                         tSnapshot.tSensors.bHeartRateBatteryValid,
+                         tSnapshot.tSensors.ucHeartRateBatteryPercent,
+                         aHeartRateBattery, sizeof(aHeartRateBattery));
+    BikeUi_FormatBattery(tSnapshot.tSensors.bCscConnected,
+                         tSnapshot.tSensors.bCscBatteryValid,
+                         tSnapshot.tSensors.ucCscBatteryPercent,
+                         aCscBattery, sizeof(aCscBattery));
     lv_label_set_text_fmt(l_tBikeUi.pSummaryLabel,
                           "STATE  %s\nDIST  %lu.%02lu km\nMOVING  %s\nELAPSED  %s\n"
                           "AVG  %u.%02u km/h\nMAX  %u.%02u km/h\n"
-                          "CAL  %lu.%03lu kcal\nHR  %s  CAD  %s\n"
-                          "CSC  %s\nTRACK  %s / %lu pt\nFILE  %s",
+                           "CAL  %lu.%03lu kcal\nHR  %s  HB  %s\n"
+                           "CAD  %s  CB  %s\nCSC  %s\n"
+                           "TRACK  %s / %lu pt\nFILE  %s",
                           pRideState,
                           (unsigned long)(ulDistanceCentiKm / 100U),
                           (unsigned long)(ulDistanceCentiKm % 100U),
@@ -508,7 +555,8 @@ static void BikeUi_Update(void)
                           (unsigned int)(tSnapshot.tRide.usMaximumSpeedCentiKph % 100U),
                           (unsigned long)(tSnapshot.tRide.ulCaloriesMilliKcal / 1000U),
                           (unsigned long)(tSnapshot.tRide.ulCaloriesMilliKcal % 1000U),
-                          aHeartRate, aCadence, aCscSpeed,
+                           aHeartRate, aHeartRateBattery,
+                           aCadence, aCscBattery, aCscSpeed,
                           pRecordState,
                           (unsigned long)tSnapshot.tRecorder.ulPointCount,
                           pFileName);

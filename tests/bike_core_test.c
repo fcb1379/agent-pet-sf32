@@ -424,7 +424,11 @@ static void Test_BleMeasurement(void)
     static const uint8_t aCscTruncated[] = {0x01U, 0x01U, 0x00U};
     static const uint8_t aCscReservedFlag[] = {0x04U};
     static const uint8_t aCscTrailing[] = {0x00U, 0x01U};
+    static const uint8_t aBatteryValid[] = {85U};
+    static const uint8_t aBatteryInvalid[] = {101U};
+    static const uint8_t aBatteryTrailing[] = {85U, 0U};
     BIKE_CSC_MEASUREMENT tMeasurement;
+    uint8_t ucBatteryPercent;
     uint16_t usHeartRateBpm;
 
     usHeartRateBpm = 0U;
@@ -470,6 +474,22 @@ static void Test_BleMeasurement(void)
                                    &tMeasurement));
     assert(!BIKE_BLE_MEAS_ParseCsc(NULL, 0U, &tMeasurement));
     assert(!BIKE_BLE_MEAS_ParseCsc(aCscCombined, sizeof(aCscCombined), NULL));
+
+    ucBatteryPercent = 0U;
+    assert(BIKE_BLE_MEAS_ParseBatteryLevel(aBatteryValid,
+                                           sizeof(aBatteryValid),
+                                           &ucBatteryPercent));
+    assert(85U == ucBatteryPercent);
+    assert(!BIKE_BLE_MEAS_ParseBatteryLevel(aBatteryInvalid,
+                                             sizeof(aBatteryInvalid),
+                                             &ucBatteryPercent));
+    assert(!BIKE_BLE_MEAS_ParseBatteryLevel(aBatteryTrailing,
+                                             sizeof(aBatteryTrailing),
+                                             &ucBatteryPercent));
+    assert(!BIKE_BLE_MEAS_ParseBatteryLevel(NULL, 0U,
+                                             &ucBatteryPercent));
+    assert(!BIKE_BLE_MEAS_ParseBatteryLevel(aBatteryValid,
+                                             sizeof(aBatteryValid), NULL));
 
     return;
 }
