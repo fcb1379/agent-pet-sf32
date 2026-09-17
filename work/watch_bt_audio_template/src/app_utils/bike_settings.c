@@ -272,8 +272,11 @@ rt_err_t BIKE_SETTINGS_SetTimeZoneMinutes(int16_t sMinutes)
     eResult = rt_mutex_take(&l_tBikeSettingsMutex, RT_WAITING_FOREVER);
     if (RT_EOK == eResult)
     {
-        l_tBikeSettings.sTimeZoneMinutes = sMinutes;
         eResult = BikeSettings_SaveLocked(BIKE_SETTINGS_KEY_TIMEZONE, sMinutes);
+        if (RT_EOK == eResult)
+        {
+            l_tBikeSettings.sTimeZoneMinutes = sMinutes;
+        }
         BikeSettings_Unlock();
     }
 
@@ -302,9 +305,12 @@ rt_err_t BIKE_SETTINGS_SetWheelCircumference(uint16_t usMillimeters)
     eResult = rt_mutex_take(&l_tBikeSettingsMutex, RT_WAITING_FOREVER);
     if (RT_EOK == eResult)
     {
-        l_tBikeSettings.usWheelCircumferenceMm = usMillimeters;
         eResult = BikeSettings_SaveLocked(BIKE_SETTINGS_KEY_WHEEL,
                                           usMillimeters);
+        if (RT_EOK == eResult)
+        {
+            l_tBikeSettings.usWheelCircumferenceMm = usMillimeters;
+        }
         BikeSettings_Unlock();
     }
 
@@ -320,6 +326,8 @@ rt_err_t BIKE_SETTINGS_SetWheelCircumference(uint16_t usMillimeters)
 rt_err_t BIKE_SETTINGS_SetAutoPause(bool bEnabled, uint16_t usThresholdCentiKph)
 {
     rt_err_t eResult;
+    rt_err_t eRollbackResult;
+    bool bPreviousEnabled;
 
     if ((BIKE_SETTINGS_AUTO_PAUSE_MIN_CENTI_KPH > usThresholdCentiKph) ||
         (BIKE_SETTINGS_AUTO_PAUSE_MAX_CENTI_KPH < usThresholdCentiKph))
@@ -334,14 +342,28 @@ rt_err_t BIKE_SETTINGS_SetAutoPause(bool bEnabled, uint16_t usThresholdCentiKph)
     eResult = rt_mutex_take(&l_tBikeSettingsMutex, RT_WAITING_FOREVER);
     if (RT_EOK == eResult)
     {
-        l_tBikeSettings.bAutoPauseEnabled = bEnabled;
-        l_tBikeSettings.usAutoPauseCentiKph = usThresholdCentiKph;
+        bPreviousEnabled = l_tBikeSettings.bAutoPauseEnabled;
         eResult = BikeSettings_SaveLocked(BIKE_SETTINGS_KEY_AUTO_PAUSE,
                                           bEnabled ? 1 : 0);
         if (RT_EOK == eResult)
         {
             eResult = BikeSettings_SaveLocked(BIKE_SETTINGS_KEY_AUTO_THRESHOLD,
                                               usThresholdCentiKph);
+            if (RT_EOK != eResult)
+            {
+                eRollbackResult = BikeSettings_SaveLocked(
+                    BIKE_SETTINGS_KEY_AUTO_PAUSE,
+                    bPreviousEnabled ? 1 : 0);
+                if (RT_EOK != eRollbackResult)
+                {
+                    LOG_E("autopause rollback failed: %d", eRollbackResult);
+                }
+            }
+        }
+        if (RT_EOK == eResult)
+        {
+            l_tBikeSettings.bAutoPauseEnabled = bEnabled;
+            l_tBikeSettings.usAutoPauseCentiKph = usThresholdCentiKph;
         }
         BikeSettings_Unlock();
     }
@@ -359,6 +381,8 @@ rt_err_t BIKE_SETTINGS_SetDisplay(uint8_t ucBrightnessPercent,
                                   uint16_t usTimeoutSeconds)
 {
     rt_err_t eResult;
+    rt_err_t eRollbackResult;
+    uint8_t ucPreviousBrightness;
 
     if ((BIKE_SETTINGS_BRIGHTNESS_MIN_PERCENT > ucBrightnessPercent) ||
         (BIKE_SETTINGS_BRIGHTNESS_MAX_PERCENT < ucBrightnessPercent) ||
@@ -374,14 +398,27 @@ rt_err_t BIKE_SETTINGS_SetDisplay(uint8_t ucBrightnessPercent,
     eResult = rt_mutex_take(&l_tBikeSettingsMutex, RT_WAITING_FOREVER);
     if (RT_EOK == eResult)
     {
-        l_tBikeSettings.ucBrightnessPercent = ucBrightnessPercent;
-        l_tBikeSettings.usScreenTimeoutSeconds = usTimeoutSeconds;
+        ucPreviousBrightness = l_tBikeSettings.ucBrightnessPercent;
         eResult = BikeSettings_SaveLocked(BIKE_SETTINGS_KEY_BRIGHTNESS,
                                           ucBrightnessPercent);
         if (RT_EOK == eResult)
         {
             eResult = BikeSettings_SaveLocked(BIKE_SETTINGS_KEY_SCREEN_TIMEOUT,
                                               usTimeoutSeconds);
+            if (RT_EOK != eResult)
+            {
+                eRollbackResult = BikeSettings_SaveLocked(
+                    BIKE_SETTINGS_KEY_BRIGHTNESS, ucPreviousBrightness);
+                if (RT_EOK != eRollbackResult)
+                {
+                    LOG_E("display rollback failed: %d", eRollbackResult);
+                }
+            }
+        }
+        if (RT_EOK == eResult)
+        {
+            l_tBikeSettings.ucBrightnessPercent = ucBrightnessPercent;
+            l_tBikeSettings.usScreenTimeoutSeconds = usTimeoutSeconds;
         }
         BikeSettings_Unlock();
     }

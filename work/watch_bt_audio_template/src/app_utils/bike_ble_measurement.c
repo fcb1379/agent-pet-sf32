@@ -6,6 +6,7 @@
 #define BIKE_BLE_HR_FLAG_VALUE_16BIT (0x01U)
 #define BIKE_BLE_HR_FLAG_ENERGY_PRESENT (0x08U)
 #define BIKE_BLE_HR_FLAG_RR_PRESENT (0x10U)
+#define BIKE_BLE_HR_KNOWN_FLAGS (0x1FU)
 #define BIKE_BLE_CSC_KNOWN_FLAGS (BIKE_CSC_WHEEL_DATA_PRESENT | \
                                   BIKE_CSC_CRANK_DATA_PRESENT)
 #define BIKE_BLE_POWER_KNOWN_FLAGS (0x1FFFU)
@@ -61,6 +62,10 @@ bool BIKE_BLE_MEAS_ParseHeartRate(const uint8_t *pData, uint16_t usLength,
         return false;
     }
     ucFlags = pData[0];
+    if (0U != (ucFlags & (uint8_t)(~BIKE_BLE_HR_KNOWN_FLAGS)))
+    {
+        return false;
+    }
     usOffset = 1U;
     if (0U != (ucFlags & BIKE_BLE_HR_FLAG_VALUE_16BIT))
     {

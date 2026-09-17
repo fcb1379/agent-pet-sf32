@@ -38,6 +38,7 @@ static void BikeCsc_UpdateWheel(BIKE_CSC_STATE *pState,
     uint32_t ulRevolutionDelta;
     uint16_t usTimeDelta;
     uint64_t udSpeedCentiKph;
+    uint64_t udNumerator;
 
     pState->bWheelSpeedValid = false;
     if (pState->bHasWheelSample)
@@ -48,15 +49,27 @@ static void BikeCsc_UpdateWheel(BIKE_CSC_STATE *pState,
                                 pState->usPreviousWheelEventTime);
         if ((0U < ulRevolutionDelta) && (0U < usTimeDelta))
         {
-            udSpeedCentiKph = (uint64_t)ulRevolutionDelta *
-                              (uint64_t)usWheelCircumferenceMm *
-                              BIKE_CSC_EVENT_TIME_HZ *
-                              BIKE_CSC_SPEED_SCALE_NUMERATOR;
-            udSpeedCentiKph /= BIKE_CSC_MM_PER_KM * (uint64_t)usTimeDelta;
-            if (BIKE_CSC_MAX_SPEED_CENTI_KPH >= udSpeedCentiKph)
+            udNumerator = (uint64_t)ulRevolutionDelta;
+            if ((UINT64_MAX / (uint64_t)usWheelCircumferenceMm >=
+                 udNumerator) &&
+                (UINT64_MAX / BIKE_CSC_EVENT_TIME_HZ >=
+                 (udNumerator * (uint64_t)usWheelCircumferenceMm)))
             {
-                pState->usWheelSpeedCentiKph = (uint16_t)udSpeedCentiKph;
-                pState->bWheelSpeedValid = true;
+                udNumerator *= (uint64_t)usWheelCircumferenceMm;
+                udNumerator *= BIKE_CSC_EVENT_TIME_HZ;
+                if (UINT64_MAX / BIKE_CSC_SPEED_SCALE_NUMERATOR >=
+                    udNumerator)
+                {
+                    udNumerator *= BIKE_CSC_SPEED_SCALE_NUMERATOR;
+                    udSpeedCentiKph = udNumerator /
+                        (BIKE_CSC_MM_PER_KM * (uint64_t)usTimeDelta);
+                    if (BIKE_CSC_MAX_SPEED_CENTI_KPH >= udSpeedCentiKph)
+                    {
+                        pState->usWheelSpeedCentiKph =
+                            (uint16_t)udSpeedCentiKph;
+                        pState->bWheelSpeedValid = true;
+                    }
+                }
             }
         }
     }

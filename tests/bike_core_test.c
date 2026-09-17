@@ -70,6 +70,38 @@ static size_t Test_ReadFile(const char *pPath, char *pBuffer, size_t ulBufferSiz
     return (size_t)dReadLength;
 }
 
+/* Test_WriteFile: 将固定文本完整写入测试文件。
+ * 参数：
+ *   - pPath: 文件路径
+ *   - pText: 待写入文本
+ * 返回值：无
+ */
+static void Test_WriteFile(const char *pPath, const char *pText)
+{
+    size_t ulLength;
+    size_t ulOffset;
+    ssize_t dWriteLength;
+    int lFileDescriptor;
+
+    assert(NULL != pPath);
+    assert(NULL != pText);
+    lFileDescriptor = open(pPath, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+    assert(0 <= lFileDescriptor);
+    ulLength = strlen(pText);
+    ulOffset = 0U;
+    while (ulOffset < ulLength)
+    {
+        dWriteLength = write(lFileDescriptor, &pText[ulOffset],
+                             ulLength - ulOffset);
+        assert(0 < dWriteLength);
+        ulOffset += (size_t)dWriteLength;
+    }
+    assert(0 == fsync(lFileDescriptor));
+    assert(0 == close(lFileDescriptor));
+
+    return;
+}
+
 /* Test_FeedSentence: 向固定容量解析器输入一条完整 NMEA 语句。
  * 参数：
  *   - pParser: 解析器实例
@@ -97,12 +129,42 @@ static BIKE_NMEA_RESULT Test_FeedSentence(BIKE_NMEA_PARSER *pParser, const char 
     return eLastResult;
 }
 
+/* Test_FeedPayload: 为 NMEA payload 生成校验和后输入解析器。
+ * 参数：
+ *   - pParser: 解析器实例
+ *   - pPayload: 不含 '$'、'*XX' 和换行的 payload
+ * 返回值：解析结果
+ */
+static BIKE_NMEA_RESULT Test_FeedPayload(BIKE_NMEA_PARSER *pParser,
+                                         const char *pPayload)
+{
+    char aSentence[BIKE_NMEA_SENTENCE_MAX];
+    uint8_t ucChecksum;
+    size_t ulIndex;
+    int lLength;
+
+    assert(NULL != pParser);
+    assert(NULL != pPayload);
+    ucChecksum = 0U;
+    for (ulIndex = 0U; ulIndex < strlen(pPayload); ulIndex++)
+    {
+        ucChecksum ^= (uint8_t)pPayload[ulIndex];
+    }
+    lLength = snprintf(aSentence, sizeof(aSentence), "$%s*%02X\r\n",
+                       pPayload, ucChecksum);
+    assert(0 < lLength);
+    assert((size_t)lLength < sizeof(aSentence));
+
+    return Test_FeedSentence(pParser, aSentence);
+}
+
 /* Test_NmeaParser: 覆盖 GGA/RMC/VTG、校验错误和字段换算。
  * 返回值：无
  */
 static void Test_NmeaParser(void)
 {
     BIKE_NMEA_PARSER tParser;
+    BIKE_GNSS_DATA tDataBeforeError;
     const BIKE_GNSS_DATA *pData;
     BIKE_NMEA_RESULT eResult;
 
@@ -149,11 +211,49 @@ static void Test_NmeaParser(void)
     assert(BIKE_NMEA_RESULT_ERROR == eResult);
     pData = BIKE_NMEA_GetData(&tParser);
     assert(547U == pData->usCourseDeg10);
+    tDataBeforeError = *pData;
 
     eResult = Test_FeedSentence(&tParser,
                                 "$GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W*00\r\n");
     assert(BIKE_NMEA_RESULT_ERROR == eResult);
     assert(1U == tParser.ulChecksumErrorCount);
+
+    eResult = Test_FeedPayload(
+        &tParser,
+        "GPRMC,246060,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W");
+    assert(BIKE_NMEA_RESULT_ERROR == eResult);
+    eResult = Test_FeedPayload(
+        &tParser,
+        "GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,300224,003.1,W");
+    assert(BIKE_NMEA_RESULT_ERROR == eResult);
+    eResult = Test_FeedPayload(
+        &tParser,
+        "GPRMC,123519,X,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W");
+    assert(BIKE_NMEA_RESULT_ERROR == eResult);
+    eResult = Test_FeedPayload(
+        &tParser,
+        "GPRMC,123519,A,4899.000,N,01131.000,E,022.4,084.4,230394,003.1,W");
+    assert(BIKE_NMEA_RESULT_ERROR == eResult);
+    eResult = Test_FeedPayload(
+        &tParser,
+        "GPRMC,123519,A,4807.038,N,18100.000,E,022.4,084.4,230394,003.1,W");
+    assert(BIKE_NMEA_RESULT_ERROR == eResult);
+    eResult = Test_FeedPayload(
+        &tParser,
+        "GPRMC,123519,A,4807.038,N,01131.000,E,9223372036854775.807,084.4,230394,003.1,W");
+    assert(BIKE_NMEA_RESULT_ERROR == eResult);
+    pData = BIKE_NMEA_GetData(&tParser);
+    assert(tDataBeforeError.bFixValid == pData->bFixValid);
+    assert(tDataBeforeError.ucHour == pData->ucHour);
+    assert(tDataBeforeError.ucMinute == pData->ucMinute);
+    assert(tDataBeforeError.ucSecond == pData->ucSecond);
+    assert(tDataBeforeError.ucDay == pData->ucDay);
+    assert(tDataBeforeError.ucMonth == pData->ucMonth);
+    assert(tDataBeforeError.usYear == pData->usYear);
+    assert(tDataBeforeError.lLatitudeE7 == pData->lLatitudeE7);
+    assert(tDataBeforeError.lLongitudeE7 == pData->lLongitudeE7);
+    assert(tDataBeforeError.ulSpeedCmPerSec == pData->ulSpeedCmPerSec);
+    assert(tDataBeforeError.usCourseDeg10 == pData->usCourseDeg10);
 
     return;
 }
@@ -197,6 +297,9 @@ static void Test_RideModel(void)
     tGnss.lLongitudeE7 = 2000000;
     BIKE_RIDE_Update(&tState, &tGnss, 6000U);
     assert(ulDistanceBeforePause == tState.ulDistanceMm);
+
+    assert(0U == BIKE_RIDE_CalculateDistanceMm(0, -1800000000,
+                                                0, 1800000000));
 
     return;
 }
@@ -398,6 +501,15 @@ static void Test_CscCalculation(void)
     assert(tState.bCadenceValid);
     assert(60U == tState.usCadenceRpm);
 
+    BIKE_CSC_Init(&tState);
+    tMeasurement.ulCumulativeWheelRevolutions = 1U;
+    tMeasurement.usLastWheelEventTime = 1000U;
+    BIKE_CSC_Update(&tState, &tMeasurement, 4000U);
+    tMeasurement.ulCumulativeWheelRevolutions = 0U;
+    tMeasurement.usLastWheelEventTime = 2024U;
+    BIKE_CSC_Update(&tState, &tMeasurement, 4000U);
+    assert(!tState.bWheelSpeedValid);
+
     return;
 }
 
@@ -415,6 +527,9 @@ static void Test_BleAdvertising(void)
         5U, 0x16U, 0x16U, 0x18U, 0x01U, 0x02U
     };
     static const uint8_t aMalformed[] = {5U, 0x03U, 0x0DU, 0x18U};
+    static const uint8_t aOddUuidList[] = {
+        4U, 0x03U, 0x0DU, 0x18U, 0x16U
+    };
 
     assert(BIKE_BLE_SERVICE_HEART_RATE ==
            BIKE_BLE_ADV_GetServiceMask(aHeartRate, sizeof(aHeartRate)));
@@ -425,6 +540,8 @@ static void Test_BleAdvertising(void)
            BIKE_BLE_ADV_GetServiceMask(aCscServiceData,
                                        sizeof(aCscServiceData)));
     assert(0U == BIKE_BLE_ADV_GetServiceMask(aMalformed, sizeof(aMalformed)));
+    assert(0U == BIKE_BLE_ADV_GetServiceMask(aOddUuidList,
+                                              sizeof(aOddUuidList)));
     assert(0U == BIKE_BLE_ADV_GetServiceMask(NULL, 0U));
 
     return;
@@ -443,6 +560,7 @@ static void Test_BleMeasurement(void)
     static const uint8_t aHeartRateTruncated[] = {0x01U, 0x2CU};
     static const uint8_t aHeartRateOddRr[] = {0x10U, 80U, 0x01U};
     static const uint8_t aHeartRateTrailing[] = {0x00U, 80U, 0x01U};
+    static const uint8_t aHeartRateReserved[] = {0x20U, 80U};
     static const uint8_t aCscCombined[] = {
         0x03U, 0x78U, 0x56U, 0x34U, 0x12U, 0xBCU, 0x9AU,
         0x57U, 0x13U, 0x68U, 0x24U
@@ -486,6 +604,9 @@ static void Test_BleMeasurement(void)
                                          &usHeartRateBpm));
     assert(!BIKE_BLE_MEAS_ParseHeartRate(aHeartRateTrailing,
                                          sizeof(aHeartRateTrailing),
+                                         &usHeartRateBpm));
+    assert(!BIKE_BLE_MEAS_ParseHeartRate(aHeartRateReserved,
+                                         sizeof(aHeartRateReserved),
                                          &usHeartRateBpm));
     assert(!BIKE_BLE_MEAS_ParseHeartRate(NULL, 0U, &usHeartRateBpm));
     assert(!BIKE_BLE_MEAS_ParseHeartRate(aHeartRate8,
@@ -635,6 +756,13 @@ static void Test_GpxWriter(void)
     tGnss.ucSecond = 19U;
     tGnss.lAltitudeCm = 12345;
 
+    tGnss.ucMonth = 2U;
+    tGnss.ucDay = 30U;
+    BIKE_GPX_Init(&tWriter);
+    assert(!BIKE_GPX_Start(&tWriter, TEST_GPX_DIRECTORY, &tGnss));
+    tGnss.ucMonth = 9U;
+    tGnss.ucDay = 23U;
+
     BIKE_GPX_Init(&tWriter);
     assert(BIKE_GPX_Start(&tWriter, TEST_GPX_DIRECTORY, &tGnss));
     tGnss.ucSecond = 20U;
@@ -679,6 +807,22 @@ static void Test_GpxWriter(void)
     assert(2U == Test_CountText(aFileData, "<trkseg>"));
     assert(NULL != strstr(aFileData, "</trkseg></trk></gpx>"));
     assert(0 != access(TEST_GPX_DIRECTORY "/.active", F_OK));
+
+    /* 模拟恢复 rename 已完成，但删除 .part/.active 前再次掉电。 */
+    Test_WriteFile(TEST_GPX_DIRECTORY "/TRK_20240923_123529.gpx.part",
+                   "stale recovery source\n");
+    Test_WriteFile(TEST_GPX_DIRECTORY "/.active",
+                   TEST_GPX_DIRECTORY "/TRK_20240923_123529.gpx.part\n");
+    aRecoveredPath[0] = '\0';
+    eRecovery = BIKE_GPX_Recover(TEST_GPX_DIRECTORY, aRecoveredPath,
+                                 sizeof(aRecoveredPath));
+    assert(BIKE_GPX_RECOVERY_DONE == eRecovery);
+    assert(0 == strcmp(pSecondFile, aRecoveredPath));
+    assert(0 != access(TEST_GPX_DIRECTORY "/.active", F_OK));
+    assert(0 != access(TEST_GPX_DIRECTORY "/TRK_20240923_123529.gpx.part",
+                       F_OK));
+    assert(0U < Test_ReadFile(pSecondFile, aFileData, sizeof(aFileData)));
+    assert(NULL != strstr(aFileData, "</trkseg></trk></gpx>"));
 
     tGnss.ucSecond = 39U;
     tGnss.lLongitudeE7 = 3592;

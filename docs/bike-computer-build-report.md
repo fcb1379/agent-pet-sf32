@@ -47,22 +47,29 @@
 ```text
 gcc -std=c11 -Wall -Wextra -Werror ... -lm -o /tmp/bike_core_test
 bike_core_test: PASS
+gcc -fsanitize=address,undefined -fno-omit-frame-pointer ...
+bike_core_test: PASS
 ```
 
 覆盖内容：
 
 - 合法 GGA/RMC/VTG 解析及单位转换，覆盖 VTG km/h、节回退、无效模式和越界航向。
+- RMC 必填时间、公历日期、状态、坐标分值与极端速度溢出路径校验。
 - 坏校验语句拒绝。
 - NMEA 分段输入。
 - 骑行状态切换、移动时间、里程、平均速度和异常跳点过滤。
 - GPX 正常闭合、暂停/继续、空间安全路径、异常跳点断段、未发布轨迹丢弃和掉电恢复。
+- GPX 恢复发布后、清理 `.part`/`.active` 前再次掉电的中间状态收敛。
 - 生成的正常文件与恢复文件均通过 Python `xml.etree.ElementTree` 解析。
 - UTC 时区转换覆盖正负偏移、跨年、闰日和非法日期。
 - 自动暂停覆盖低速防抖、恢复回差、定位失效、计时回绕和手动暂停隔离。
 - CSC 覆盖首帧基线、轮速/踏频计算以及 16/32 位累计值自然回绕。
+- CSC 轮转累计值重置/大跳变不会绕过 64 位乘法与 200 km/h 上限。
 - BLE 广播解析覆盖完整/短 UUID 列表、Service Data、HR/CSC/Power 组合广播和畸形长度拒绝。
 - BLE Measurement 解析覆盖 8/16 位心率、Energy/RR 可选字段、HR 截断/奇数 RR/非法尾随数据，CSC 轮/曲柄组合数据、保留 flags、截断和尾随数据拒绝，Cycling Power 正负功率、全可选字段、保留 flags、截断和尾随数据拒绝，以及 Battery Level 的 0~100 边界、长度和空指针校验。
 - 速度源仲裁覆盖 CSC 优先、GNSS 回退、非法 CSC 拒绝、来源切换、CSC 定点里程积分以及 GNSS 失效时保留有效 CSC。
+
+目标编译同时验证了设置写入的事务顺序修正：单字段在持久化成功后才更新运行态，双字段第二次写入失败时回滚首字段。摘要页字号与行距也已按当前 390 px 可用高度收紧，不以此替代最终屏幕实机验收。
 
 ## 3. SF32 整机编译
 
@@ -77,7 +84,7 @@ scons: done building targets.
 
 | 产物 | 大小 |
 |---|---:|
-| `main.bin` | 3,403,184 bytes |
+| `main.bin` | 3,403,880 bytes |
 | `fs_root.bin` | 4,194,304 bytes |
 
 编译仅输出原工程已有的 `dfu` 分区未定义和 ftab 入口符号警告；新增 `bike_*` 模块在 `-Werror` 主机测试中无告警，且目标编译成功。
@@ -95,28 +102,28 @@ HCPU ELF 链接结果：
 
 | 模块 | `.text` | `.bss` |
 |---|---:|---:|
-| `bike_nmea.o` | 1,774 bytes | 0 bytes |
+| `bike_nmea.o` | 2,136 bytes | 0 bytes |
 | `bike_time.o` | 320 bytes | 0 bytes |
 | `bike_speed_source.o` | 68 bytes | 0 bytes |
-| `bike_ride_model.o` | 940 bytes | 0 bytes |
+| `bike_ride_model.o` | 964 bytes | 0 bytes |
 | `bike_auto_pause.o` | 174 bytes | 0 bytes |
-| `bike_ble_advertising.o` | 194 bytes | 0 bytes |
-| `bike_ble_measurement.o` | 346 bytes | 0 bytes |
+| `bike_ble_advertising.o` | 200 bytes | 0 bytes |
+| `bike_ble_measurement.o` | 352 bytes | 0 bytes |
 | `bike_ble_gatt_client.o` | 2,561 bytes | 129 bytes |
-| `bike_csc.o` | 216 bytes | 0 bytes |
-| `bike_gpx.o` | 2,862 bytes | 0 bytes |
+| `bike_csc.o` | 248 bytes | 0 bytes |
+| `bike_gpx.o` | 2,966 bytes | 0 bytes |
 | `bike_recorder.o` | 1,349 bytes | 3,865 bytes |
-| `bike_settings.o` | 1,770 bytes | 53 bytes |
+| `bike_settings.o` | 1,924 bytes | 53 bytes |
 | `bike_sensor_ble.o` | 5,927 bytes | 2,545 bytes |
 | `bike_service.o` | 3,188 bytes | 3,769 bytes |
-| `app_bike.o` | 4,628 bytes | 48 bytes |
-| 合计 | 26,317 bytes | 10,409 bytes |
+| `app_bike.o` | 4,632 bytes | 48 bytes |
+| 合计 | 27,009 bytes | 10,409 bytes |
 
 `bike_service.o` 和 `bike_recorder.o` 分别包含 3,072 bytes 静态线程栈，`bike_sensor_ble.o` 包含 2,048 bytes 静态线程栈以及固定消息队列和连接状态。对象文件合计只用于描述新增模块的直接体积，不等同于最终镜像增量；最终镜像还受链接消除、库引用和资源打包影响。
 
 ## 5. 验证边界
 
-本轮已确认：源码静态检查、核心算法主机测试、SF32 HCPU 完整链接和镜像生成。
+本轮已确认：源码静态检查、核心算法 `-Werror` 主机测试、ASan/UBSan 回归、SF32 HCPU 完整链接和镜像生成。
 
 本轮未确认：
 

@@ -144,6 +144,7 @@ static bool BikeNmea_ParseScaled(const char *pText, uint32_t ulScale, int64_t *p
     const char *pCursor;
     uint64_t udInteger;
     uint64_t udFraction;
+    uint64_t udScaled;
     uint32_t ulFractionScale;
     bool bNegative;
     bool bHasDigit;
@@ -201,7 +202,12 @@ static bool BikeNmea_ParseScaled(const char *pText, uint32_t ulScale, int64_t *p
         return bResult;
     }
 
-    *pValue = (int64_t)((udInteger * (uint64_t)ulScale) + udFraction);
+    udScaled = udInteger * (uint64_t)ulScale;
+    if ((uint64_t)INT64_MAX - udScaled < udFraction)
+    {
+        return bResult;
+    }
+    *pValue = (int64_t)(udScaled + udFraction);
     if (bNegative)
     {
         *pValue = -*pValue;
@@ -224,6 +230,7 @@ static bool BikeNmea_ParseCoordinate(const char *pText, char cHemisphere, int32_
     int64_t dDegrees;
     int64_t dMinutes;
     int64_t dCoordinate;
+    int64_t dMaximumDegrees;
     bool bResult;
 
     bResult = false;
@@ -236,6 +243,24 @@ static bool BikeNmea_ParseCoordinate(const char *pText, char cHemisphere, int32_
 
     dDegrees = dRaw / (100LL * BIKE_NMEA_COORD_SCALE);
     dMinutes = dRaw % (100LL * BIKE_NMEA_COORD_SCALE);
+    if (('N' == cHemisphere) || ('S' == cHemisphere))
+    {
+        dMaximumDegrees = 90LL;
+    }
+    else if (('E' == cHemisphere) || ('W' == cHemisphere))
+    {
+        dMaximumDegrees = 180LL;
+    }
+    else
+    {
+        return bResult;
+    }
+    if ((60LL * BIKE_NMEA_COORD_SCALE <= dMinutes) ||
+        (dMaximumDegrees < dDegrees) ||
+        ((dMaximumDegrees == dDegrees) && (0LL != dMinutes)))
+    {
+        return bResult;
+    }
     dCoordinate = (dDegrees * BIKE_NMEA_DEGREE_E7) +
                   ((dMinutes * BIKE_NMEA_DEGREE_E7) / (60LL * BIKE_NMEA_COORD_SCALE));
 
@@ -243,11 +268,6 @@ static bool BikeNmea_ParseCoordinate(const char *pText, char cHemisphere, int32_
     {
         dCoordinate = -dCoordinate;
     }
-    else if (('N' != cHemisphere) && ('E' != cHemisphere))
-    {
-        return bResult;
-    }
-
     if ((INT32_MIN > dCoordinate) || (INT32_MAX < dCoordinate))
     {
         return bResult;
@@ -267,12 +287,35 @@ static bool BikeNmea_ParseCoordinate(const char *pText, char cHemisphere, int32_
  */
 static bool BikeNmea_ParseTime(const char *pText, BIKE_GNSS_DATA *pData)
 {
+    const char *pFraction;
     bool bResult;
+    size_t ulLength;
 
     bResult = false;
-    if ((NULL == pText) || (NULL == pData) || (6U > strlen(pText)))
+    if ((NULL == pText) || (NULL == pData))
     {
         return bResult;
+    }
+    ulLength = strlen(pText);
+    if (6U > ulLength)
+    {
+        return bResult;
+    }
+    if (6U < ulLength)
+    {
+        if (('.' != pText[6]) || (7U == ulLength))
+        {
+            return bResult;
+        }
+        pFraction = &pText[7];
+        while ('\0' != *pFraction)
+        {
+            if (('0' > *pFraction) || ('9' < *pFraction))
+            {
+                return bResult;
+            }
+            pFraction++;
+        }
     }
 
     if (('0' <= pText[0]) && ('9' >= pText[0]) &&
@@ -292,6 +335,35 @@ static bool BikeNmea_ParseTime(const char *pText, BIKE_GNSS_DATA *pData)
     }
 
     return bResult;
+}
+
+/* BikeNmea_IsCalendarDateValid: 校验公历日期及闰年二月。
+ * 参数：
+ *   - usYear/ucMonth/ucDay: 待校验日期
+ * 返回值：日期存在返回 true，否则返回 false
+ */
+static bool BikeNmea_IsCalendarDateValid(uint16_t usYear, uint8_t ucMonth,
+                                         uint8_t ucDay)
+{
+    static const uint8_t l_aMonthDays[12] = {
+        31U, 28U, 31U, 30U, 31U, 30U,
+        31U, 31U, 30U, 31U, 30U, 31U
+    };
+    uint8_t ucMaximumDay;
+
+    if ((1U > ucMonth) || (12U < ucMonth) || (1U > ucDay))
+    {
+        return false;
+    }
+    ucMaximumDay = l_aMonthDays[ucMonth - 1U];
+    if ((2U == ucMonth) &&
+        ((0U == (usYear % 400U)) ||
+         ((0U == (usYear % 4U)) && (0U != (usYear % 100U)))))
+    {
+        ucMaximumDay = 29U;
+    }
+
+    return ucMaximumDay >= ucDay;
 }
 
 /* BikeNmea_ParseDate: 解析 ddmmyy UTC 日期。
@@ -322,8 +394,8 @@ static bool BikeNmea_ParseDate(const char *pText, BIKE_GNSS_DATA *pData)
         pData->usYear = (uint16_t)(((uint16_t)(pText[4] - '0') * 10U) +
                                   (uint16_t)(pText[5] - '0'));
         pData->usYear = (uint16_t)(pData->usYear + ((80U <= pData->usYear) ? 1900U : 2000U));
-        if ((1U <= pData->ucDay) && (31U >= pData->ucDay) &&
-                (1U <= pData->ucMonth) && (12U >= pData->ucMonth))
+        if (BikeNmea_IsCalendarDateValid(pData->usYear, pData->ucMonth,
+                                         pData->ucDay))
         {
             bResult = true;
         }
@@ -402,7 +474,10 @@ static bool BikeNmea_ParseGga(char **apToken, uint8_t ucCount, BIKE_GNSS_DATA *p
         return bResult;
     }
 
-    (void)BikeNmea_ParseTime(apToken[1], pData);
+    if (!BikeNmea_ParseTime(apToken[1], pData))
+    {
+        return bResult;
+    }
     pData->ucFixQuality = (uint8_t)ulFixQuality;
     pData->ucSatellites = (uint8_t)ulSatellites;
     pData->bFixValid = (0U != pData->ucFixQuality);
@@ -443,6 +518,7 @@ static bool BikeNmea_ParseRmc(char **apToken, uint8_t ucCount, BIKE_GNSS_DATA *p
 {
     int64_t dSpeedMilliKnots;
     int64_t dCourseDeg10;
+    uint64_t udSpeedCmPerSec;
     int32_t lLatitudeE7;
     int32_t lLongitudeE7;
     bool bResult;
@@ -453,8 +529,16 @@ static bool BikeNmea_ParseRmc(char **apToken, uint8_t ucCount, BIKE_GNSS_DATA *p
         return bResult;
     }
 
-    (void)BikeNmea_ParseTime(apToken[1], pData);
-    (void)BikeNmea_ParseDate(apToken[9], pData);
+    if ((!BikeNmea_ParseTime(apToken[1], pData)) ||
+        (!BikeNmea_ParseDate(apToken[9], pData)))
+    {
+        return bResult;
+    }
+    if ((('A' != apToken[2][0]) && ('V' != apToken[2][0])) ||
+        ('\0' != apToken[2][1]))
+    {
+        return bResult;
+    }
     pData->bFixValid = ('A' == apToken[2][0]);
     if (!pData->bFixValid)
     {
@@ -474,10 +558,25 @@ static bool BikeNmea_ParseRmc(char **apToken, uint8_t ucCount, BIKE_GNSS_DATA *p
 
     if (BikeNmea_ParseScaled(apToken[7], 1000U, &dSpeedMilliKnots) && (0LL <= dSpeedMilliKnots))
     {
-        pData->ulSpeedCmPerSec = (uint32_t)((dSpeedMilliKnots * 51444LL + 500000LL) / 1000000LL);
+        if ((UINT64_MAX - 500000ULL) / 51444ULL <
+            (uint64_t)dSpeedMilliKnots)
+        {
+            return bResult;
+        }
+        udSpeedCmPerSec = ((uint64_t)dSpeedMilliKnots * 51444ULL +
+                           500000ULL) / 1000000ULL;
+        if (UINT32_MAX < udSpeedCmPerSec)
+        {
+            return bResult;
+        }
+        pData->ulSpeedCmPerSec = (uint32_t)udSpeedCmPerSec;
     }
     else
     {
+        if ('\0' != apToken[7][0])
+        {
+            return bResult;
+        }
         pData->ulSpeedCmPerSec = 0U;
     }
 
@@ -485,6 +584,10 @@ static bool BikeNmea_ParseRmc(char **apToken, uint8_t ucCount, BIKE_GNSS_DATA *p
             (0LL <= dCourseDeg10) && (3600LL >= dCourseDeg10))
     {
         pData->usCourseDeg10 = (uint16_t)dCourseDeg10;
+    }
+    else if ('\0' != apToken[8][0])
+    {
+        return bResult;
     }
 
     bResult = true;
@@ -587,6 +690,7 @@ static BIKE_NMEA_RESULT BikeNmea_ParseSentence(BIKE_NMEA_PARSER *pParser)
     size_t ulIdentifierLength;
     uint8_t ucCount;
     BIKE_NMEA_RESULT eResult;
+    BIKE_GNSS_DATA tCandidate;
 
     eResult = BIKE_NMEA_RESULT_ERROR;
     if ((NULL == pParser) || (!BikeNmea_VerifyChecksum(pParser->aSentence)))
@@ -610,24 +714,25 @@ static BIKE_NMEA_RESULT BikeNmea_ParseSentence(BIKE_NMEA_PARSER *pParser)
         return eResult;
     }
     pType = &apToken[0][ulIdentifierLength - 3U];
+    tCandidate = pParser->tData;
 
     if (0 == strcmp(pType, "GGA"))
     {
-        if (BikeNmea_ParseGga(apToken, ucCount, &pParser->tData))
+        if (BikeNmea_ParseGga(apToken, ucCount, &tCandidate))
         {
             eResult = BIKE_NMEA_RESULT_GGA;
         }
     }
     else if (0 == strcmp(pType, "RMC"))
     {
-        if (BikeNmea_ParseRmc(apToken, ucCount, &pParser->tData))
+        if (BikeNmea_ParseRmc(apToken, ucCount, &tCandidate))
         {
             eResult = BIKE_NMEA_RESULT_RMC;
         }
     }
     else if (0 == strcmp(pType, "VTG"))
     {
-        if (BikeNmea_ParseVtg(apToken, ucCount, &pParser->tData))
+        if (BikeNmea_ParseVtg(apToken, ucCount, &tCandidate))
         {
             eResult = BIKE_NMEA_RESULT_VTG;
         }
@@ -641,6 +746,7 @@ static BIKE_NMEA_RESULT BikeNmea_ParseSentence(BIKE_NMEA_PARSER *pParser)
         (BIKE_NMEA_RESULT_RMC == eResult) ||
         (BIKE_NMEA_RESULT_VTG == eResult))
     {
+        pParser->tData = tCandidate;
         pParser->ulAcceptedCount++;
     }
 

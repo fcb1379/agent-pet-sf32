@@ -32,7 +32,8 @@ uint32_t BIKE_RIDE_CalculateDistanceMm(int32_t lLatitude1E7, int32_t lLongitude1
     dLatitude1 = ((double)lLatitude1E7 / 10000000.0) * BIKE_RIDE_DEGREE_TO_RADIAN;
     dLatitude2 = ((double)lLatitude2E7 / 10000000.0) * BIKE_RIDE_DEGREE_TO_RADIAN;
     dDeltaLatitude = dLatitude2 - dLatitude1;
-    dDeltaLongitude = ((double)(lLongitude2E7 - lLongitude1E7) / 10000000.0) *
+    dDeltaLongitude = (((double)lLongitude2E7 - (double)lLongitude1E7) /
+                      10000000.0) *
                       BIKE_RIDE_DEGREE_TO_RADIAN;
     dSinLatitude = sin(dDeltaLatitude / 2.0);
     dSinLongitude = sin(dDeltaLongitude / 2.0);

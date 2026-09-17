@@ -76,6 +76,10 @@ uint8_t BIKE_BLE_ADV_GetServiceMask(const uint8_t *pData, uint16_t usLength)
         if ((BIKE_BLE_AD_TYPE_INCOMPLETE_UUID16 == ucFieldType) ||
             (BIKE_BLE_AD_TYPE_COMPLETE_UUID16 == ucFieldType))
         {
+            if (0U != ((ucFieldLength - 1U) & 1U))
+            {
+                return 0U;
+            }
             usUuidOffset = (uint16_t)(usOffset + 2U);
             while ((uint16_t)(usUuidOffset + 1U) < usFieldEnd)
             {

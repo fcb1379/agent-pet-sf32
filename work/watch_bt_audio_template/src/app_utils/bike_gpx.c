@@ -96,14 +96,34 @@ static bool BikeGpx_WriteAll(int32_t lFileDescriptor, const char *pData, size_t 
  */
 static bool BikeGpx_IsUtcValid(const BIKE_GNSS_DATA *pGnss)
 {
-    return (NULL != pGnss) && pGnss->bFixValid &&
-           (2000U <= pGnss->usYear) && (2099U >= pGnss->usYear) &&
-           (1U <= pGnss->ucMonth) && (12U >= pGnss->ucMonth) &&
-           (1U <= pGnss->ucDay) && (31U >= pGnss->ucDay) &&
-           (24U > pGnss->ucHour) && (60U > pGnss->ucMinute) &&
-           (60U > pGnss->ucSecond) &&
-           (-900000000 <= pGnss->lLatitudeE7) && (900000000 >= pGnss->lLatitudeE7) &&
-           (-1800000000 <= pGnss->lLongitudeE7) && (1800000000 >= pGnss->lLongitudeE7);
+    static const uint8_t l_aMonthDays[12] = {
+        31U, 28U, 31U, 30U, 31U, 30U,
+        31U, 31U, 30U, 31U, 30U, 31U
+    };
+    uint8_t ucMaximumDay;
+
+    if ((NULL == pGnss) || (!pGnss->bFixValid) ||
+        (2000U > pGnss->usYear) || (2099U < pGnss->usYear) ||
+        (1U > pGnss->ucMonth) || (12U < pGnss->ucMonth) ||
+        (1U > pGnss->ucDay) || (24U <= pGnss->ucHour) ||
+        (60U <= pGnss->ucMinute) || (60U <= pGnss->ucSecond) ||
+        (-900000000 > pGnss->lLatitudeE7) ||
+        (900000000 < pGnss->lLatitudeE7) ||
+        (-1800000000 > pGnss->lLongitudeE7) ||
+        (1800000000 < pGnss->lLongitudeE7))
+    {
+        return false;
+    }
+    ucMaximumDay = l_aMonthDays[pGnss->ucMonth - 1U];
+    if ((2U == pGnss->ucMonth) &&
+        ((0U == (pGnss->usYear % 400U)) ||
+         ((0U == (pGnss->usYear % 4U)) &&
+          (0U != (pGnss->usYear % 100U)))))
+    {
+        ucMaximumDay = 29U;
+    }
+
+    return ucMaximumDay >= pGnss->ucDay;
 }
 
 /* BikeGpx_GetUtcKey: 生成可比较的 YYYYMMDDhhmmss UTC 键。
@@ -793,19 +813,44 @@ BIKE_GPX_RECOVERY_RESULT BIKE_GPX_Recover(const char *pDirectory,
     }
     (void)memcpy(aFinalPath, aPartPath, ulLength - 5U);
     aFinalPath[ulLength - 5U] = '\0';
-    if ((0 != access(aPartPath, 0)) && (0 == access(aFinalPath, 0)))
-    {
-        (void)BikeGpx_RemoveMarker(pDirectory);
-        if ((NULL != pRecoveredPath) && (0U < ulRecoveredPathSize))
-        {
-            (void)snprintf(pRecoveredPath, ulRecoveredPathSize, "%s", aFinalPath);
-        }
-        return BIKE_GPX_RECOVERY_DONE;
-    }
     lReadLength = snprintf(aRecoveryPath, sizeof(aRecoveryPath), "%s.recover", aFinalPath);
     if ((0 >= lReadLength) || ((size_t)lReadLength >= sizeof(aRecoveryPath)))
     {
         return BIKE_GPX_RECOVERY_ERROR;
+    }
+
+    /* 恢复文件已发布时，收敛 rename 与清理之间二次掉电的中间状态。 */
+    if (0 == access(aFinalPath, 0))
+    {
+        bResult = true;
+        if ((0 == access(aPartPath, 0)) && (0 != unlink(aPartPath)))
+        {
+            bResult = false;
+        }
+        if ((0 == access(aRecoveryPath, 0)) &&
+            (0 != unlink(aRecoveryPath)))
+        {
+            bResult = false;
+        }
+        if (!BikeGpx_RemoveMarker(pDirectory))
+        {
+            bResult = false;
+        }
+        if (!bResult)
+        {
+            return BIKE_GPX_RECOVERY_ERROR;
+        }
+        if ((NULL != pRecoveredPath) && (0U < ulRecoveredPathSize))
+        {
+            lReadLength = snprintf(pRecoveredPath, ulRecoveredPathSize,
+                                   "%s", aFinalPath);
+            if ((0 >= lReadLength) ||
+                ((size_t)lReadLength >= ulRecoveredPathSize))
+            {
+                pRecoveredPath[0] = '\0';
+            }
+        }
+        return BIKE_GPX_RECOVERY_DONE;
     }
 
     lInputFd = (int32_t)open(aPartPath, O_RDONLY, 0);

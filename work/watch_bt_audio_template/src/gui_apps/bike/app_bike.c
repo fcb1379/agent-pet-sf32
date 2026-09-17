@@ -867,11 +867,11 @@ static void BikeUi_OnStart(void)
     lv_obj_set_pos(l_tBikeUi.pSummaryLabel, 20, 60);
     lv_obj_set_width(l_tBikeUi.pSummaryLabel, 350);
     lv_label_set_long_mode(l_tBikeUi.pSummaryLabel, LV_LABEL_LONG_WRAP);
-    lv_obj_set_style_text_font(l_tBikeUi.pSummaryLabel, &lv_font_montserrat_20,
+    lv_obj_set_style_text_font(l_tBikeUi.pSummaryLabel, &lv_font_montserrat_16,
                                LV_PART_MAIN);
     lv_obj_set_style_text_color(l_tBikeUi.pSummaryLabel, lv_color_hex(0xDCE6F0),
                                 LV_PART_MAIN);
-    lv_obj_set_style_text_line_space(l_tBikeUi.pSummaryLabel, 3, LV_PART_MAIN);
+    lv_obj_set_style_text_line_space(l_tBikeUi.pSummaryLabel, 2, LV_PART_MAIN);
     RT_ASSERT(NULL != BikeUi_CreateButton(pSummaryPage, "SAVE", 16,
                                           lv_color_hex(0x168B4D),
                                           BikeUi_StopEvent));
