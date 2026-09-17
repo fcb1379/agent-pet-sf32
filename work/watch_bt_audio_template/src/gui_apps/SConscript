@@ -6,6 +6,7 @@ import rtconfig
 cwd = GetCurrentDir()
 list = os.listdir(cwd)
 objs = []
+sdk_root = os.getenv('SIFLI_SDK')
 
 if GetDepend('PKG_USING_LITTLEVGL2RTT'):
 	objs = Glob('*.c')
@@ -14,4 +15,12 @@ if GetDepend('PKG_USING_LITTLEVGL2RTT'):
 	    path = os.path.join(cwd, d)
 	    if os.path.isfile(os.path.join(path, 'SConscript')):
 	        objs = objs + SConscript(os.path.join(d, 'SConscript'))  
+
+	# This project is derived from the SDK watch example but did not vendor its
+	# app memory component. Reuse the matching SDK v2.4 implementation so image,
+	# animation and FreeType users share the intended bounded PSRAM/SRAM pools.
+	if sdk_root:
+	    mem_script = os.path.join(sdk_root, 'example/multimedia/lvgl/watch/src/gui_apps/mem/SConscript')
+	    if os.path.isfile(mem_script):
+	        objs = objs + SConscript(mem_script, variant_dir='mem', duplicate=0)
 Return('objs')
