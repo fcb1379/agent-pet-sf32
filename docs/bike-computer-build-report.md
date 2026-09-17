@@ -9,7 +9,7 @@
 ## 1. 已实现范围
 
 - DX-GP10 使用 UART2，默认 9600 bps、8N1；首版引脚为 PA20/RX、PA27/TX。
-- 固定长度 NMEA 接收缓冲，支持 GGA/RMC、异或校验、超长语句丢弃和错误计数。
+- 固定长度 NMEA 接收缓冲，支持 GGA/RMC/VTG、异或校验、超长语句丢弃和错误计数；VTG 可使用 km/h 或节字段，`mode=N` 时清零速度且不会延长坐标定位有效期。
 - 使用定点数保存经纬度、速度、航向、海拔和 UTC 时间，避免在串口接收路径中使用浮点运算。
 - 骑行模型支持开始、暂停、停止、里程、当前/平均/最大速度、移动/总时间和卡路里估算。
 - LVGL 使用横向 TileView 提供主数据、GNSS 详情和骑行总结三页；主数据和总结页均可开始/暂停/停止骑行。
@@ -49,7 +49,7 @@ bike_core_test: PASS
 
 覆盖内容：
 
-- 合法 GGA/RMC 解析及单位转换。
+- 合法 GGA/RMC/VTG 解析及单位转换，覆盖 VTG km/h、节回退、无效模式和越界航向。
 - 坏校验语句拒绝。
 - NMEA 分段输入。
 - 骑行状态切换、移动时间、里程、平均速度和异常跳点过滤。
@@ -75,7 +75,7 @@ scons: done building targets.
 
 | 产物 | 大小 |
 |---|---:|
-| `main.bin` | 3,400,404 bytes |
+| `main.bin` | 3,400,684 bytes |
 | `fs_root.bin` | 4,194,304 bytes |
 
 编译仅输出原工程已有的 `dfu` 分区未定义和 ftab 入口符号警告；新增 `bike_*` 模块在 `-Werror` 主机测试中无告警，且目标编译成功。
@@ -93,7 +93,7 @@ HCPU ELF 链接结果：
 
 | 模块 | `.text` | `.bss` |
 |---|---:|---:|
-| `bike_nmea.o` | 1,488 bytes | 0 bytes |
+| `bike_nmea.o` | 1,774 bytes | 0 bytes |
 | `bike_time.o` | 320 bytes | 0 bytes |
 | `bike_speed_source.o` | 68 bytes | 0 bytes |
 | `bike_ride_model.o` | 940 bytes | 0 bytes |
@@ -106,9 +106,9 @@ HCPU ELF 链接结果：
 | `bike_recorder.o` | 1,301 bytes | 3,865 bytes |
 | `bike_settings.o` | 1,770 bytes | 53 bytes |
 | `bike_sensor_ble.o` | 5,097 bytes | 2,529 bytes |
-| `bike_service.o` | 2,306 bytes | 3,756 bytes |
+| `bike_service.o` | 2,310 bytes | 3,760 bytes |
 | `app_bike.o` | 4,289 bytes | 52 bytes |
-| 合计 | 23,526 bytes | 10,344 bytes |
+| 合计 | 23,816 bytes | 10,348 bytes |
 
 `bike_service.o` 和 `bike_recorder.o` 分别包含 3,072 bytes 静态线程栈，`bike_sensor_ble.o` 包含 2,048 bytes 静态线程栈以及固定消息队列和连接状态。对象文件合计只用于描述新增模块的直接体积，不等同于最终镜像增量；最终镜像还受链接消除、库引用和资源打包影响。
 

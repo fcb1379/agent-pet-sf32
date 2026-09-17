@@ -492,6 +492,89 @@ static bool BikeNmea_ParseRmc(char **apToken, uint8_t ucCount, BIKE_GNSS_DATA *p
     return bResult;
 }
 
+/* BikeNmea_ParseVtg: 解析 VTG 对地航向和速度。
+ * 参数：
+ *   - apToken: 字段数组
+ *   - ucCount: 字段数量
+ *   - pData: 定位快照
+ * 返回值：成功返回 true，否则返回 false
+ */
+static bool BikeNmea_ParseVtg(char **apToken, uint8_t ucCount,
+                              BIKE_GNSS_DATA *pData)
+{
+    int64_t dCourseDeg10;
+    int64_t dSpeedMilliKph;
+    int64_t dSpeedMilliKnots;
+    uint64_t udSpeedCmPerSec;
+    uint16_t usCourseDeg10;
+    bool bCourseValid;
+    bool bSpeedValid;
+
+    if ((NULL == apToken) || (NULL == pData) || (10U > ucCount) ||
+        (0 != strcmp(apToken[2], "T")) ||
+        (0 != strcmp(apToken[6], "N")) ||
+        (0 != strcmp(apToken[8], "K")))
+    {
+        return false;
+    }
+
+    /* NMEA 2.3 的 mode=N 表示数据无效；旧格式没有 mode 字段。 */
+    if ((11U <= ucCount) && ('N' == apToken[9][0]) &&
+        ('\0' == apToken[9][1]))
+    {
+        pData->ulSpeedCmPerSec = 0U;
+        return true;
+    }
+
+    bCourseValid = BikeNmea_ParseScaled(apToken[1], 10U, &dCourseDeg10) &&
+                   (0LL <= dCourseDeg10) && (3600LL >= dCourseDeg10);
+    if (bCourseValid)
+    {
+        usCourseDeg10 = (uint16_t)dCourseDeg10;
+    }
+    else if ('\0' != apToken[1][0])
+    {
+        return false;
+    }
+    else
+    {
+        usCourseDeg10 = pData->usCourseDeg10;
+    }
+
+    bSpeedValid = BikeNmea_ParseScaled(apToken[7], 1000U,
+                                       &dSpeedMilliKph) &&
+                  (0LL <= dSpeedMilliKph);
+    if (bSpeedValid)
+    {
+        udSpeedCmPerSec = ((uint64_t)dSpeedMilliKph + 18ULL) / 36ULL;
+    }
+    else
+    {
+        bSpeedValid = BikeNmea_ParseScaled(apToken[5], 1000U,
+                                           &dSpeedMilliKnots) &&
+                      (0LL <= dSpeedMilliKnots);
+        if (!bSpeedValid)
+        {
+            return false;
+        }
+        if ((UINT64_MAX - 500000ULL) / 51444ULL <
+            (uint64_t)dSpeedMilliKnots)
+        {
+            return false;
+        }
+        udSpeedCmPerSec = ((uint64_t)dSpeedMilliKnots * 51444ULL +
+                           500000ULL) / 1000000ULL;
+    }
+    if (UINT32_MAX < udSpeedCmPerSec)
+    {
+        return false;
+    }
+    pData->usCourseDeg10 = usCourseDeg10;
+    pData->ulSpeedCmPerSec = (uint32_t)udSpeedCmPerSec;
+
+    return true;
+}
+
 /* BikeNmea_ParseSentence: 解析一条完整且已去除换行的 NMEA 语句。
  * 参数：
  *   - pParser: 解析器实例
@@ -542,12 +625,21 @@ static BIKE_NMEA_RESULT BikeNmea_ParseSentence(BIKE_NMEA_PARSER *pParser)
             eResult = BIKE_NMEA_RESULT_RMC;
         }
     }
+    else if (0 == strcmp(pType, "VTG"))
+    {
+        if (BikeNmea_ParseVtg(apToken, ucCount, &pParser->tData))
+        {
+            eResult = BIKE_NMEA_RESULT_VTG;
+        }
+    }
     else
     {
         eResult = BIKE_NMEA_RESULT_NONE;
     }
 
-    if ((BIKE_NMEA_RESULT_GGA == eResult) || (BIKE_NMEA_RESULT_RMC == eResult))
+    if ((BIKE_NMEA_RESULT_GGA == eResult) ||
+        (BIKE_NMEA_RESULT_RMC == eResult) ||
+        (BIKE_NMEA_RESULT_VTG == eResult))
     {
         pParser->ulAcceptedCount++;
     }

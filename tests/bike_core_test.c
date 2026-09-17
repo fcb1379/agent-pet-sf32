@@ -97,7 +97,7 @@ static BIKE_NMEA_RESULT Test_FeedSentence(BIKE_NMEA_PARSER *pParser, const char 
     return eLastResult;
 }
 
-/* Test_NmeaParser: 覆盖 GGA/RMC、校验错误和字段换算。
+/* Test_NmeaParser: 覆盖 GGA/RMC/VTG、校验错误和字段换算。
  * 返回值：无
  */
 static void Test_NmeaParser(void)
@@ -124,6 +124,31 @@ static void Test_NmeaParser(void)
     assert(1994U == pData->usYear);
     assert(1152U == pData->ulSpeedCmPerSec);
     assert(844U == pData->usCourseDeg10);
+
+    eResult = Test_FeedSentence(&tParser,
+                                "$GPVTG,054.7,T,034.4,M,005.5,N,010.2,K*48\r\n");
+    assert(BIKE_NMEA_RESULT_VTG == eResult);
+    pData = BIKE_NMEA_GetData(&tParser);
+    assert(283U == pData->ulSpeedCmPerSec);
+    assert(547U == pData->usCourseDeg10);
+
+    eResult = Test_FeedSentence(&tParser,
+                                "$GPVTG,054.7,T,034.4,M,005.5,N,,K*65\r\n");
+    assert(BIKE_NMEA_RESULT_VTG == eResult);
+    pData = BIKE_NMEA_GetData(&tParser);
+    assert(283U == pData->ulSpeedCmPerSec);
+
+    eResult = Test_FeedSentence(&tParser,
+                                "$GNVTG,,T,,M,,N,,K,N*32\r\n");
+    assert(BIKE_NMEA_RESULT_VTG == eResult);
+    pData = BIKE_NMEA_GetData(&tParser);
+    assert(0U == pData->ulSpeedCmPerSec);
+
+    eResult = Test_FeedSentence(&tParser,
+                                "$GPVTG,400.0,T,034.4,M,005.5,N,010.2,K*4A\r\n");
+    assert(BIKE_NMEA_RESULT_ERROR == eResult);
+    pData = BIKE_NMEA_GetData(&tParser);
+    assert(547U == pData->usCourseDeg10);
 
     eResult = Test_FeedSentence(&tParser,
                                 "$GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W*00\r\n");

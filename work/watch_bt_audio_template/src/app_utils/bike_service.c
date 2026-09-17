@@ -176,7 +176,7 @@ static rt_err_t BikeService_UartRxIndicate(rt_device_t pDevice, rt_size_t ulSize
 /* BikeService_UpdateRide: 每秒选择 CSC/GNSS 速度并更新骑行和自动暂停。
  * 参数：
  *   - ulNowMs: 当前单调时钟毫秒数
- *   - bForce: RMC 到达时强制立即更新
+ *   - bForce: RMC/VTG 到达时强制立即更新
  * 返回值：无
  */
 static void BikeService_UpdateRide(uint32_t ulNowMs, bool bForce)
@@ -269,7 +269,10 @@ static void BikeService_CommitParserData(BIKE_NMEA_RESULT eResult, uint32_t ulNo
     }
 
     l_tBikeSnapshot.tGnss = *pGnss;
-    l_tBikeSnapshot.ulLastUpdateMs = ulNowMs;
+    if (BIKE_NMEA_RESULT_VTG != eResult)
+    {
+        l_tBikeSnapshot.ulLastUpdateMs = ulNowMs;
+    }
     l_tBikeSnapshot.ulAcceptedCount = l_tBikeParser.ulAcceptedCount;
     l_tBikeSnapshot.ulChecksumErrorCount = l_tBikeParser.ulChecksumErrorCount;
     l_tBikeSnapshot.ulOverflowCount = l_tBikeParser.ulOverflowCount;
@@ -286,9 +289,13 @@ static void BikeService_CommitParserData(BIKE_NMEA_RESULT eResult, uint32_t ulNo
     }
 
     BikeService_Unlock();
-    if (BIKE_NMEA_RESULT_RMC == eResult)
+    if ((BIKE_NMEA_RESULT_RMC == eResult) ||
+        (BIKE_NMEA_RESULT_VTG == eResult))
     {
         BikeService_UpdateRide(ulNowMs, true);
+    }
+    if (BIKE_NMEA_RESULT_RMC == eResult)
+    {
         (void)BikeService_SyncRtc(pGnss);
         (void)BIKE_RECORDER_SubmitPoint(pGnss);
     }
@@ -345,7 +352,9 @@ static void BikeService_ThreadEntry(void *pParameter)
             for (ulIndex = 0U; ulIndex < ulReadLength; ulIndex++)
             {
                 eResult = BIKE_NMEA_Feed(&l_tBikeParser, aBuffer[ulIndex]);
-                if ((BIKE_NMEA_RESULT_GGA == eResult) || (BIKE_NMEA_RESULT_RMC == eResult))
+                if ((BIKE_NMEA_RESULT_GGA == eResult) ||
+                    (BIKE_NMEA_RESULT_RMC == eResult) ||
+                    (BIKE_NMEA_RESULT_VTG == eResult))
                 {
                     ulNowMs = (uint32_t)rt_tick_get_millisecond();
                     BikeService_CommitParserData(eResult, ulNowMs);
