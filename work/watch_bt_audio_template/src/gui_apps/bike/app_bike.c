@@ -707,6 +707,8 @@ static void BikeUi_Update(void)
     uint32_t ulDistanceCentiKm;
     uint32_t ulAgeMs;
     uint32_t ulAltitudeAbsoluteCm;
+    uint64_t udHistoryCentiKm;
+    uint64_t udHistoryHours;
     char aLatitude[24];
     char aLongitude[24];
     char aMovingTime[16];
@@ -868,10 +870,13 @@ static void BikeUi_Update(void)
     {
         (void)snprintf(aLongitude, sizeof(aLongitude), "--");
     }
+    udHistoryCentiKm = tSnapshot.tHistory.tRecord.udDistanceMm / 10000ULL;
+    udHistoryHours = tSnapshot.tHistory.tRecord.udMovingTimeMs / 3600000ULL;
     lv_label_set_text_fmt(l_tBikeUi.pLocationLabel,
                           "LAT  %s\nLON  %s\nALT  %s%lu.%02lu m\n"
                           "COURSE  %u.%01u deg\nUTC  %04u-%02u-%02u %02u:%02u:%02u\n"
-                          "SAT  %u   FIX  %u   RTC  %s\nNMEA  %lu   CRC ERR  %lu   OVF  %lu",
+                          "SAT  %u   FIX  %u   RTC  %s\nNMEA  %lu   CRC ERR  %lu   OVF  %lu\n"
+                          "LIFE  %llu.%02llu km   %llu h\nRIDES  %lu   MAX  %u.%02u km/h",
                           aLatitude, aLongitude, pAltitudeSign,
                           (unsigned long)(ulAltitudeAbsoluteCm / 100U),
                           (unsigned long)(ulAltitudeAbsoluteCm % 100U),
@@ -884,7 +889,17 @@ static void BikeUi_Update(void)
                           tSnapshot.bRtcSynchronized ? "SYNC" : "WAIT",
                           (unsigned long)tSnapshot.ulAcceptedCount,
                           (unsigned long)tSnapshot.ulChecksumErrorCount,
-                          (unsigned long)tSnapshot.ulOverflowCount);
+                          (unsigned long)tSnapshot.ulOverflowCount,
+                          (unsigned long long)(udHistoryCentiKm / 100ULL),
+                          (unsigned long long)(udHistoryCentiKm % 100ULL),
+                          (unsigned long long)udHistoryHours,
+                          (unsigned long)tSnapshot.tHistory.tRecord.ulRideCount,
+                          (unsigned int)(
+                              tSnapshot.tHistory.tRecord.
+                              usMaximumSpeedCentiKph / 100U),
+                          (unsigned int)(
+                              tSnapshot.tHistory.tRecord.
+                              usMaximumSpeedCentiKph % 100U));
 
     (void)BikeUi_FormatDuration(tSnapshot.tRide.ulMovingTimeMs,
                                 aMovingTime, sizeof(aMovingTime));

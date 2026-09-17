@@ -8,6 +8,7 @@
 #include <unistd.h>
 
 #include "bike_gpx.h"
+#include "bike_history.h"
 #include "bike_map.h"
 #include "bike_auto_pause.h"
 #include "bike_ble_advertising.h"
@@ -895,6 +896,60 @@ static void Test_MapProjection(void)
     return;
 }
 
+/* Test_HistoryRecord: 验证累计合并、校验损坏和 A/B 槽新旧选择。
+ * 返回值：无
+ */
+static void Test_HistoryRecord(void)
+{
+    BIKE_HISTORY_RECORD tFirst;
+    BIKE_HISTORY_RECORD tSecond;
+    BIKE_HISTORY_RECORD tSelected;
+    BIKE_RIDE_STATE tRide;
+
+    BIKE_HISTORY_InitRecord(&tFirst);
+    assert(BIKE_HISTORY_IsRecordValid(&tFirst));
+    assert(0U == tFirst.ulRideCount);
+    assert(!BIKE_HISTORY_MergeRide(&tFirst, NULL));
+
+    BIKE_RIDE_Init(&tRide, 75U);
+    tRide.ulDistanceMm = 1234567U;
+    tRide.ulMovingTimeMs = 600000U;
+    tRide.ulElapsedTimeMs = 720000U;
+    tRide.ulCaloriesMilliKcal = 12345U;
+    tRide.usMaximumSpeedCentiKph = 4567U;
+    assert(BIKE_HISTORY_MergeRide(&tFirst, &tRide));
+    assert(BIKE_HISTORY_IsRecordValid(&tFirst));
+    assert(1U == tFirst.ulRideCount);
+    assert(1234567ULL == tFirst.udDistanceMm);
+    assert(600000ULL == tFirst.udMovingTimeMs);
+    assert(720000ULL == tFirst.udElapsedTimeMs);
+    assert(12345ULL == tFirst.udCaloriesMilliKcal);
+    assert(4567U == tFirst.usMaximumSpeedCentiKph);
+
+    tSecond = tFirst;
+    tRide.ulDistanceMm = 7654321U;
+    tRide.ulMovingTimeMs = 900000U;
+    tRide.ulElapsedTimeMs = 960000U;
+    tRide.ulCaloriesMilliKcal = 54321U;
+    tRide.usMaximumSpeedCentiKph = 4000U;
+    assert(BIKE_HISTORY_MergeRide(&tSecond, &tRide));
+    assert(BIKE_HISTORY_SelectRecord(&tFirst, &tSecond, &tSelected));
+    assert(2U == tSelected.ulRideCount);
+    assert(8888888ULL == tSelected.udDistanceMm);
+    assert(4567U == tSelected.usMaximumSpeedCentiKph);
+
+    tSecond.ulChecksum ^= 1U;
+    assert(!BIKE_HISTORY_IsRecordValid(&tSecond));
+    assert(BIKE_HISTORY_SelectRecord(&tFirst, &tSecond, &tSelected));
+    assert(1U == tSelected.ulRideCount);
+    tFirst.ulChecksum ^= 1U;
+    assert(!BIKE_HISTORY_SelectRecord(&tFirst, &tSecond, &tSelected));
+    assert(BIKE_HISTORY_IsRecordValid(&tSelected));
+    assert(0U == tSelected.ulRideCount);
+
+    return;
+}
+
 int main(void)
 {
     Test_NmeaParser();
@@ -907,6 +962,7 @@ int main(void)
     Test_TimeConversion();
     Test_GpxWriter();
     Test_MapProjection();
+    Test_HistoryRecord();
     (void)printf("bike_core_test: PASS\n");
 
     return 0;

@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "bike_auto_pause.h"
+#include "bike_history.h"
 #include "bike_settings.h"
 #include "bike_time.h"
 
@@ -22,6 +23,7 @@
 #define BIKE_GNSS_THREAD_PRIORITY (20U)
 #define BIKE_GNSS_STALE_TIMEOUT_MS (3000U)
 #define BIKE_RIDE_UPDATE_PERIOD_MS (1000U)
+#define BIKE_HISTORY_CHECKPOINT_PERIOD_MS (60000U)
 #define BIKE_DEMO_PERIOD_MS (1000U)
 #define BIKE_DEMO_DAY_SECONDS (86400U)
 #define BIKE_DEMO_MAX_SEQUENCE ((28U * BIKE_DEMO_DAY_SECONDS) - 1U)
@@ -74,6 +76,9 @@ static bool l_bBikeHasRmcUpdate;
  * 范围 0~UINT32_MAX，用于限制无新 RMC 时的周期更新频率。
  */
 static uint32_t l_ulBikeLastRideUpdateMs;
+
+/* l_ulBikeLastHistoryCheckpointMs: 最近一次累计骑行异步检查点时间。 */
+static uint32_t l_ulBikeLastHistoryCheckpointMs;
 
 /* l_bBikeHasRideUpdate: 已执行至少一次速度融合更新。 */
 static bool l_bBikeHasRideUpdate;
@@ -310,8 +315,10 @@ static void BikeService_UpdateRide(uint32_t ulNowMs, bool bForce)
     BIKE_SPEED_INPUT tSpeedInput;
     BIKE_SPEED_SELECTION tSpeed;
     BIKE_AUTO_PAUSE_ACTION eAutoPauseAction;
+    BIKE_RIDE_STATE tHistoryRide;
     rt_err_t eSettingsResult;
     bool bSensorResult;
+    bool bHistoryCheckpoint;
 
     if ((!bForce) && l_bBikeHasRideUpdate &&
         (BIKE_RIDE_UPDATE_PERIOD_MS >
@@ -322,6 +329,9 @@ static void BikeService_UpdateRide(uint32_t ulNowMs, bool bForce)
 
     (void)memset(&tSensors, 0, sizeof(tSensors));
     (void)memset(&tSpeedInput, 0, sizeof(tSpeedInput));
+    (void)memset(&tHistoryRide, 0, sizeof(tHistoryRide));
+    bHistoryCheckpoint = false;
+    eAutoPauseAction = BIKE_AUTO_PAUSE_ACTION_NONE;
     bSensorResult = BIKE_SENSOR_BLE_GetSnapshot(&tSensors);
     eSettingsResult = BIKE_SETTINGS_GetSnapshot(&tSettings);
     if (!BikeService_Lock())
@@ -371,7 +381,21 @@ static void BikeService_UpdateRide(uint32_t ulNowMs, bool bForce)
                   tSpeed.usSpeedCentiKph % 100U, tSpeed.eSource);
         }
     }
+    if (((BIKE_RIDE_MODE_RUNNING == l_tBikeSnapshot.tRide.eMode) &&
+         (BIKE_HISTORY_CHECKPOINT_PERIOD_MS <=
+          (ulNowMs - l_ulBikeLastHistoryCheckpointMs))) ||
+        (BIKE_AUTO_PAUSE_ACTION_PAUSE == eAutoPauseAction))
+    {
+        tHistoryRide = l_tBikeSnapshot.tRide;
+        l_ulBikeLastHistoryCheckpointMs = ulNowMs;
+        bHistoryCheckpoint = true;
+    }
     BikeService_Unlock();
+    if (bHistoryCheckpoint &&
+        (!BIKE_HISTORY_RequestCheckpoint(&tHistoryRide)))
+    {
+        LOG_E("history checkpoint queue full");
+    }
 
     return;
 }
@@ -536,6 +560,7 @@ static int BikeService_Init(void)
     bUartOpened = false;
     l_ulBikeLastRmcUpdateMs = 0U;
     l_ulBikeLastRideUpdateMs = 0U;
+    l_ulBikeLastHistoryCheckpointMs = 0U;
     l_ulBikeDemoSequence = 0U;
     l_ulBikeLastDemoUpdateMs = 0U;
     l_bBikeHasRmcUpdate = false;
@@ -546,6 +571,11 @@ static int BikeService_Init(void)
     if (RT_EOK != eResult)
     {
         LOG_E("settings init failed: %d", eResult);
+    }
+    eResult = BIKE_HISTORY_Init();
+    if (RT_EOK != eResult)
+    {
+        LOG_E("history init failed: %d", eResult);
     }
     BIKE_NMEA_Init(&l_tBikeParser);
     BIKE_RIDE_Init(&l_tBikeSnapshot.tRide, BIKE_RIDE_DEFAULT_WEIGHT_KG);
@@ -668,6 +698,7 @@ bool BIKE_SERVICE_GetSnapshot(BIKE_SERVICE_SNAPSHOT *pSnapshot)
         BikeService_Unlock();
         (void)BIKE_RECORDER_GetSnapshot(&pSnapshot->tRecorder);
         (void)BIKE_SENSOR_BLE_GetSnapshot(&pSnapshot->tSensors);
+        (void)BIKE_HISTORY_GetSnapshot(&pSnapshot->tHistory);
         bResult = true;
     }
 
@@ -697,10 +728,17 @@ bool BIKE_SERVICE_StartRide(void)
         }
         if (bResult)
         {
+            if ((BIKE_RIDE_MODE_STOPPED == ePreviousMode) &&
+                (!BIKE_HISTORY_RequestBeginRide()))
+            {
+                LOG_E("history begin queue full");
+            }
             if (BikeService_Lock())
             {
                 BIKE_AUTO_PAUSE_Init(&l_tBikeAutoPause);
                 l_tBikeSnapshot.bAutoPaused = false;
+                l_ulBikeLastHistoryCheckpointMs =
+                    (uint32_t)rt_tick_get_millisecond();
                 BIKE_RIDE_Start(&l_tBikeSnapshot.tRide,
                                 (uint32_t)rt_tick_get_millisecond());
                 BikeService_Unlock();
@@ -720,7 +758,9 @@ bool BIKE_SERVICE_StartRide(void)
  */
 bool BIKE_SERVICE_PauseRide(void)
 {
+    BIKE_RIDE_STATE tHistoryRide;
     bool bResult;
+    bool bHistoryQueued;
 
     bResult = false;
     if (BIKE_RECORDER_Pause() && BikeService_Lock())
@@ -728,7 +768,13 @@ bool BIKE_SERVICE_PauseRide(void)
         BIKE_AUTO_PAUSE_Init(&l_tBikeAutoPause);
         l_tBikeSnapshot.bAutoPaused = false;
         BIKE_RIDE_Pause(&l_tBikeSnapshot.tRide);
+        tHistoryRide = l_tBikeSnapshot.tRide;
         BikeService_Unlock();
+        bHistoryQueued = BIKE_HISTORY_RequestCheckpoint(&tHistoryRide);
+        if (!bHistoryQueued)
+        {
+            LOG_E("history pause checkpoint queue full");
+        }
         bResult = true;
     }
 
@@ -740,7 +786,9 @@ bool BIKE_SERVICE_PauseRide(void)
  */
 bool BIKE_SERVICE_StopRide(void)
 {
+    BIKE_RIDE_STATE tHistoryRide;
     bool bResult;
+    bool bHistoryQueued;
 
     bResult = false;
     if (BIKE_RECORDER_Stop() && BikeService_Lock())
@@ -748,7 +796,13 @@ bool BIKE_SERVICE_StopRide(void)
         BIKE_AUTO_PAUSE_Init(&l_tBikeAutoPause);
         l_tBikeSnapshot.bAutoPaused = false;
         BIKE_RIDE_Stop(&l_tBikeSnapshot.tRide);
+        tHistoryRide = l_tBikeSnapshot.tRide;
         BikeService_Unlock();
+        bHistoryQueued = BIKE_HISTORY_RequestFinish(&tHistoryRide);
+        if (!bHistoryQueued)
+        {
+            LOG_E("history finish queue full");
+        }
         bResult = true;
     }
 
@@ -761,6 +815,7 @@ bool BIKE_SERVICE_StopRide(void)
 bool BIKE_SERVICE_DiscardRide(void)
 {
     bool bResult;
+    bool bHistoryQueued;
 
     bResult = false;
     if (BIKE_RECORDER_Discard() && BikeService_Lock())
@@ -769,6 +824,11 @@ bool BIKE_SERVICE_DiscardRide(void)
         l_tBikeSnapshot.bAutoPaused = false;
         BIKE_RIDE_Stop(&l_tBikeSnapshot.tRide);
         BikeService_Unlock();
+        bHistoryQueued = BIKE_HISTORY_RequestDiscard();
+        if (!bHistoryQueued)
+        {
+            LOG_E("history discard queue full");
+        }
         bResult = true;
     }
 

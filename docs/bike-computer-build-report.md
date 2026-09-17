@@ -41,6 +41,9 @@
 - CSC 里程按定点轮速和单调时间积分，速度来源切换时断开 GNSS 坐标段，避免从旧定位点重复累计；主页面速度单位旁显示 `CSC`、`GPS` 或 `--`。
 - 按 X-TRACK 目录规则增加 `/MAP/<zoom>/<x>/<y>.bin` 离线瓦片层，使用 Web Mercator 投影，支持 3~19 级缩放、3 x 3 瓦片窗口、当前位置和固定 128 点实时轨迹。
 - 地图业务缓冲全部静态分配；轨迹满时二分抽稀，瓦片缺失时仅隐藏图片并保留定位/轨迹叠加。
+- 历史总里程、移动/总时间、卡路里、骑行次数和最高速度使用带版本/序号/FNV-1a 校验和的 FlashDB A/B 双槽记录。
+- 新骑行捕获累计基线，每 60 秒以“基线 + 本次绝对值”异步落盘，重复检查点不重复累加；正常结束保存最终值，主动丢弃回滚到开始基线。
+- FlashDB 写入由 1,536 bytes 静态工作线程和固定消息队列顺序执行，GNSS 线程和 LVGL 回调仅非阻塞投递快照。
 
 ## 2. 主机测试
 
@@ -71,6 +74,7 @@ bike_core_test: PASS
 - BLE Measurement 解析覆盖 8/16 位心率、Energy/RR 可选字段、HR 截断/奇数 RR/非法尾随数据，CSC 轮/曲柄组合数据、保留 flags、截断和尾随数据拒绝，Cycling Power 正负功率、全可选字段、保留 flags、截断和尾随数据拒绝，以及 Battery Level 的 0~100 边界、长度和空指针校验。
 - 速度源仲裁覆盖 CSC 优先、GNSS 回退、非法 CSC 拒绝、来源切换、CSC 定点里程积分以及 GNSS 失效时保留有效 CSC。
 - 地图投影覆盖零点、北京坐标、经纬度/缩放边界、瓦片索引与路径穿越/截断拒绝。
+- 历史累计模型覆盖空记录、多次骑行合并、最高速度保留、校验和损坏以及 A/B 槽选择/全损坏回退。
 
 目标编译同时验证了设置写入的事务顺序修正：单字段在持久化成功后才更新运行态，双字段第二次写入失败时回滚首字段。摘要页字号与行距也已按当前 390 px 可用高度收紧，不以此替代最终屏幕实机验收。
 
@@ -87,7 +91,7 @@ scons: done building targets.
 
 | 产物 | 大小 |
 |---|---:|
-| `main.bin` | 3,408,120 bytes |
+| `main.bin` | 3,410,896 bytes |
 | `fs_root.bin` | 4,194,304 bytes |
 
 编译仅输出原工程已有的 `dfu` 分区未定义和 ftab 入口符号警告；新增 `bike_*` 模块在 `-Werror` 主机测试中无告警，且目标编译成功。
@@ -98,7 +102,7 @@ HCPU ELF 链接结果：
 
 | 区域 | 当前占用 | 链接容量 | 余量 |
 |---|---:|---:|---:|
-| 片上 SRAM 地址范围 | 347,136 bytes | 523,264 bytes | 176,128 bytes |
+| 片上 SRAM 地址范围 | 349,404 bytes | 523,264 bytes | 173,860 bytes |
 | PSRAM 可写段 | 2,649,032 bytes | 8,388,608 bytes | 5,739,576 bytes |
 
 码表新增对象文件在链接前的直接占用：
@@ -115,15 +119,16 @@ HCPU ELF 链接结果：
 | `bike_ble_gatt_client.o` | 2,561 bytes | 129 bytes |
 | `bike_csc.o` | 248 bytes | 0 bytes |
 | `bike_gpx.o` | 2,966 bytes | 0 bytes |
+| `bike_history.o` | 2,157 bytes | 2,189 bytes |
 | `bike_map.o` | 708 bytes | 0 bytes |
 | `bike_recorder.o` | 1,349 bytes | 3,865 bytes |
 | `bike_settings.o` | 1,924 bytes | 53 bytes |
 | `bike_sensor_ble.o` | 5,927 bytes | 2,545 bytes |
-| `bike_service.o` | 3,188 bytes | 3,769 bytes |
-| `app_bike.o` | 6,839 bytes | 4,564 bytes |
-| 合计 | 29,924 bytes | 14,925 bytes |
+| `bike_service.o` | 3,688 bytes | 3,857 bytes |
+| `app_bike.o` | 7,016 bytes | 4,564 bytes |
+| 合计 | 32,758 bytes | 17,202 bytes |
 
-`bike_service.o` 和 `bike_recorder.o` 分别包含 3,072 bytes 静态线程栈，`bike_sensor_ble.o` 包含 2,048 bytes 静态线程栈以及固定消息队列和连接状态。对象文件合计只用于描述新增模块的直接体积，不等同于最终镜像增量；最终镜像还受链接消除、库引用和资源打包影响。
+`bike_service.o` 和 `bike_recorder.o` 分别包含 3,072 bytes 静态线程栈，`bike_sensor_ble.o` 包含 2,048 bytes 静态线程栈，`bike_history.o` 包含 1,536 bytes 静态线程栈与固定队列。对象文件合计只用于描述新增模块的直接体积，不等同于最终镜像增量；最终镜像还受链接消除、库引用和资源打包影响。
 
 ## 5. 验证边界
 
@@ -140,4 +145,5 @@ HCPU ELF 链接结果：
 - BLE 广播解析、扫描、连接、配对、地址保存、断线重连、项目自有逐连接 GATT client、HR/CSC/Cycling Power/BAS 读写/通知解析和显示已经通过主机测试或目标构建验证，但尚未接真实传感器验证射频、配对交互、三只独立设备/组合设备订阅、Battery Service 兼容性、长时间重连、功耗和手机/传感器多连接稳定性。
 - CSC/GNSS 速度仲裁已经通过主机测试与目标构建验证，但 CSC 轮速积分与 GNSS 坐标里程之间的道路误差、传感器停转通知行为和来源切换手感仍需实车验证。
 - X-TRACK 离线地图和实时轨迹已完成源码、主机测试与目标构建，尚未导入实际 `.bin` 瓦片并验证 LVGL 文件解码、页面布局、缩放和长距离轨迹显示。
+- 掉电累计记录已通过纯模型测试和目标构建，但尚未对真实 FlashDB 执行 A/B 槽交替、写入中复位、60 秒检查点精度和丢弃回滚实机测试。
 - X-TRACK 的 Micro SD 存储与计步尚未移植：当前工程未启用 TF 控制器，且尚无板载 IMU 型号/总线证据。FIT 与路线导航属于其他参考工程扩展，不是 X-TRACK 主线必备项。
