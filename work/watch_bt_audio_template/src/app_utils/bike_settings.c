@@ -240,7 +240,7 @@ rt_err_t BIKE_SETTINGS_GetSnapshot(BIKE_SETTINGS_SNAPSHOT *pSnapshot)
     {
         return eResult;
     }
-    eResult = rt_mutex_take(&l_tBikeSettingsMutex, RT_WAITING_FOREVER);
+    eResult = rt_mutex_take(&l_tBikeSettingsMutex, RT_WAITING_NO);
     if (RT_EOK == eResult)
     {
         *pSnapshot = l_tBikeSettings;

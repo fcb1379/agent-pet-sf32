@@ -425,6 +425,7 @@ bool BIKE_SERVICE_GetSnapshot(BIKE_SERVICE_SNAPSHOT *pSnapshot)
         *pSnapshot = l_tBikeSnapshot;
         BikeService_Unlock();
         (void)BIKE_RECORDER_GetSnapshot(&pSnapshot->tRecorder);
+        (void)BIKE_SENSOR_BLE_GetSnapshot(&pSnapshot->tSensors);
         bResult = true;
     }
 

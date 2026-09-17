@@ -223,6 +223,9 @@ static void BikeUi_Update(void)
     const char *pRecordState;
     const char *pRideState;
     const char *pFileName;
+    const char *pHeartRateText;
+    const char *pCadenceText;
+    const char *pCscSpeedText;
     const char *pStartText;
 
     if (!BIKE_SERVICE_GetSnapshot(&tSnapshot))
@@ -382,10 +385,14 @@ static void BikeUi_Update(void)
     {
         pFileName = "--";
     }
+    pHeartRateText = tSnapshot.tSensors.bHeartRateValid ? "OK" : "--";
+    pCadenceText = tSnapshot.tSensors.bCadenceValid ? "OK" : "--";
+    pCscSpeedText = tSnapshot.tSensors.bWheelSpeedValid ? "OK" : "--";
     lv_label_set_text_fmt(l_tBikeUi.pSummaryLabel,
                           "STATE  %s\nDIST  %lu.%02lu km\nMOVING  %s\nELAPSED  %s\n"
                           "AVG  %u.%02u km/h\nMAX  %u.%02u km/h\n"
-                          "CAL  %lu.%03lu kcal\nTRACK  %s / %lu pt\nFILE  %s",
+                          "CAL  %lu.%03lu kcal\nHR  %s %u  CAD  %s %u\n"
+                          "CSC  %s %u.%02u km/h\nTRACK  %s / %lu pt\nFILE  %s",
                           pRideState,
                           (unsigned long)(ulDistanceCentiKm / 100U),
                           (unsigned long)(ulDistanceCentiKm % 100U),
@@ -396,6 +403,11 @@ static void BikeUi_Update(void)
                           (unsigned int)(tSnapshot.tRide.usMaximumSpeedCentiKph % 100U),
                           (unsigned long)(tSnapshot.tRide.ulCaloriesMilliKcal / 1000U),
                           (unsigned long)(tSnapshot.tRide.ulCaloriesMilliKcal % 1000U),
+                          pHeartRateText, tSnapshot.tSensors.usHeartRateBpm,
+                          pCadenceText, tSnapshot.tSensors.usCadenceRpm,
+                          pCscSpeedText,
+                          tSnapshot.tSensors.usWheelSpeedCentiKph / 100U,
+                          tSnapshot.tSensors.usWheelSpeedCentiKph % 100U,
                           pRecordState,
                           (unsigned long)tSnapshot.tRecorder.ulPointCount,
                           pFileName);

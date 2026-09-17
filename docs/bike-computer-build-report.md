@@ -25,6 +25,9 @@
 - 自动暂停使用独立防抖状态机：低于阈值持续 5 秒暂停，高于阈值 1 km/h 持续 2 秒恢复；手动暂停不会被速度变化自动恢复。
 - GUI 启动和设置变化后应用持久化 LCD 亮度，并以持久化秒数替代模板固定 10 秒熄屏；0 秒可关闭自动熄屏。
 - 屏幕休眠时 KEY2 第一次短按或长按只唤醒界面，不会在不可见状态下改变骑行或轨迹记录状态。
+- 已启用 SiFli HRPC 和 CSCPC，使用固定容量快照聚合心率、CSC 轮速和踏频通知，并在 5 秒无新数据后使结果失效。
+- CSC 派生算法按持久化轮周计算轮速，处理 32 位轮转累计值、16 位曲柄累计值和 16 位事件时间回绕，并过滤超过 200 km/h 或 300 rpm 的异常结果。
+- 骑行总结页已接入心率、踏频和 CSC 轮速显示；当前增量仅完成通知数据通路，扫描、配对、连接和重连由下一增量实现。
 
 ## 2. 主机测试
 
@@ -45,6 +48,7 @@ bike_core_test: PASS
 - 生成的正常文件与恢复文件均通过 Python `xml.etree.ElementTree` 解析。
 - UTC 时区转换覆盖正负偏移、跨年、闰日和非法日期。
 - 自动暂停覆盖低速防抖、恢复回差、定位失效、计时回绕和手动暂停隔离。
+- CSC 覆盖首帧基线、轮速/踏频计算以及 16/32 位累计值自然回绕。
 
 ## 3. SF32 整机编译
 
@@ -59,7 +63,7 @@ scons: done building targets.
 
 | 产物 | 大小 |
 |---|---:|
-| `main.bin` | 3,390,180 bytes |
+| `main.bin` | 3,395,024 bytes |
 | `fs_root.bin` | 4,194,304 bytes |
 
 编译仍输出 SDK/原模板已有的 FlashDB、LVGL、蓝牙音频和汇编兼容性警告；新增 `bike_*` 模块在 `-Werror` 主机测试中无告警，且目标编译成功。
@@ -70,7 +74,7 @@ HCPU ELF 链接结果：
 
 | 区域 | 当前占用 | 链接容量 | 余量 |
 |---|---:|---:|---:|
-| 片上 SRAM 地址范围 | 339,868 bytes | 523,264 bytes | 183,396 bytes |
+| 片上 SRAM 地址范围 | 340,060 bytes | 523,264 bytes | 183,204 bytes |
 | PSRAM 可写段 | 2,649,032 bytes | 8,388,608 bytes | 5,739,576 bytes |
 
 码表新增对象文件在链接前的直接占用：
@@ -81,12 +85,14 @@ HCPU ELF 链接结果：
 | `bike_time.o` | 320 bytes | 0 bytes |
 | `bike_ride_model.o` | 800 bytes | 0 bytes |
 | `bike_auto_pause.o` | 174 bytes | 0 bytes |
+| `bike_csc.o` | 216 bytes | 0 bytes |
 | `bike_gpx.o` | 2,710 bytes | 0 bytes |
 | `bike_recorder.o` | 1,301 bytes | 3,865 bytes |
 | `bike_settings.o` | 1,770 bytes | 53 bytes |
-| `bike_service.o` | 2,014 bytes | 3,710 bytes |
-| `app_bike.o` | 3,768 bytes | 48 bytes |
-| 合计 | 14,345 bytes | 7,676 bytes |
+| `bike_sensor_ble.o` | 586 bytes | 85 bytes |
+| `bike_service.o` | 2,022 bytes | 3,734 bytes |
+| `app_bike.o` | 3,910 bytes | 48 bytes |
+| 合计 | 15,297 bytes | 7,785 bytes |
 
 `bike_service.o` 和 `bike_recorder.o` 分别包含 3,072 bytes 静态线程栈。对象文件合计只用于描述新增模块的直接体积，不等同于最终镜像增量；最终镜像还受链接消除、库引用和资源打包影响。
 
@@ -102,4 +108,5 @@ HCPU ELF 链接结果：
 - RTC 校时和 KEY2 控制已通过代码与目标构建验证，尚未做实板按键电平、长按阈值和 RTC 走时验证。
 - 设置项、自动暂停和显示策略已通过代码、主机测试与目标构建验证，尚未验证 FlashDB 掉电保存、自动暂停道路行为、LCD 亮度范围和熄屏/唤醒的实机行为。
 - GPX 已完成源码、主机测试和目标构建验证，但尚未在板载 Elm FAT 上进行复位中断和空间耗尽实机测试。
-- X-TRACK 的离线地图、BLE 传感器和导航等后续功能尚未移植。
+- BLE HR/CSC 通知解析和显示已经通过主机算法测试与目标构建验证，但尚未实现扫描、配对、连接、重连、电池状态和手机/传感器多连接实机验证。
+- X-TRACK 的离线地图、FIT、TF 卡和导航等后续功能尚未移植。

@@ -9,6 +9,7 @@
 
 #include "bike_gpx.h"
 #include "bike_auto_pause.h"
+#include "bike_csc.h"
 #include "bike_nmea.h"
 #include "bike_ride_model.h"
 #include "bike_time.h"
@@ -236,6 +237,55 @@ static void Test_AutoPause(void)
     return;
 }
 
+/* Test_CscCalculation: 覆盖轮速、踏频及 16/32 位累计值回绕。
+ * 返回值：无
+ */
+static void Test_CscCalculation(void)
+{
+    BIKE_CSC_MEASUREMENT tMeasurement;
+    BIKE_CSC_STATE tState;
+
+    (void)memset(&tMeasurement, 0, sizeof(tMeasurement));
+    tMeasurement.ucFlags = BIKE_CSC_WHEEL_DATA_PRESENT |
+                           BIKE_CSC_CRANK_DATA_PRESENT;
+    tMeasurement.ulCumulativeWheelRevolutions = 100U;
+    tMeasurement.usLastWheelEventTime = 1000U;
+    tMeasurement.usCumulativeCrankRevolutions = 200U;
+    tMeasurement.usLastCrankEventTime = 1000U;
+    BIKE_CSC_Init(&tState);
+    BIKE_CSC_Update(&tState, &tMeasurement, 2105U);
+    assert(!tState.bWheelSpeedValid);
+    assert(!tState.bCadenceValid);
+
+    tMeasurement.ulCumulativeWheelRevolutions = 101U;
+    tMeasurement.usLastWheelEventTime = 2024U;
+    tMeasurement.usCumulativeCrankRevolutions = 201U;
+    tMeasurement.usLastCrankEventTime = 2024U;
+    BIKE_CSC_Update(&tState, &tMeasurement, 2105U);
+    assert(tState.bWheelSpeedValid);
+    assert(757U == tState.usWheelSpeedCentiKph);
+    assert(tState.bCadenceValid);
+    assert(60U == tState.usCadenceRpm);
+
+    BIKE_CSC_Init(&tState);
+    tMeasurement.ulCumulativeWheelRevolutions = UINT32_MAX;
+    tMeasurement.usLastWheelEventTime = UINT16_MAX - 512U;
+    tMeasurement.usCumulativeCrankRevolutions = UINT16_MAX;
+    tMeasurement.usLastCrankEventTime = UINT16_MAX - 512U;
+    BIKE_CSC_Update(&tState, &tMeasurement, 2105U);
+    tMeasurement.ulCumulativeWheelRevolutions = 0U;
+    tMeasurement.usLastWheelEventTime = 511U;
+    tMeasurement.usCumulativeCrankRevolutions = 0U;
+    tMeasurement.usLastCrankEventTime = 511U;
+    BIKE_CSC_Update(&tState, &tMeasurement, 2105U);
+    assert(tState.bWheelSpeedValid);
+    assert(757U == tState.usWheelSpeedCentiKph);
+    assert(tState.bCadenceValid);
+    assert(60U == tState.usCadenceRpm);
+
+    return;
+}
+
 /* Test_TimeConversion: 覆盖正负时区、跨年和闰日转换。
  * 返回值：无
  */
@@ -370,6 +420,7 @@ int main(void)
     Test_NmeaParser();
     Test_RideModel();
     Test_AutoPause();
+    Test_CscCalculation();
     Test_TimeConversion();
     Test_GpxWriter();
     (void)printf("bike_core_test: PASS\n");
