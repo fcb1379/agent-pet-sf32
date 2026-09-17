@@ -745,7 +745,7 @@ static void BikeUi_Update(void)
     }
     else if (BIKE_GNSS_PORT_ERROR == tSnapshot.ePortStatus)
     {
-        pGpsState = "UART2 ERROR";
+        pGpsState = "UART3 ERROR";
     }
     else if (tSnapshot.tGnss.bFixValid)
     {

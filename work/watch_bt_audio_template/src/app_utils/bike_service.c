@@ -20,7 +20,7 @@
 #define LOG_LVL LOG_LVL_INFO
 #include <ulog.h>
 
-#define BIKE_GNSS_UART_NAME "uart2"
+#define BIKE_GNSS_UART_NAME "uart3"
 #define BIKE_GNSS_BAUD_RATE (9600U)
 #define BIKE_GNSS_RX_BUFFER_SIZE (64U)
 #define BIKE_GNSS_THREAD_STACK_SIZE (3072U)
@@ -53,7 +53,7 @@ static struct rt_thread l_tBikeThread;
 ALIGN(RT_ALIGN_SIZE)
 static uint8_t l_aBikeThreadStack[BIKE_GNSS_THREAD_STACK_SIZE];
 
-/* l_pBikeUart: UART2 RT-Thread 设备句柄，初始化前为 NULL。 */
+/* l_pBikeUart: UART3 RT-Thread 设备句柄，初始化前为 NULL。 */
 static rt_device_t l_pBikeUart;
 
 /* l_bBikeServiceReady: 共享对象已经初始化的标志。 */
@@ -481,7 +481,7 @@ static void BikeService_CheckStale(uint32_t ulNowMs)
     return;
 }
 
-/* BikeService_ThreadEntry: 读取 UART2 并逐字节解析 DX-GP10 NMEA。
+/* BikeService_ThreadEntry: 读取 UART3 并逐字节解析 DX-GP10 NMEA。
  * 参数：
  *   - pParameter: 未使用
  * 返回值：无
@@ -537,21 +537,21 @@ static void BikeService_ThreadEntry(void *pParameter)
     return;
 }
 
-/* BikeService_ConfigurePins: 配置 SF32LB52 UART2 默认引脚。
+/* BikeService_ConfigurePins: 按 GPS 转接板网络配置 SF32LB52 UART3 引脚。
  * 参数：无
  * 返回值：无
  */
 static void BikeService_ConfigurePins(void)
 {
 #if defined(SOC_SF32LB52X) || defined(SF32LB52X)
-    HAL_PIN_Set(PAD_PA20, USART2_RXD, PIN_PULLUP, 1);
-    HAL_PIN_Set(PAD_PA27, USART2_TXD, PIN_PULLUP, 1);
+    HAL_PIN_Set(PAD_PA35, USART3_TXD, PIN_PULLUP, 1);
+    HAL_PIN_Set(PAD_PA36, USART3_RXD, PIN_PULLUP, 1);
 #endif
 
     return;
 }
 
-/* BikeService_Init: 初始化固定容量状态、UART2 和 GNSS 接收线程。
+/* BikeService_Init: 初始化固定容量状态、UART3 和 GNSS 接收线程。
  * 返回值：服务对象始终可供 UI 查询；硬件错误通过端口状态报告
  */
 static int BikeService_Init(void)

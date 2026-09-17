@@ -8,14 +8,14 @@
 
 ## 1. 已实现范围
 
-- DX-GP10 使用 UART2，默认 9600 bps、8N1；首版引脚为 PA20/RX、PA27/TX。
+- DX-GP10-A 使用 UART3，默认 9600 bps、8N1；转接板网络为 PA36/RX、PA35/TX，且 PA35/PA36 与 USB DP/DM 复用，因此当前配置保持 USB Device/Host 关闭。
 - 固定长度 NMEA 接收缓冲，支持 GGA/RMC/VTG、异或校验、超长语句丢弃和错误计数；VTG 可使用 km/h 或节字段，`mode=N` 时清零速度且不会延长坐标定位有效期。
 - 使用定点数保存经纬度、速度、航向、海拔和 UTC 时间，避免在串口接收路径中使用浮点运算。
 - 骑行模型支持开始、暂停、停止、里程、当前/平均/最大速度、移动/总时间和卡路里估算。
 - LVGL 使用横向 TileView 提供主数据、GNSS 详情、离线地图和骑行总结四页；主数据和总结页均可开始/暂停/停止骑行。
 - GNSS 详情页显示经纬度、海拔、航向、UTC、卫星数、定位质量、RTC 同步状态和 NMEA 统计；未定位时不伪造零坐标。
 - GNSS 接收线程只持有静态栈和静态缓冲；串口回调只释放信号量，共享快照使用互斥锁保护。
-- `bikedemo on/off/status` 提供无 GPS 模组演示模式，每秒生成单调 UTC、坐标、海拔、航向和速度；UART2 不存在或初始化失败时，工作线程仍启动以保留演示能力，真实串口数据在演示期间只解析不提交。
+- `bikedemo on/off/status` 提供无 GPS 模组演示模式，每秒生成单调 UTC、坐标、海拔、航向和速度；UART3 不存在或初始化失败时，工作线程仍启动以保留演示能力，真实串口数据在演示期间只解析不提交。
 - GPX 使用独立静态线程和十二消息队列异步落盘，正常结束后原子发布 `.gpx` 文件。
 - 主数据页可保存结束轨迹；总结页分别提供 `SAVE` 和 `DISCARD`，丢弃路径关闭文件并删除 `.part` 与 `.active`，不会发布最终 GPX。
 - 每五个轨迹点执行一次 `fsync`；暂停和结束时强制同步，启动前保留 64 KiB 文件系统余量。
@@ -110,7 +110,7 @@ scons: done building targets.
 | `main.bin` | 3,449,236 bytes |
 | `fs_root.bin` | 4,194,304 bytes |
 
-完整重构建输出 SDK 既有的 FlashDB/LVGL/音频等静态告警，以及 `dfu` 分区未定义和 ftab 入口符号警告；新增 `bike_*` 模块在 `-Werror` 主机测试中无告警，且目标编译成功。生成配置已确认 `CONFIG_BSP_USING_SPI1=y`、`CONFIG_RT_USING_SPI_MSD=y`、`CONFIG_RT_USING_SENSOR=y`、`CONFIG_ACC_USING_LSM6DSL=y`、仅 `CONFIG_PKG_USING_LSM6DSL_STEP=y`，以及 `CONFIG_RT_USING_ADC=y`、`CONFIG_BSP_USING_ADC1=y`、`CONFIG_BSP_BATTERY_DETECT_ADC="bat1"`、`CONFIG_BSP_BATTERY_DETECT_ADC_CHANNEL=7`；加速度/陀螺仪 RT-Thread 设备未启用。
+完整重构建输出 SDK 既有的 FlashDB/LVGL/音频等静态告警，以及 `dfu` 分区未定义和 ftab 入口符号警告；新增 `bike_*` 模块在 `-Werror` 主机测试中无告警，且目标编译成功。生成配置已确认 `CONFIG_BSP_USING_UART3=y`、`CONFIG_BSP_UART3_RX_USING_DMA=y`，未启用 UART2 或 USB Device/Host；同时启用 `CONFIG_BSP_USING_SPI1=y`、`CONFIG_RT_USING_SPI_MSD=y`、`CONFIG_RT_USING_SENSOR=y`、`CONFIG_ACC_USING_LSM6DSL=y`、仅 `CONFIG_PKG_USING_LSM6DSL_STEP=y`，以及 `CONFIG_RT_USING_ADC=y`、`CONFIG_BSP_USING_ADC1=y`、`CONFIG_BSP_BATTERY_DETECT_ADC="bat1"`、`CONFIG_BSP_BATTERY_DETECT_ADC_CHANNEL=7`；加速度/陀螺仪 RT-Thread 设备未启用。
 
 HCPU ELF 汇总为 `.text=3,440,977 bytes`、`.data=8,228 bytes`、`.bss=2,970,632 bytes`。目标编译已实际生成 `lsm6dsl.o`、`lsm6dsl_reg.o`、`st_lsm6dsl_sensor_v1.o`、`sensor.o`、`drv_adc.o`、`bike_pedometer.o`、`bike_compass.o` 和 `bike_power.o`。
 
@@ -158,8 +158,8 @@ HCPU ELF 链接结果：
 
 本轮未确认：
 
-- 未烧录开发板，不能声明四页滑动、页面布局、触摸、UART2 或休眠唤醒已通过实机验证。
-- 未取得转接板导出网表，PA20/PA27、3V3、GND 以及 PPS/WAKE/RESET 的实际网络仍需硬件复核。
+- 未烧录开发板，不能声明四页滑动、页面布局、触摸、UART3 或休眠唤醒已通过实机验证。
+- 转接板工程已确认 PA35/TX、PA36/RX、`GPS_5V`、GND 以及 PPS/WAKE 引出；实物连接器方向、5 V/载板稳压输出、UART 电平和可选 PPS/WAKE 的 MCU GPIO 仍需硬件复核。
 - 未接 DX-GP10，尚未验证真实 NMEA 连续输入、首次定位时间、丢星恢复、天线性能和整机功耗。
 - RTC 校时和 KEY2 控制已通过代码与目标构建验证，尚未做实板按键电平、长按阈值和 RTC 走时验证。
 - 设置项、自动暂停和显示策略已通过代码、主机测试与目标构建验证，尚未验证 FlashDB 掉电保存、自动暂停道路行为、LCD 亮度范围和熄屏/唤醒的实机行为。
