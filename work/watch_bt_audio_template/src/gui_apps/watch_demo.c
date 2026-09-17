@@ -476,7 +476,7 @@ void app_watch_entry(void *parameter)
 #endif /* BSP_USING_PM */
     keypad_default_handler_register(default_keypad_handler);
 
-    gui_app_run("Main");
+    gui_app_run("Bike");
     lv_disp_trig_activity(NULL);
 #if defined(GUI_APP_FRAMEWORK)&&(!defined (APP_TRANS_ANIMATION_NONE))
     lvsf_gesture_init(lv_layer_top());
