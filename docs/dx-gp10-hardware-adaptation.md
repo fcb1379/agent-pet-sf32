@@ -4,7 +4,7 @@
 
 数据手册：DX-GP10 GPS 模块技术手册 V2.0，2024-06-18。
 
-板载资源依据：[黄山派开发板官方 Wiki](https://wiki.sifli.com/board/sf32lb52x/SF32LB52-%E9%BB%84%E5%B1%B1%E6%B4%BE.html) 与 [SiFli 传感器适配说明](https://docs.sifli.com/projects/solution/7.FAQ/peripheral/sensor.html)。
+板载资源依据：[黄山派开发板官方 Wiki](https://wiki.sifli.com/board/sf32lb52x/SF32LB52-%E9%BB%84%E5%B1%B1%E6%B4%BE.html)、[SiFli 传感器适配说明](https://docs.sifli.com/projects/solution/7.FAQ/peripheral/sensor.html) 与 [MEMSIC MMC5603NJ Rev.B 数据手册](https://www.memsic.com/Public/Uploads/uploadfile/files/20220119/MMC5603NJDatasheetRev.B.pdf)。
 
 ## 1. 模组接口
 
@@ -41,6 +41,7 @@
 | GNSS | UART2，PA20(RX)/PA27(TX) | SiFli SF32LB52 UART 示例映射；当前板级配置未占用 |
 | TF 卡 | SPI1，PA24/PA25/PA28/PA29 | 不与 GNSS 复用 |
 | 板载 IMU | I2C2，PA39(SDA)/PA40(SCL) | 当前 QADSPI 屏幕不占用；LSM6DS3TR-C 地址 0x6A |
+| 板载磁力计 | I2C2，PA39(SDA)/PA40(SCL) | 与 IMU 共总线；MMC5603NJ 地址 0x30、产品 ID 0x10 |
 | 1PPS | 未分配 | 等转接板网表后选择空闲 GPIO/中断 |
 | WAKE_UP | 未分配 | 等转接板网表后选择空闲 GPIO |
 | RESET | 未分配 | 等转接板网表后选择空闲 GPIO |
@@ -48,6 +49,8 @@
 TF 卡软件侧已启用 SDK SPI-MSD：PA24 为 DIO/MOSI、PA25 为 DI/MISO、PA28 为 CLK、PA29 为 CS，块设备名为 `sd0`。应用只尝试把已有 FAT 文件系统挂载到 `/sd`，失败时回退内部存储，不会自动格式化卡片；真实卡座焊接、供电和异常拔卡仍需最终实机阶段确认。
 
 板载 LSM6DS3TR-C 软件侧使用 SiFli SDK 的 LSM6DSL 兼容驱动，仅注册 step 设备。初始化前校验 0x0F WHO_AM_I 为 0x6A，开启后回读 0x10 ODR 与 0x19 功能/计步使能位；应用再以独立、可检查返回值的 I2C 事务读取 0x4B/0x4C 步数。PA39/PA40 只在当前 QADSPI LCD 配置下复用，若改用 8080 DBI 屏，计步初始化会直接报错以避免引脚冲突。
+
+板载 MMC5603NJ 使用同一 I2C2 总线。项目驱动先读取 0x39 产品 ID，再执行软件复位，以 5 Hz 单次测量方式启用自动 SET/RESET，轮询数据就绪后完整读取 0x00~0x08 的 9 字节 20 位三轴数据。SDK 自带 MMC56x3 封装分配 8 字节缓冲却访问第 9 字节，并在 I2C 失败时断言，因此本项目不启用该封装，改用所有事务均检查返回值的固定缓冲实现。航向只在 X/Y 两轴运行时校准跨度和样本数达标后发布；安装朝向、磁偏角、硬铁/软铁干扰和倾斜补偿留待最终实机标定。
 
 软件把 UART 设备名、波特率和 PA20/PA27 映射集中在 GNSS 端口层。当前映射可用于编译和初步接线，但只有转接板导出资料确认后，才能视为硬件连接结论。
 
@@ -65,3 +68,4 @@ TF 卡软件侧已启用 SDK SPI-MSD：PA24 为 DIO/MOSI、PA25 为 DI/MISO、PA
 - 转接板是否已连接或引出 1PPS、WAKE_UP、RESET、VCC_BACKUP。
 - 天线类型、馈电方式和安装方向。
 - 上电后 30 分钟连续 NMEA、断开重连、冷/热启动和实际整机电流。
+- MMC5603NJ 产品 ID、三轴方向、板级安装朝向、水平转动校准、磁干扰、倾斜误差和采样功耗。

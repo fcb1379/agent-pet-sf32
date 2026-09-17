@@ -14,6 +14,7 @@
 #include "bike_ble_advertising.h"
 #include "bike_ble_measurement.h"
 #include "bike_csc.h"
+#include "bike_compass.h"
 #include "bike_nmea.h"
 #include "bike_pedometer.h"
 #include "bike_ride_model.h"
@@ -22,6 +23,59 @@
 #include "bike_time.h"
 
 #define TEST_GPX_DIRECTORY "/tmp/sf32_bike_gpx_test"
+
+/* Test_CompassCalibration: 覆盖磁力计水平面校准进度、中心偏移、
+ * 四象限航向、无效参数和样本计数饱和。
+ * 返回值：无
+ */
+static void Test_CompassCalibration(void)
+{
+    BIKE_COMPASS_CALIBRATION tCalibration;
+    int32_t lCorrectedX;
+    int32_t lCorrectedY;
+    uint16_t usHeadingDeg10;
+
+    BIKE_COMPASS_ResetCalibration(&tCalibration);
+    assert(!tCalibration.bInitialized);
+    assert(!BIKE_COMPASS_UpdateCalibration(&tCalibration, 1200, -800,
+                                            4000U, 4U,
+                                            &lCorrectedX, &lCorrectedY));
+    assert(0U == BIKE_COMPASS_GetCalibrationPercent(&tCalibration, 4000U));
+    assert(!BIKE_COMPASS_UpdateCalibration(&tCalibration, 5200, -800,
+                                            4000U, 4U,
+                                            &lCorrectedX, &lCorrectedY));
+    assert(!BIKE_COMPASS_UpdateCalibration(&tCalibration, 1200, 3200,
+                                            4000U, 4U,
+                                            &lCorrectedX, &lCorrectedY));
+    assert(BIKE_COMPASS_UpdateCalibration(&tCalibration, 5200, 3200,
+                                           4000U, 4U,
+                                           &lCorrectedX, &lCorrectedY));
+    assert(2000 == lCorrectedX);
+    assert(2000 == lCorrectedY);
+    assert(100U == BIKE_COMPASS_GetCalibrationPercent(&tCalibration, 4000U));
+
+    assert(BIKE_COMPASS_CalculateHeadingDeg10(100, 0, &usHeadingDeg10));
+    assert(0U == usHeadingDeg10);
+    assert(BIKE_COMPASS_CalculateHeadingDeg10(0, 100, &usHeadingDeg10));
+    assert(900U == usHeadingDeg10);
+    assert(BIKE_COMPASS_CalculateHeadingDeg10(-100, 0, &usHeadingDeg10));
+    assert(1800U == usHeadingDeg10);
+    assert(BIKE_COMPASS_CalculateHeadingDeg10(0, -100, &usHeadingDeg10));
+    assert(2700U == usHeadingDeg10);
+    assert(!BIKE_COMPASS_CalculateHeadingDeg10(0, 0, &usHeadingDeg10));
+    assert(!BIKE_COMPASS_CalculateHeadingDeg10(1, 1, NULL));
+
+    tCalibration.ulSampleCount = UINT32_MAX;
+    assert(BIKE_COMPASS_UpdateCalibration(&tCalibration, 3200, 1200,
+                                           4000U, 4U,
+                                           &lCorrectedX, &lCorrectedY));
+    assert(UINT32_MAX == tCalibration.ulSampleCount);
+    assert(!BIKE_COMPASS_UpdateCalibration(NULL, 0, 0, 1U, 1U,
+                                            &lCorrectedX, &lCorrectedY));
+    BIKE_COMPASS_ResetCalibration(NULL);
+
+    return;
+}
 
 /* Test_PedometerAccumulator: 覆盖初始值、正常递增、异常跳变、硬件复位、
  * 16 位回绕和 32 位饱和保护。
@@ -1011,6 +1065,7 @@ static void Test_HistoryRecord(void)
 
 int main(void)
 {
+    Test_CompassCalibration();
     Test_PedometerAccumulator();
     Test_StoragePaths();
     Test_NmeaParser();

@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "bike_auto_pause.h"
+#include "bike_compass.h"
 #include "bike_history.h"
 #include "bike_pedometer.h"
 #include "bike_settings.h"
@@ -596,6 +597,10 @@ static int BikeService_Init(void)
     {
         LOG_E("onboard pedometer init failed");
     }
+    if (!BIKE_COMPASS_Init())
+    {
+        LOG_E("onboard compass init failed");
+    }
 
     eResult = rt_mutex_init(&l_tBikeMutex, "bike", RT_IPC_FLAG_FIFO);
     if (RT_EOK != eResult)
@@ -709,6 +714,7 @@ bool BIKE_SERVICE_GetSnapshot(BIKE_SERVICE_SNAPSHOT *pSnapshot)
         BikeService_Unlock();
         (void)BIKE_RECORDER_GetSnapshot(&pSnapshot->tRecorder);
         (void)BIKE_SENSOR_BLE_GetSnapshot(&pSnapshot->tSensors);
+        (void)BIKE_COMPASS_GetSnapshot(&pSnapshot->tCompass);
         (void)BIKE_PEDOMETER_GetSnapshot(&pSnapshot->tPedometer);
         (void)BIKE_HISTORY_GetSnapshot(&pSnapshot->tHistory);
         bResult = true;

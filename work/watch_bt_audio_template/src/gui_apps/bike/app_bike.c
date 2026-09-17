@@ -720,6 +720,7 @@ static void BikeUi_Update(void)
     char aCscSpeed[20];
     char aPower[16];
     char aPowerBattery[12];
+    char aCompass[24];
     const char *pAltitudeSign;
     const char *pGpsState;
     const char *pRecordState;
@@ -831,6 +832,33 @@ static void BikeUi_Update(void)
         break;
     }
 
+    switch (tSnapshot.tCompass.eStatus)
+    {
+    case BIKE_COMPASS_STATUS_READY:
+        (void)snprintf(aCompass, sizeof(aCompass), "%u.%01u deg",
+                       (unsigned int)(tSnapshot.tCompass.usHeadingDeg10 / 10U),
+                       (unsigned int)(tSnapshot.tCompass.usHeadingDeg10 % 10U));
+        break;
+
+    case BIKE_COMPASS_STATUS_CALIBRATING:
+        (void)snprintf(aCompass, sizeof(aCompass), "CAL %u%%",
+                       (unsigned int)tSnapshot.tCompass.ucCalibrationPercent);
+        break;
+
+    case BIKE_COMPASS_STATUS_SEARCHING:
+        (void)snprintf(aCompass, sizeof(aCompass), "WAIT");
+        break;
+
+    case BIKE_COMPASS_STATUS_ERROR:
+        (void)snprintf(aCompass, sizeof(aCompass), "ERROR");
+        break;
+
+    case BIKE_COMPASS_STATUS_DISABLED:
+    default:
+        (void)snprintf(aCompass, sizeof(aCompass), "OFF");
+        break;
+    }
+
     ulAgeMs = 0U;
     if (0U != tSnapshot.ulLastUpdateMs)
     {
@@ -898,6 +926,7 @@ static void BikeUi_Update(void)
                           "COURSE  %u.%01u deg\nUTC  %04u-%02u-%02u %02u:%02u:%02u\n"
                           "SAT  %u   FIX  %u   RTC  %s\nNMEA  %lu   CRC ERR  %lu   OVF  %lu\n"
                           "STEPS  %lu   IMU  %s   I2C ERR  %lu\n"
+                          "MAG  %s   ERR  %lu\nXYZ  %ld  %ld  %ld mG\n"
                           "LIFE  %llu.%02llu km   %llu h\nRIDES  %lu   MAX  %u.%02u km/h",
                           aLatitude, aLongitude, pAltitudeSign,
                           (unsigned long)(ulAltitudeAbsoluteCm / 100U),
@@ -915,6 +944,11 @@ static void BikeUi_Update(void)
                           (unsigned long)tSnapshot.tPedometer.ulStepCount,
                           pStepState,
                           (unsigned long)tSnapshot.tPedometer.ulReadErrorCount,
+                          aCompass,
+                          (unsigned long)tSnapshot.tCompass.ulReadErrorCount,
+                          (long)tSnapshot.tCompass.lXMilliGauss,
+                          (long)tSnapshot.tCompass.lYMilliGauss,
+                          (long)tSnapshot.tCompass.lZMilliGauss,
                           (unsigned long long)(udHistoryCentiKm / 100ULL),
                           (unsigned long long)(udHistoryCentiKm % 100ULL),
                           (unsigned long long)udHistoryHours,

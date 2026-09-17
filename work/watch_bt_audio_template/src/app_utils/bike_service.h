@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "bike_compass.h"
 #include "bike_nmea.h"
 #include "bike_history.h"
 #include "bike_pedometer.h"
@@ -35,6 +36,7 @@ typedef enum _BIKE_GNSS_PORT_STATUS
  *   - tRide: 本次骑行统计
  *   - tRecorder: GPX 轨迹记录状态
  *   - tSensors: BLE 心率和 CSC 传感器状态
+ *   - tCompass: 板载 MMC5603NJ 电子罗盘状态
  *   - tPedometer: 板载 LSM6DS3TR-C 计步状态
  *   - tHistory: 双槽掉电保护的历史累计数据
  *   - bRtcSynchronized: RTC 是否已被有效 GNSS 时间校准
@@ -52,6 +54,7 @@ typedef struct _BIKE_SERVICE_SNAPSHOT
     BIKE_RIDE_STATE tRide;
     BIKE_RECORDER_SNAPSHOT tRecorder;
     BIKE_SENSOR_BLE_SNAPSHOT tSensors;
+    BIKE_COMPASS_SNAPSHOT tCompass;
     BIKE_PEDOMETER_SNAPSHOT tPedometer;
     BIKE_HISTORY_SNAPSHOT tHistory;
     bool bRtcSynchronized;
