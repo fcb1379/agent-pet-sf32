@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #include "bike_nmea.h"
+#include "bike_speed_source.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -23,6 +24,7 @@ typedef enum _BIKE_RIDE_MODE
 /* BIKE_RIDE_STATE: 从 X-TRACK SportStatus 重写的固定容量骑行状态。
  * 成员说明：
  *   - eMode: 停止、骑行或暂停状态
+ *   - eSpeedSource: 当前速度来源
  *   - bFixValid: 当前 GNSS 数据是否有效
  *   - bHasPreviousPoint: 是否存在可用于累计里程的前一点
  *   - ucSatellites: 当前参与定位卫星数
@@ -42,6 +44,7 @@ typedef enum _BIKE_RIDE_MODE
 typedef struct _BIKE_RIDE_STATE
 {
     BIKE_RIDE_MODE eMode;
+    BIKE_SPEED_SOURCE eSpeedSource;
     bool bFixValid;
     bool bHasPreviousPoint;
     uint8_t ucSatellites;
@@ -65,6 +68,10 @@ void BIKE_RIDE_Start(BIKE_RIDE_STATE *pState, uint32_t ulNowMs);
 void BIKE_RIDE_Pause(BIKE_RIDE_STATE *pState);
 void BIKE_RIDE_Stop(BIKE_RIDE_STATE *pState);
 void BIKE_RIDE_Update(BIKE_RIDE_STATE *pState, const BIKE_GNSS_DATA *pGnss, uint32_t ulNowMs);
+void BIKE_RIDE_UpdateWithSpeed(BIKE_RIDE_STATE *pState,
+                               const BIKE_GNSS_DATA *pGnss,
+                               const BIKE_SPEED_SELECTION *pSpeed,
+                               uint32_t ulNowMs);
 void BIKE_RIDE_InvalidateFix(BIKE_RIDE_STATE *pState);
 uint32_t BIKE_RIDE_CalculateDistanceMm(int32_t lLatitude1E7, int32_t lLongitude1E7,
                                       int32_t lLatitude2E7, int32_t lLongitude2E7);

@@ -21,6 +21,7 @@
 #define BIKE_GNSS_THREAD_STACK_SIZE (3072U)
 #define BIKE_GNSS_THREAD_PRIORITY (20U)
 #define BIKE_GNSS_STALE_TIMEOUT_MS (3000U)
+#define BIKE_RIDE_UPDATE_PERIOD_MS (1000U)
 
 /* l_tBikeSnapshot: 码表服务共享快照，只能在 l_tBikeMutex 保护下访问。 */
 static BIKE_SERVICE_SNAPSHOT l_tBikeSnapshot;
@@ -52,6 +53,22 @@ static bool l_bBikeRtcSynchronized;
 
 /* l_tBikeAutoPause: GNSS 线程独占的自动暂停防抖状态机。 */
 static BIKE_AUTO_PAUSE_CONTROLLER l_tBikeAutoPause;
+
+/* l_ulBikeLastRmcUpdateMs: 最近有效解析 RMC 的单调时间戳，范围
+ * 0~UINT32_MAX，用于限制 GNSS 速度有效期并支持计数器自然回绕。
+ */
+static uint32_t l_ulBikeLastRmcUpdateMs;
+
+/* l_bBikeHasRmcUpdate: 已收到至少一帧 RMC，避免时间戳回绕到 0 时误判。 */
+static bool l_bBikeHasRmcUpdate;
+
+/* l_ulBikeLastRideUpdateMs: 最近一次速度融合和骑行统计的单调时间戳，
+ * 范围 0~UINT32_MAX，用于限制无新 RMC 时的周期更新频率。
+ */
+static uint32_t l_ulBikeLastRideUpdateMs;
+
+/* l_bBikeHasRideUpdate: 已执行至少一次速度融合更新。 */
+static bool l_bBikeHasRideUpdate;
 
 static bool BikeService_Lock(void);
 static void BikeService_Unlock(void);
@@ -156,6 +173,85 @@ static rt_err_t BikeService_UartRxIndicate(rt_device_t pDevice, rt_size_t ulSize
     return RT_EOK;
 }
 
+/* BikeService_UpdateRide: 每秒选择 CSC/GNSS 速度并更新骑行和自动暂停。
+ * 参数：
+ *   - ulNowMs: 当前单调时钟毫秒数
+ *   - bForce: RMC 到达时强制立即更新
+ * 返回值：无
+ */
+static void BikeService_UpdateRide(uint32_t ulNowMs, bool bForce)
+{
+    BIKE_SENSOR_BLE_SNAPSHOT tSensors;
+    BIKE_SETTINGS_SNAPSHOT tSettings;
+    BIKE_SPEED_INPUT tSpeedInput;
+    BIKE_SPEED_SELECTION tSpeed;
+    BIKE_AUTO_PAUSE_ACTION eAutoPauseAction;
+    rt_err_t eSettingsResult;
+    bool bSensorResult;
+
+    if ((!bForce) && l_bBikeHasRideUpdate &&
+        (BIKE_RIDE_UPDATE_PERIOD_MS >
+         (ulNowMs - l_ulBikeLastRideUpdateMs)))
+    {
+        return;
+    }
+
+    (void)memset(&tSensors, 0, sizeof(tSensors));
+    (void)memset(&tSpeedInput, 0, sizeof(tSpeedInput));
+    bSensorResult = BIKE_SENSOR_BLE_GetSnapshot(&tSensors);
+    eSettingsResult = BIKE_SETTINGS_GetSnapshot(&tSettings);
+    if (!BikeService_Lock())
+    {
+        return;
+    }
+
+    tSpeedInput.bGnssValid = l_tBikeSnapshot.tGnss.bFixValid &&
+                             l_bBikeHasRmcUpdate &&
+                             (BIKE_GNSS_STALE_TIMEOUT_MS >=
+                              (ulNowMs - l_ulBikeLastRmcUpdateMs));
+    tSpeedInput.ulGnssSpeedCmPerSec =
+        l_tBikeSnapshot.tGnss.ulSpeedCmPerSec;
+    tSpeedInput.bCscValid = bSensorResult &&
+                           tSensors.bWheelSpeedValid;
+    tSpeedInput.usCscSpeedCentiKph = tSensors.usWheelSpeedCentiKph;
+    BIKE_SPEED_Select(&tSpeedInput, &tSpeed);
+    BIKE_RIDE_UpdateWithSpeed(&l_tBikeSnapshot.tRide,
+                              &l_tBikeSnapshot.tGnss, &tSpeed, ulNowMs);
+    l_ulBikeLastRideUpdateMs = ulNowMs;
+    l_bBikeHasRideUpdate = true;
+
+    if (RT_EOK == eSettingsResult)
+    {
+        eAutoPauseAction = BIKE_AUTO_PAUSE_Update(
+            &l_tBikeAutoPause, tSettings.bAutoPauseEnabled,
+            l_tBikeSnapshot.bAutoPaused, l_tBikeSnapshot.tRide.eMode,
+            tSpeed.bValid, l_tBikeSnapshot.tRide.usSpeedCentiKph,
+            tSettings.usAutoPauseCentiKph, ulNowMs);
+        if ((BIKE_AUTO_PAUSE_ACTION_PAUSE == eAutoPauseAction) &&
+            BIKE_RECORDER_Pause())
+        {
+            LOG_I("auto paused at %u.%02u km/h source=%u",
+                  l_tBikeSnapshot.tRide.usSpeedCentiKph / 100U,
+                  l_tBikeSnapshot.tRide.usSpeedCentiKph % 100U,
+                  tSpeed.eSource);
+            BIKE_RIDE_Pause(&l_tBikeSnapshot.tRide);
+            l_tBikeSnapshot.bAutoPaused = true;
+        }
+        else if ((BIKE_AUTO_PAUSE_ACTION_RESUME == eAutoPauseAction) &&
+                 BIKE_RECORDER_Resume())
+        {
+            BIKE_RIDE_Start(&l_tBikeSnapshot.tRide, ulNowMs);
+            l_tBikeSnapshot.bAutoPaused = false;
+            LOG_I("auto resumed at %u.%02u km/h source=%u",
+                  tSpeed.usSpeedCentiKph / 100U,
+                  tSpeed.usSpeedCentiKph % 100U, tSpeed.eSource);
+        }
+    }
+    BikeService_Unlock();
+
+    return;
+}
+
 /* BikeService_CommitParserData: 将解析器数据提交到线程安全快照。
  * 参数：
  *   - eResult: 本次语句类型
@@ -165,12 +261,8 @@ static rt_err_t BikeService_UartRxIndicate(rt_device_t pDevice, rt_size_t ulSize
 static void BikeService_CommitParserData(BIKE_NMEA_RESULT eResult, uint32_t ulNowMs)
 {
     const BIKE_GNSS_DATA *pGnss;
-    BIKE_AUTO_PAUSE_ACTION eAutoPauseAction;
-    BIKE_SETTINGS_SNAPSHOT tSettings;
-    rt_err_t eSettingsResult;
 
     pGnss = BIKE_NMEA_GetData(&l_tBikeParser);
-    eSettingsResult = BIKE_SETTINGS_GetSnapshot(&tSettings);
     if ((NULL == pGnss) || (!BikeService_Lock()))
     {
         return;
@@ -183,33 +275,8 @@ static void BikeService_CommitParserData(BIKE_NMEA_RESULT eResult, uint32_t ulNo
     l_tBikeSnapshot.ulOverflowCount = l_tBikeParser.ulOverflowCount;
     if (BIKE_NMEA_RESULT_RMC == eResult)
     {
-        BIKE_RIDE_Update(&l_tBikeSnapshot.tRide, pGnss, ulNowMs);
-        if (RT_EOK == eSettingsResult)
-        {
-            eAutoPauseAction = BIKE_AUTO_PAUSE_Update(
-                &l_tBikeAutoPause, tSettings.bAutoPauseEnabled,
-                l_tBikeSnapshot.bAutoPaused, l_tBikeSnapshot.tRide.eMode,
-                pGnss->bFixValid, l_tBikeSnapshot.tRide.usSpeedCentiKph,
-                tSettings.usAutoPauseCentiKph, ulNowMs);
-            if ((BIKE_AUTO_PAUSE_ACTION_PAUSE == eAutoPauseAction) &&
-                BIKE_RECORDER_Pause())
-            {
-                LOG_I("auto paused at %u.%02u km/h",
-                      l_tBikeSnapshot.tRide.usSpeedCentiKph / 100U,
-                      l_tBikeSnapshot.tRide.usSpeedCentiKph % 100U);
-                BIKE_RIDE_Pause(&l_tBikeSnapshot.tRide);
-                l_tBikeSnapshot.bAutoPaused = true;
-            }
-            else if ((BIKE_AUTO_PAUSE_ACTION_RESUME == eAutoPauseAction) &&
-                     BIKE_RECORDER_Resume())
-            {
-                BIKE_RIDE_Start(&l_tBikeSnapshot.tRide, ulNowMs);
-                l_tBikeSnapshot.bAutoPaused = false;
-                LOG_I("auto resumed at %u.%02u km/h",
-                      l_tBikeSnapshot.tRide.usSpeedCentiKph / 100U,
-                      l_tBikeSnapshot.tRide.usSpeedCentiKph % 100U);
-            }
-        }
+        l_ulBikeLastRmcUpdateMs = ulNowMs;
+        l_bBikeHasRmcUpdate = true;
     }
     else
     {
@@ -221,6 +288,7 @@ static void BikeService_CommitParserData(BIKE_NMEA_RESULT eResult, uint32_t ulNo
     BikeService_Unlock();
     if (BIKE_NMEA_RESULT_RMC == eResult)
     {
+        BikeService_UpdateRide(ulNowMs, true);
         (void)BikeService_SyncRtc(pGnss);
         (void)BIKE_RECORDER_SubmitPoint(pGnss);
     }
@@ -249,6 +317,7 @@ static void BikeService_CheckStale(uint32_t ulNowMs)
     }
 
     BikeService_Unlock();
+    BikeService_UpdateRide(ulNowMs, false);
 
     return;
 }
@@ -314,6 +383,10 @@ static int BikeService_Init(void)
     rt_err_t eResult;
 
     (void)memset(&l_tBikeSnapshot, 0, sizeof(l_tBikeSnapshot));
+    l_ulBikeLastRmcUpdateMs = 0U;
+    l_ulBikeLastRideUpdateMs = 0U;
+    l_bBikeHasRmcUpdate = false;
+    l_bBikeHasRideUpdate = false;
     BIKE_AUTO_PAUSE_Init(&l_tBikeAutoPause);
     eResult = BIKE_SETTINGS_Init();
     if (RT_EOK != eResult)

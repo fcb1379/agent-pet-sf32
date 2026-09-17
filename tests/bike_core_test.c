@@ -13,6 +13,7 @@
 #include "bike_csc.h"
 #include "bike_nmea.h"
 #include "bike_ride_model.h"
+#include "bike_speed_source.h"
 #include "bike_time.h"
 
 #define TEST_GPX_DIRECTORY "/tmp/sf32_bike_gpx_test"
@@ -170,6 +171,93 @@ static void Test_RideModel(void)
     tGnss.lLongitudeE7 = 2000000;
     BIKE_RIDE_Update(&tState, &tGnss, 6000U);
     assert(ulDistanceBeforePause == tState.ulDistanceMm);
+
+    return;
+}
+
+/* Test_SpeedSource: 覆盖 CSC 优先、GNSS 回退、来源切换和 CSC 里程。
+ * 返回值：无
+ */
+static void Test_SpeedSource(void)
+{
+    BIKE_SPEED_INPUT tInput;
+    BIKE_SPEED_SELECTION tSelection;
+    BIKE_RIDE_STATE tState;
+    BIKE_GNSS_DATA tGnss;
+
+    (void)memset(&tInput, 0, sizeof(tInput));
+    tInput.bGnssValid = true;
+    tInput.ulGnssSpeedCmPerSec = 500U;
+    BIKE_SPEED_Select(&tInput, &tSelection);
+    assert(tSelection.bValid);
+    assert(BIKE_SPEED_SOURCE_GNSS == tSelection.eSource);
+    assert(1800U == tSelection.usSpeedCentiKph);
+
+    tInput.bCscValid = true;
+    tInput.usCscSpeedCentiKph = 3600U;
+    BIKE_SPEED_Select(&tInput, &tSelection);
+    assert(tSelection.bValid);
+    assert(BIKE_SPEED_SOURCE_CSC == tSelection.eSource);
+    assert(3600U == tSelection.usSpeedCentiKph);
+
+    (void)memset(&tGnss, 0, sizeof(tGnss));
+    tGnss.bFixValid = true;
+    BIKE_RIDE_Init(&tState, 70U);
+    BIKE_RIDE_Start(&tState, 0U);
+    BIKE_RIDE_UpdateWithSpeed(&tState, &tGnss, &tSelection, 1000U);
+    assert(BIKE_SPEED_SOURCE_CSC == tState.eSpeedSource);
+    assert(10000U == tState.ulDistanceMm);
+    assert(1000U == tState.ulMovingTimeMs);
+
+    tInput.bCscValid = false;
+    BIKE_SPEED_Select(&tInput, &tSelection);
+    BIKE_RIDE_UpdateWithSpeed(&tState, &tGnss, &tSelection, 2000U);
+    assert(BIKE_SPEED_SOURCE_GNSS == tState.eSpeedSource);
+    assert(10000U == tState.ulDistanceMm);
+    tGnss.lLongitudeE7 = 898;
+    BIKE_RIDE_UpdateWithSpeed(&tState, &tGnss, &tSelection, 3000U);
+    assert((19000U <= tState.ulDistanceMm) &&
+           (21000U >= tState.ulDistanceMm));
+
+    BIKE_RIDE_InvalidateFix(&tState);
+    assert(BIKE_SPEED_SOURCE_NONE == tState.eSpeedSource);
+    assert(0U == tState.usSpeedCentiKph);
+
+    tInput.bGnssValid = false;
+    tInput.bCscValid = true;
+    tInput.usCscSpeedCentiKph = 3600U;
+    BIKE_SPEED_Select(&tInput, &tSelection);
+    tGnss.bFixValid = false;
+    BIKE_RIDE_UpdateWithSpeed(&tState, &tGnss, &tSelection, 4000U);
+    BIKE_RIDE_InvalidateFix(&tState);
+    assert(BIKE_SPEED_SOURCE_CSC == tState.eSpeedSource);
+    assert(3600U == tState.usSpeedCentiKph);
+
+    tInput.bGnssValid = true;
+    tInput.ulGnssSpeedCmPerSec = 500U;
+    tInput.usCscSpeedCentiKph = 20001U;
+    BIKE_SPEED_Select(&tInput, &tSelection);
+    assert(tSelection.bValid);
+    assert(BIKE_SPEED_SOURCE_GNSS == tSelection.eSource);
+    assert(1800U == tSelection.usSpeedCentiKph);
+    tInput.bGnssValid = false;
+    BIKE_SPEED_Select(&tInput, &tSelection);
+    assert(!tSelection.bValid);
+    assert(BIKE_SPEED_SOURCE_NONE == tSelection.eSource);
+
+    BIKE_RIDE_Init(&tState, 70U);
+    BIKE_RIDE_Start(&tState, UINT32_MAX - 499U);
+    tInput.bCscValid = true;
+    tInput.usCscSpeedCentiKph = 3600U;
+    BIKE_SPEED_Select(&tInput, &tSelection);
+    BIKE_RIDE_UpdateWithSpeed(&tState, NULL, &tSelection, 500U);
+    assert(10000U == tState.ulDistanceMm);
+    assert(1000U == tState.ulMovingTimeMs);
+
+    BIKE_SPEED_Select(NULL, &tSelection);
+    assert(!tSelection.bValid);
+    assert(BIKE_SPEED_SOURCE_NONE == tSelection.eSource);
+    BIKE_SPEED_Select(&tInput, NULL);
 
     return;
 }
@@ -448,6 +536,7 @@ int main(void)
 {
     Test_NmeaParser();
     Test_RideModel();
+    Test_SpeedSource();
     Test_AutoPause();
     Test_BleAdvertising();
     Test_CscCalculation();

@@ -33,6 +33,8 @@
 - 已配对传感器地址使用独立 `share_prefs` 命名空间和版本/校验和保存；断连后按 15 秒退避重连。`bikesensor clear` 仅清除传感器连接和记录，不影响手机绑定记录。
 - 手机外设链路和骑行传感器主机链路按 GAP role/conn_idx 隔离，传感器连接不会覆盖手机连接状态。
 - 骑行总结页已接入心率、踏频和 CSC 轮速显示，区分未连接、已连接待首帧和有效数据三种状态。
+- 统一速度源采用 CSC 优先、GNSS 回退策略；CSC 有效时参与当前/平均/最大速度、移动时间、里程、卡路里和自动暂停，5 秒数据超时后自动回退到 3 秒有效期内的 GNSS 地速。
+- CSC 里程按定点轮速和单调时间积分，速度来源切换时断开 GNSS 坐标段，避免从旧定位点重复累计；主页面速度单位旁显示 `CSC`、`GPS` 或 `--`。
 
 ## 2. 主机测试
 
@@ -55,6 +57,7 @@ bike_core_test: PASS
 - 自动暂停覆盖低速防抖、恢复回差、定位失效、计时回绕和手动暂停隔离。
 - CSC 覆盖首帧基线、轮速/踏频计算以及 16/32 位累计值自然回绕。
 - BLE 广播解析覆盖完整/短 UUID 列表、Service Data、HR/CSC 组合广播和畸形长度拒绝。
+- 速度源仲裁覆盖 CSC 优先、GNSS 回退、非法 CSC 拒绝、来源切换、CSC 定点里程积分以及 GNSS 失效时保留有效 CSC。
 
 ## 3. SF32 整机编译
 
@@ -69,7 +72,7 @@ scons: done building targets.
 
 | 产物 | 大小 |
 |---|---:|
-| `main.bin` | 3,400,276 bytes |
+| `main.bin` | 3,400,852 bytes |
 | `fs_root.bin` | 4,194,304 bytes |
 
 编译仍输出 SDK/原模板已有的 FlashDB、LVGL、蓝牙音频和汇编兼容性警告；新增 `bike_*` 模块在 `-Werror` 主机测试中无告警，且目标编译成功。
@@ -80,7 +83,7 @@ HCPU ELF 链接结果：
 
 | 区域 | 当前占用 | 链接容量 | 余量 |
 |---|---:|---:|---:|
-| 片上 SRAM 地址范围 | 342,512 bytes | 523,264 bytes | 180,752 bytes |
+| 片上 SRAM 地址范围 | 342,524 bytes | 523,264 bytes | 180,740 bytes |
 | PSRAM 可写段 | 2,649,032 bytes | 8,388,608 bytes | 5,739,576 bytes |
 
 码表新增对象文件在链接前的直接占用：
@@ -89,7 +92,8 @@ HCPU ELF 链接结果：
 |---|---:|---:|
 | `bike_nmea.o` | 1,488 bytes | 0 bytes |
 | `bike_time.o` | 320 bytes | 0 bytes |
-| `bike_ride_model.o` | 800 bytes | 0 bytes |
+| `bike_speed_source.o` | 68 bytes | 0 bytes |
+| `bike_ride_model.o` | 940 bytes | 0 bytes |
 | `bike_auto_pause.o` | 174 bytes | 0 bytes |
 | `bike_ble_advertising.o` | 166 bytes | 0 bytes |
 | `bike_csc.o` | 216 bytes | 0 bytes |
@@ -97,9 +101,9 @@ HCPU ELF 链接结果：
 | `bike_recorder.o` | 1,301 bytes | 3,865 bytes |
 | `bike_settings.o` | 1,770 bytes | 53 bytes |
 | `bike_sensor_ble.o` | 4,504 bytes | 2,525 bytes |
-| `bike_service.o` | 2,022 bytes | 3,734 bytes |
-| `app_bike.o` | 4,037 bytes | 48 bytes |
-| 合计 | 19,508 bytes | 10,225 bytes |
+| `bike_service.o` | 2,306 bytes | 3,756 bytes |
+| `app_bike.o` | 4,157 bytes | 52 bytes |
+| 合计 | 20,120 bytes | 10,251 bytes |
 
 `bike_service.o` 和 `bike_recorder.o` 分别包含 3,072 bytes 静态线程栈，`bike_sensor_ble.o` 包含 2,048 bytes 静态线程栈以及固定消息队列和连接状态。对象文件合计只用于描述新增模块的直接体积，不等同于最终镜像增量；最终镜像还受链接消除、库引用和资源打包影响。
 
@@ -118,5 +122,5 @@ HCPU ELF 链接结果：
 - BLE 广播解析、扫描、连接、配对、地址保存、断线重连、通知解析和显示已经通过主机测试或目标构建验证，但尚未接真实传感器验证射频、配对交互、长时间重连、功耗和手机/传感器多连接稳定性。
 - SDK 自带 HRPC/CSCPC 各使用单个全局 client 环境，连接多只独立传感器时会以最后一条主机链路覆盖内部 `conn_idx`。组合式 HR+CSC 单链路可直接使用；“独立心率计 + 独立 CSC”尚不能声明可靠，需改为项目内逐连接 GATT client，或经两只真实设备验证 SDK 行为后修正。
 - BLE 电池服务尚未接入；当前只能显示 HR/CSC 测量值和连接状态。
-- CSC 轮速已计算并显示，但骑行里程/自动暂停仍以 GNSS 速度为输入，尚未完成 CSC 优先、GNSS 回退和数据超时仲裁。
+- CSC/GNSS 速度仲裁已经通过主机测试与目标构建验证，但 CSC 轮速积分与 GNSS 坐标里程之间的道路误差、传感器停转通知行为和来源切换手感仍需实车验证。
 - X-TRACK 的离线地图、FIT、TF 卡和导航等后续功能尚未移植。

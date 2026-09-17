@@ -6,8 +6,7 @@
 
 #define BIKE_RIDE_EARTH_RADIUS_M (6371000.0)
 #define BIKE_RIDE_DEGREE_TO_RADIAN (0.017453292519943295)
-#define BIKE_RIDE_MIN_MOVING_SPEED_CM_S (80U)
-#define BIKE_RIDE_MAX_VALID_SPEED_CM_S (6000U)
+#define BIKE_RIDE_MIN_MOVING_SPEED_CENTI_KPH (288U)
 #define BIKE_RIDE_MAX_SAMPLE_INTERVAL_MS (5000U)
 #define BIKE_RIDE_MAX_SEGMENT_MM (100000U)
 
@@ -165,6 +164,7 @@ void BIKE_RIDE_Pause(BIKE_RIDE_STATE *pState)
     if ((NULL != pState) && (BIKE_RIDE_MODE_RUNNING == pState->eMode))
     {
         pState->eMode = BIKE_RIDE_MODE_PAUSED;
+        pState->eSpeedSource = BIKE_SPEED_SOURCE_NONE;
         pState->bHasPreviousPoint = false;
         pState->usSpeedCentiKph = 0U;
     }
@@ -182,6 +182,7 @@ void BIKE_RIDE_Stop(BIKE_RIDE_STATE *pState)
     if (NULL != pState)
     {
         pState->eMode = BIKE_RIDE_MODE_STOPPED;
+        pState->eSpeedSource = BIKE_SPEED_SOURCE_NONE;
         pState->bHasPreviousPoint = false;
         pState->usSpeedCentiKph = 0U;
     }
@@ -189,43 +190,78 @@ void BIKE_RIDE_Stop(BIKE_RIDE_STATE *pState)
     return;
 }
 
-/* BIKE_RIDE_Update: 用一帧 RMC/GGA 合并快照更新骑行统计。
+/* BikeRide_AddDistanceMm: 饱和累加里程。
  * 参数：
  *   - pState: 骑行状态
- *   - pGnss: GNSS 快照，仅输入
+ *   - ulDistanceMm: 本次增量，单位毫米
+ * 返回值：无
+ */
+static void BikeRide_AddDistanceMm(BIKE_RIDE_STATE *pState,
+                                   uint32_t ulDistanceMm)
+{
+    if (NULL == pState)
+    {
+        return;
+    }
+
+    if (UINT32_MAX - pState->ulDistanceMm < ulDistanceMm)
+    {
+        pState->ulDistanceMm = UINT32_MAX;
+    }
+    else
+    {
+        pState->ulDistanceMm += ulDistanceMm;
+    }
+
+    return;
+}
+
+/* BIKE_RIDE_UpdateWithSpeed: 用仲裁后的速度和可选 GNSS 快照更新骑行统计。
+ * 参数：
+ *   - pState: 骑行状态
+ *   - pGnss: 最新 GNSS 快照，可为 NULL
+ *   - pSpeed: 统一速度样本，仅输入
  *   - ulNowMs: 当前单调时钟毫秒数
  * 返回值：无
  */
-void BIKE_RIDE_Update(BIKE_RIDE_STATE *pState, const BIKE_GNSS_DATA *pGnss, uint32_t ulNowMs)
+void BIKE_RIDE_UpdateWithSpeed(BIKE_RIDE_STATE *pState,
+                               const BIKE_GNSS_DATA *pGnss,
+                               const BIKE_SPEED_SELECTION *pSpeed,
+                               uint32_t ulNowMs)
 {
+    uint64_t udDistanceMm;
     uint32_t ulDeltaMs;
     uint32_t ulSegmentMm;
-    uint32_t ulSpeedCentiKph;
+    bool bGnssPositionValid;
 
-    if ((NULL == pState) || (NULL == pGnss))
+    if ((NULL == pState) || (NULL == pSpeed))
     {
         return;
     }
 
-    pState->bFixValid = pGnss->bFixValid;
-    pState->ucSatellites = pGnss->ucSatellites;
-    pState->lAltitudeCm = pGnss->lAltitudeCm;
-    pState->usCourseDeg10 = pGnss->usCourseDeg10;
-
-    if ((!pGnss->bFixValid) || (BIKE_RIDE_MAX_VALID_SPEED_CM_S < pGnss->ulSpeedCmPerSec))
+    bGnssPositionValid = (NULL != pGnss) && pGnss->bFixValid;
+    if (NULL != pGnss)
     {
+        pState->bFixValid = pGnss->bFixValid;
+        pState->ucSatellites = pGnss->ucSatellites;
+        pState->lAltitudeCm = pGnss->lAltitudeCm;
+        pState->usCourseDeg10 = pGnss->usCourseDeg10;
+    }
+
+    if ((!pSpeed->bValid) || (BIKE_SPEED_SOURCE_NONE == pSpeed->eSource))
+    {
+        pState->eSpeedSource = BIKE_SPEED_SOURCE_NONE;
         pState->usSpeedCentiKph = 0U;
-        pState->bHasPreviousPoint = false;
-        pState->ulLastSampleMs = ulNowMs;
-        return;
     }
-
-    ulSpeedCentiKph = (pGnss->ulSpeedCmPerSec * 36U + 5U) / 10U;
-    if (UINT16_MAX < ulSpeedCentiKph)
+    else
     {
-        ulSpeedCentiKph = UINT16_MAX;
+        if (pState->eSpeedSource != pSpeed->eSource)
+        {
+            pState->bHasPreviousPoint = false;
+        }
+        pState->eSpeedSource = pSpeed->eSource;
+        pState->usSpeedCentiKph = pSpeed->usSpeedCentiKph;
     }
-    pState->usSpeedCentiKph = (uint16_t)ulSpeedCentiKph;
 
     ulDeltaMs = ulNowMs - pState->ulLastSampleMs;
     pState->ulLastSampleMs = ulNowMs;
@@ -250,7 +286,14 @@ void BIKE_RIDE_Update(BIKE_RIDE_STATE *pState, const BIKE_GNSS_DATA *pGnss, uint
         pState->ulElapsedTimeMs += ulDeltaMs;
     }
 
-    if (pGnss->ulSpeedCmPerSec >= BIKE_RIDE_MIN_MOVING_SPEED_CM_S)
+    if ((!pSpeed->bValid) ||
+        (BIKE_SPEED_SOURCE_NONE == pState->eSpeedSource))
+    {
+        pState->bHasPreviousPoint = false;
+        return;
+    }
+
+    if (BIKE_RIDE_MIN_MOVING_SPEED_CENTI_KPH <= pState->usSpeedCentiKph)
     {
         if (UINT32_MAX - pState->ulMovingTimeMs < ulDeltaMs)
         {
@@ -261,25 +304,70 @@ void BIKE_RIDE_Update(BIKE_RIDE_STATE *pState, const BIKE_GNSS_DATA *pGnss, uint
             pState->ulMovingTimeMs += ulDeltaMs;
         }
 
-        if (pState->bHasPreviousPoint)
+        if (BIKE_SPEED_SOURCE_CSC == pState->eSpeedSource)
+        {
+            udDistanceMm = (uint64_t)pState->usSpeedCentiKph *
+                           (uint64_t)ulDeltaMs + 180ULL;
+            udDistanceMm /= 360ULL;
+            if ((uint64_t)UINT32_MAX < udDistanceMm)
+            {
+                udDistanceMm = UINT32_MAX;
+            }
+            BikeRide_AddDistanceMm(pState, (uint32_t)udDistanceMm);
+        }
+        else if ((BIKE_SPEED_SOURCE_GNSS == pState->eSpeedSource) &&
+                 bGnssPositionValid && pState->bHasPreviousPoint)
         {
             ulSegmentMm = BIKE_RIDE_CalculateDistanceMm(pState->lPreviousLatitudeE7,
                                                        pState->lPreviousLongitudeE7,
                                                        pGnss->lLatitudeE7,
                                                        pGnss->lLongitudeE7);
-            if ((BIKE_RIDE_MAX_SEGMENT_MM >= ulSegmentMm) &&
-                    (UINT32_MAX - pState->ulDistanceMm >= ulSegmentMm))
+            if (BIKE_RIDE_MAX_SEGMENT_MM >= ulSegmentMm)
             {
-                pState->ulDistanceMm += ulSegmentMm;
+                BikeRide_AddDistanceMm(pState, ulSegmentMm);
             }
         }
 
         BikeRide_UpdateStatistics(pState, ulDeltaMs);
     }
 
-    pState->lPreviousLatitudeE7 = pGnss->lLatitudeE7;
-    pState->lPreviousLongitudeE7 = pGnss->lLongitudeE7;
-    pState->bHasPreviousPoint = true;
+    if ((BIKE_SPEED_SOURCE_GNSS == pState->eSpeedSource) &&
+        bGnssPositionValid)
+    {
+        pState->lPreviousLatitudeE7 = pGnss->lLatitudeE7;
+        pState->lPreviousLongitudeE7 = pGnss->lLongitudeE7;
+        pState->bHasPreviousPoint = true;
+    }
+    else
+    {
+        pState->bHasPreviousPoint = false;
+    }
+
+    return;
+}
+
+/* BIKE_RIDE_Update: 保留 GNSS 单源调用入口。
+ * 参数：
+ *   - pState: 骑行状态
+ *   - pGnss: GNSS 快照，仅输入
+ *   - ulNowMs: 当前单调时钟毫秒数
+ * 返回值：无
+ */
+void BIKE_RIDE_Update(BIKE_RIDE_STATE *pState, const BIKE_GNSS_DATA *pGnss,
+                      uint32_t ulNowMs)
+{
+    BIKE_SPEED_INPUT tInput;
+    BIKE_SPEED_SELECTION tSelection;
+
+    if ((NULL == pState) || (NULL == pGnss))
+    {
+        return;
+    }
+    (void)memset(&tInput, 0, sizeof(tInput));
+    tInput.bGnssValid = pGnss->bFixValid;
+    tInput.ulGnssSpeedCmPerSec = pGnss->ulSpeedCmPerSec;
+    BIKE_SPEED_Select(&tInput, &tSelection);
+    BIKE_RIDE_UpdateWithSpeed(pState, pGnss, &tSelection, ulNowMs);
 
     return;
 }
@@ -295,7 +383,11 @@ void BIKE_RIDE_InvalidateFix(BIKE_RIDE_STATE *pState)
     {
         pState->bFixValid = false;
         pState->bHasPreviousPoint = false;
-        pState->usSpeedCentiKph = 0U;
+        if (BIKE_SPEED_SOURCE_GNSS == pState->eSpeedSource)
+        {
+            pState->eSpeedSource = BIKE_SPEED_SOURCE_NONE;
+            pState->usSpeedCentiKph = 0U;
+        }
     }
 
     return;

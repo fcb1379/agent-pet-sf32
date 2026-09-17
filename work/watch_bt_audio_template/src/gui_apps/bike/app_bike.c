@@ -20,6 +20,7 @@ LV_IMG_DECLARE(img_workout);
  *   - pRoot: 页面根对象
  *   - pGpsLabel: GNSS 状态标签
  *   - pSpeedLabel: 当前速度标签
+ *   - pSpeedUnit: 当前速度单位和来源标签
  *   - pDistanceLabel: 本次里程标签
  *   - pAverageLabel: 平均速度标签
  *   - pTimeLabel: 移动时间标签
@@ -35,6 +36,7 @@ typedef struct _BIKE_UI_CONTEXT
     lv_obj_t *pRoot;
     lv_obj_t *pGpsLabel;
     lv_obj_t *pSpeedLabel;
+    lv_obj_t *pSpeedUnit;
     lv_obj_t *pDistanceLabel;
     lv_obj_t *pAverageLabel;
     lv_obj_t *pTimeLabel;
@@ -301,6 +303,7 @@ static void BikeUi_Update(void)
     const char *pGpsState;
     const char *pRecordState;
     const char *pRideState;
+    const char *pSpeedSource;
     const char *pFileName;
     const char *pStartText;
 
@@ -366,6 +369,22 @@ static void BikeUi_Update(void)
         break;
     }
 
+    switch (tSnapshot.tRide.eSpeedSource)
+    {
+    case BIKE_SPEED_SOURCE_CSC:
+        pSpeedSource = "CSC";
+        break;
+
+    case BIKE_SPEED_SOURCE_GNSS:
+        pSpeedSource = "GPS";
+        break;
+
+    case BIKE_SPEED_SOURCE_NONE:
+    default:
+        pSpeedSource = "--";
+        break;
+    }
+
     ulAgeMs = 0U;
     if (0U != tSnapshot.ulLastUpdateMs)
     {
@@ -380,7 +399,8 @@ static void BikeUi_Update(void)
 
     lv_label_set_text_fmt(l_tBikeUi.pSpeedLabel, "%u.%02u",
                           (unsigned int)(tSnapshot.tRide.usSpeedCentiKph / 100U),
-                          (unsigned int)(tSnapshot.tRide.usSpeedCentiKph % 100U));
+                           (unsigned int)(tSnapshot.tRide.usSpeedCentiKph % 100U));
+    lv_label_set_text_fmt(l_tBikeUi.pSpeedUnit, "km/h %s", pSpeedSource);
 
     ulDistanceCentiKm = tSnapshot.tRide.ulDistanceMm / 10000U;
     lv_label_set_text_fmt(l_tBikeUi.pDistanceLabel, "%lu.%02lu km",
@@ -659,7 +679,6 @@ static void BikeUi_OnStart(void)
     lv_obj_t *pDashboardPage;
     lv_obj_t *pLocationPage;
     lv_obj_t *pSummaryPage;
-    lv_obj_t *pSpeedUnit;
 
     (void)memset(&l_tBikeUi, 0, sizeof(l_tBikeUi));
     l_tBikeUi.pRoot = lv_tileview_create(lv_scr_act());
@@ -693,10 +712,13 @@ static void BikeUi_OnStart(void)
     lv_obj_set_style_text_font(l_tBikeUi.pSpeedLabel, &lv_font_montserrat_36, LV_PART_MAIN);
     lv_obj_align(l_tBikeUi.pSpeedLabel, LV_ALIGN_TOP_MID, -18, 54);
 
-    pSpeedUnit = lv_label_create(pDashboardPage);
-    lv_label_set_text(pSpeedUnit, "km/h");
-    lv_obj_set_style_text_color(pSpeedUnit, lv_color_hex(0x8FA3B8), LV_PART_MAIN);
-    lv_obj_align_to(pSpeedUnit, l_tBikeUi.pSpeedLabel, LV_ALIGN_OUT_RIGHT_BOTTOM, 8, -4);
+    l_tBikeUi.pSpeedUnit = lv_label_create(pDashboardPage);
+    RT_ASSERT(NULL != l_tBikeUi.pSpeedUnit);
+    lv_label_set_text(l_tBikeUi.pSpeedUnit, "km/h --");
+    lv_obj_set_style_text_color(l_tBikeUi.pSpeedUnit, lv_color_hex(0x8FA3B8),
+                                LV_PART_MAIN);
+    lv_obj_align_to(l_tBikeUi.pSpeedUnit, l_tBikeUi.pSpeedLabel,
+                    LV_ALIGN_OUT_RIGHT_BOTTOM, 8, -4);
 
     l_tBikeUi.pDistanceLabel = BikeUi_CreateMetric(pDashboardPage, "DISTANCE",
                                                    BIKE_UI_SIDE_MARGIN, 126, 171, 96);

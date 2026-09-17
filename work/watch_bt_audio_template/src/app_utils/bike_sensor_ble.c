@@ -1501,7 +1501,7 @@ bool BIKE_SENSOR_BLE_GetSnapshot(BIKE_SENSOR_BLE_SNAPSHOT *pSnapshot)
 {
     uint32_t ulNowMs;
 
-    if ((NULL == pSnapshot) || (!BikeSensorBle_Lock()))
+    if ((NULL == pSnapshot) || (!BikeSensorBle_LockForever()))
     {
         return false;
     }
