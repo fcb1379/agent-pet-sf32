@@ -124,6 +124,10 @@ static void BikeService_CommitParserData(BIKE_NMEA_RESULT eResult, uint32_t ulNo
     }
 
     BikeService_Unlock();
+    if (BIKE_NMEA_RESULT_RMC == eResult)
+    {
+        (void)BIKE_RECORDER_SubmitPoint(pGnss);
+    }
 
     return;
 }
@@ -217,6 +221,11 @@ static int BikeService_Init(void)
     BIKE_NMEA_Init(&l_tBikeParser);
     BIKE_RIDE_Init(&l_tBikeSnapshot.tRide, BIKE_RIDE_DEFAULT_WEIGHT_KG);
     l_tBikeSnapshot.ePortStatus = BIKE_GNSS_PORT_SEARCHING;
+
+    if (!BIKE_RECORDER_Init())
+    {
+        LOG_E("GPX recorder init failed");
+    }
 
     eResult = rt_mutex_init(&l_tBikeMutex, "bike", RT_IPC_FLAG_FIFO);
     if (RT_EOK != eResult)
@@ -313,6 +322,7 @@ bool BIKE_SERVICE_GetSnapshot(BIKE_SERVICE_SNAPSHOT *pSnapshot)
     {
         *pSnapshot = l_tBikeSnapshot;
         BikeService_Unlock();
+        (void)BIKE_RECORDER_GetSnapshot(&pSnapshot->tRecorder);
         bResult = true;
     }
 
@@ -325,13 +335,34 @@ bool BIKE_SERVICE_GetSnapshot(BIKE_SERVICE_SNAPSHOT *pSnapshot)
 bool BIKE_SERVICE_StartRide(void)
 {
     bool bResult;
+    BIKE_RIDE_MODE ePreviousMode;
 
     bResult = false;
     if (BikeService_Lock())
     {
-        BIKE_RIDE_Start(&l_tBikeSnapshot.tRide, (uint32_t)rt_tick_get_millisecond());
+        ePreviousMode = l_tBikeSnapshot.tRide.eMode;
         BikeService_Unlock();
-        bResult = true;
+        if (BIKE_RIDE_MODE_PAUSED == ePreviousMode)
+        {
+            bResult = BIKE_RECORDER_Resume();
+        }
+        else
+        {
+            bResult = BIKE_RECORDER_Start();
+        }
+        if (bResult)
+        {
+            if (BikeService_Lock())
+            {
+                BIKE_RIDE_Start(&l_tBikeSnapshot.tRide,
+                                (uint32_t)rt_tick_get_millisecond());
+                BikeService_Unlock();
+            }
+            else
+            {
+                bResult = false;
+            }
+        }
     }
 
     return bResult;
@@ -345,7 +376,7 @@ bool BIKE_SERVICE_PauseRide(void)
     bool bResult;
 
     bResult = false;
-    if (BikeService_Lock())
+    if (BIKE_RECORDER_Pause() && BikeService_Lock())
     {
         BIKE_RIDE_Pause(&l_tBikeSnapshot.tRide);
         BikeService_Unlock();
@@ -363,7 +394,7 @@ bool BIKE_SERVICE_StopRide(void)
     bool bResult;
 
     bResult = false;
-    if (BikeService_Lock())
+    if (BIKE_RECORDER_Stop() && BikeService_Lock())
     {
         BIKE_RIDE_Stop(&l_tBikeSnapshot.tRide);
         BikeService_Unlock();

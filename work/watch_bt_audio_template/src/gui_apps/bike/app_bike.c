@@ -150,6 +150,7 @@ static void BikeUi_Update(void)
     uint32_t ulAltitudeAbsoluteCm;
     const char *pAltitudeSign;
     const char *pGpsState;
+    const char *pRecordState;
     const char *pStartText;
 
     if (!BIKE_SERVICE_GetSnapshot(&tSnapshot))
@@ -170,15 +171,45 @@ static void BikeUi_Update(void)
         pGpsState = "SEARCHING";
     }
 
+    switch (tSnapshot.tRecorder.eStatus)
+    {
+    case BIKE_RECORDER_STATUS_WAITING_FIX:
+        pRecordState = "WAIT";
+        break;
+
+    case BIKE_RECORDER_STATUS_RECORDING:
+        pRecordState = "REC";
+        break;
+
+    case BIKE_RECORDER_STATUS_PAUSED:
+        pRecordState = "PAUSE";
+        break;
+
+    case BIKE_RECORDER_STATUS_SAVED:
+        pRecordState = "SAVED";
+        break;
+
+    case BIKE_RECORDER_STATUS_ERROR:
+        pRecordState = "REC ERR";
+        break;
+
+    case BIKE_RECORDER_STATUS_IDLE:
+    default:
+        pRecordState = "IDLE";
+        break;
+    }
+
     ulAgeMs = 0U;
     if (0U != tSnapshot.ulLastUpdateMs)
     {
         ulAgeMs = (uint32_t)rt_tick_get_millisecond() - tSnapshot.ulLastUpdateMs;
     }
-    lv_label_set_text_fmt(l_tBikeUi.pGpsLabel, "%s  SAT %u  AGE %lus",
+    lv_label_set_text_fmt(l_tBikeUi.pGpsLabel, "%s S%u A%lus | %s %lu",
                           pGpsState,
                           (unsigned int)tSnapshot.tGnss.ucSatellites,
-                          (unsigned long)(ulAgeMs / 1000U));
+                          (unsigned long)(ulAgeMs / 1000U),
+                          pRecordState,
+                          (unsigned long)tSnapshot.tRecorder.ulPointCount);
 
     lv_label_set_text_fmt(l_tBikeUi.pSpeedLabel, "%u.%02u",
                           (unsigned int)(tSnapshot.tRide.usSpeedCentiKph / 100U),

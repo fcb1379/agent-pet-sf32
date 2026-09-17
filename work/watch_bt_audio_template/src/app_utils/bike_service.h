@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #include "bike_nmea.h"
+#include "bike_recorder.h"
 #include "bike_ride_model.h"
 
 #ifdef __cplusplus
@@ -29,6 +30,7 @@ typedef enum _BIKE_GNSS_PORT_STATUS
  *   - ulOverflowCount: 超长语句数
  *   - tGnss: 最近定位数据
  *   - tRide: 本次骑行统计
+ *   - tRecorder: GPX 轨迹记录状态
  */
 typedef struct _BIKE_SERVICE_SNAPSHOT
 {
@@ -39,6 +41,7 @@ typedef struct _BIKE_SERVICE_SNAPSHOT
     uint32_t ulOverflowCount;
     BIKE_GNSS_DATA tGnss;
     BIKE_RIDE_STATE tRide;
+    BIKE_RECORDER_SNAPSHOT tRecorder;
 } BIKE_SERVICE_SNAPSHOT;
 
 bool BIKE_SERVICE_GetSnapshot(BIKE_SERVICE_SNAPSHOT *pSnapshot);
