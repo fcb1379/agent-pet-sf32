@@ -41,6 +41,7 @@
 #define BIKE_SETTINGS_KEY_MAP_WGS84 "map_wgs84"
 #define BIKE_SETTINGS_KEY_MAP_DIRECTORY "map_dir"
 #define BIKE_SETTINGS_KEY_MAP_EXTENSION "map_ext"
+#define BIKE_SETTINGS_KEY_SOUND_ENABLED "sound_en"
 
 /* l_aBikeSettingsPrefName: FlashDB 命名空间，数组固定 32 字节以规避 SDK
  * share_prefs_open 固定读取 31 字节时越过短字符串结尾。
@@ -187,6 +188,7 @@ rt_err_t BIKE_SETTINGS_Init(void)
     l_tBikeSettings.ucBrightnessPercent = BIKE_SETTINGS_DEFAULT_BRIGHTNESS_PERCENT;
     l_tBikeSettings.bAutoPauseEnabled = false;
     l_tBikeSettings.bMapUseWgs84 = BIKE_SETTINGS_DEFAULT_MAP_USE_WGS84;
+    l_tBikeSettings.bSoundEnabled = BIKE_SETTINGS_DEFAULT_SOUND_ENABLED;
     (void)memcpy(l_tBikeSettings.aMapDirectory,
                  BIKE_SETTINGS_DEFAULT_MAP_DIRECTORY,
                  sizeof(BIKE_SETTINGS_DEFAULT_MAP_DIRECTORY));
@@ -236,6 +238,9 @@ rt_err_t BIKE_SETTINGS_Init(void)
         l_tBikeSettings.bMapUseWgs84 = (0 != share_prefs_get_int(
             l_pBikeSettingsPrefs, BIKE_SETTINGS_KEY_MAP_WGS84,
             l_tBikeSettings.bMapUseWgs84 ? 1 : 0));
+        l_tBikeSettings.bSoundEnabled = (0 != share_prefs_get_int(
+            l_pBikeSettingsPrefs, BIKE_SETTINGS_KEY_SOUND_ENABLED,
+            l_tBikeSettings.bSoundEnabled ? 1 : 0));
         lMapDirectoryLength = share_prefs_get_string(
             l_pBikeSettingsPrefs, BIKE_SETTINGS_KEY_MAP_DIRECTORY,
             aStoredMapDirectory, sizeof(aStoredMapDirectory) - 1U);
@@ -272,7 +277,7 @@ rt_err_t BIKE_SETTINGS_Init(void)
 #endif
 
     l_bBikeSettingsReady = true;
-    LOG_I("ready storage=%u timezone=%d wheel=%u weight=%u auto=%u/%u display=%u/%u map=%u/%s/*.%s",
+    LOG_I("ready storage=%u timezone=%d wheel=%u weight=%u auto=%u/%u display=%u/%u sound=%u map=%u/%s/*.%s",
           l_tBikeSettings.bStorageReady, l_tBikeSettings.sTimeZoneMinutes,
           l_tBikeSettings.usWheelCircumferenceMm,
           l_tBikeSettings.ucRiderWeightKg,
@@ -280,6 +285,7 @@ rt_err_t BIKE_SETTINGS_Init(void)
           l_tBikeSettings.usAutoPauseCentiKph,
           l_tBikeSettings.ucBrightnessPercent,
           l_tBikeSettings.usScreenTimeoutSeconds,
+          l_tBikeSettings.bSoundEnabled,
           l_tBikeSettings.bMapUseWgs84,
           l_tBikeSettings.aMapDirectory,
           l_tBikeSettings.aMapExtension);
@@ -650,6 +656,35 @@ rt_err_t BIKE_SETTINGS_SetMapExtension(const char *pExtension)
     return eResult;
 }
 
+/* BIKE_SETTINGS_SetSoundEnabled: 更新并保存事件提示音开关。
+ * 参数：
+ *   - bEnabled: true 开启提示音，false 静音
+ * 返回值：保存成功返回 RT_EOK，存储错误返回错误码
+ */
+rt_err_t BIKE_SETTINGS_SetSoundEnabled(bool bEnabled)
+{
+    rt_err_t eResult;
+
+    eResult = BIKE_SETTINGS_Init();
+    if (RT_EOK != eResult)
+    {
+        return eResult;
+    }
+    eResult = rt_mutex_take(&l_tBikeSettingsMutex, RT_WAITING_FOREVER);
+    if (RT_EOK == eResult)
+    {
+        eResult = BikeSettings_SaveLocked(BIKE_SETTINGS_KEY_SOUND_ENABLED,
+                                          bEnabled ? 1 : 0);
+        if (RT_EOK == eResult)
+        {
+            l_tBikeSettings.bSoundEnabled = bEnabled;
+        }
+        BikeSettings_Unlock();
+    }
+
+    return eResult;
+}
+
 /* BikeSettings_Command: 查询或修改码表持久化设置。
  * 参数：
  *   - lArgumentCount: shell 参数数量
@@ -668,16 +703,17 @@ static void BikeSettings_Command(int lArgumentCount, char **pArguments)
         (void)memset(&tSnapshot, 0, sizeof(tSnapshot));
         eResult = BIKE_SETTINGS_GetSnapshot(&tSnapshot);
         rt_kprintf("bike settings ret=%d storage=%u timezone=%d wheel=%u weight=%u "
-                   "auto=%u threshold=%u brightness=%u screen=%u map_wgs84=%u "
+                   "auto=%u threshold=%u brightness=%u screen=%u sound=%u map_wgs84=%u "
                    "map_dir=%s map_ext=%s\n",
                    eResult, tSnapshot.bStorageReady, tSnapshot.sTimeZoneMinutes,
                    tSnapshot.usWheelCircumferenceMm,
                    tSnapshot.ucRiderWeightKg, tSnapshot.bAutoPauseEnabled,
                    tSnapshot.usAutoPauseCentiKph, tSnapshot.ucBrightnessPercent,
-                   tSnapshot.usScreenTimeoutSeconds, tSnapshot.bMapUseWgs84,
+                   tSnapshot.usScreenTimeoutSeconds, tSnapshot.bSoundEnabled,
+                   tSnapshot.bMapUseWgs84,
                    tSnapshot.aMapDirectory, tSnapshot.aMapExtension);
         rt_kprintf("usage: bikeset timezone <min> | wheel <mm> | weight <kg> | "
-                   "map <0|1> | mapdir </path> | mapext <ext> | "
+                   "sound <0|1> | map <0|1> | mapdir </path> | mapext <ext> | "
                    "autopause <0|1> <centi-kph> | "
                    "display <1-100> <sec>\n");
         return;
@@ -707,6 +743,11 @@ static void BikeSettings_Command(int lArgumentCount, char **pArguments)
                  ((0 == lFirstValue) || (1 == lFirstValue)))
         {
             eResult = BIKE_SETTINGS_SetMapUseWgs84(1 == lFirstValue);
+        }
+        else if ((0 == strcmp(pArguments[1], "sound")) &&
+                 ((0 == lFirstValue) || (1 == lFirstValue)))
+        {
+            eResult = BIKE_SETTINGS_SetSoundEnabled(1 == lFirstValue);
         }
     }
     else if ((3 == lArgumentCount) &&

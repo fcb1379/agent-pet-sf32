@@ -6,6 +6,7 @@
 #include "bike_map_image.h"
 #include "bike_service.h"
 #include "bike_settings.h"
+#include "bike_sound.h"
 #include "bike_storage.h"
 #include "gui_app_fwk.h"
 #include "littlevgl2rtt.h"
@@ -1652,6 +1653,7 @@ static void BikeUi_OnStart(void)
     l_tBikeUi.pTimer = lv_timer_create(BikeUi_TimerCallback, BIKE_UI_REFRESH_PERIOD_MS, NULL);
     RT_ASSERT(NULL != l_tBikeUi.pTimer);
     BikeUi_Update();
+    (void)BIKE_SOUND_Request(BIKE_SOUND_EVENT_STARTUP);
 
     return;
 }

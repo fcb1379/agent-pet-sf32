@@ -120,6 +120,7 @@ bool BIKE_POWER_UpdateFilter(BIKE_POWER_FILTER *pFilter,
 #include <rtthread.h>
 
 #include "charge.h"
+#include "bike_sound.h"
 
 #define DBG_TAG "bike.power"
 #define DBG_LVL DBG_INFO
@@ -174,6 +175,14 @@ static rt_device_t l_pBikePowerCharge;
  * false 表示互斥锁不可用，true 表示快照接口允许尝试加锁。
  */
 static bool l_bBikePowerInitialized;
+
+/* l_bBikePowerHasChargeSample: 充电状态线程已获得首个有效样本。 */
+static bool l_bBikePowerHasChargeSample;
+
+/* l_bBikePowerPreviousExternalPower: 上次有效外部供电状态，
+ * 仅由电池采样线程读写，用于边沿提示音。
+ */
+static bool l_bBikePowerPreviousExternalPower;
 
 /* BikePower_Lock: 获取电池状态快照互斥锁。
  * 返回值：成功返回 true，否则返回 false
@@ -313,6 +322,34 @@ static bool BikePower_ReadChargeState(bool *pExternalPower, bool *pFull)
     return true;
 }
 
+/* BikePower_UpdateChargeSound: 按外部供电边沿提交充电提示音。
+ * 参数：
+ *   - bExternalPower: 当前外部供电状态
+ * 返回值：无
+ */
+static void BikePower_UpdateChargeSound(bool bExternalPower)
+{
+    BIKE_SOUND_EVENT eEvent;
+
+    if ((!l_bBikePowerHasChargeSample) ||
+        (l_bBikePowerPreviousExternalPower != bExternalPower))
+    {
+        l_bBikePowerHasChargeSample = true;
+        if (l_bBikePowerPreviousExternalPower != bExternalPower)
+        {
+            eEvent = bExternalPower ? BIKE_SOUND_EVENT_CHARGE_START :
+                                      BIKE_SOUND_EVENT_CHARGE_END;
+            if (!BIKE_SOUND_Request(eEvent))
+            {
+                LOG_W("charge sound request failed event=%u", eEvent);
+            }
+        }
+        l_bBikePowerPreviousExternalPower = bExternalPower;
+    }
+
+    return;
+}
+
 /* BikePower_PublishSample: 滤波有效电压并发布电池、外部供电快照。
  * 参数：
  *   - ulVoltageDeciMv: 当前有效 ADC 样本，单位 0.1 mV
@@ -354,6 +391,10 @@ static bool BikePower_PublishSample(uint32_t ulVoltageDeciMv)
                 &l_tBikePowerSnapshot.ulChargeErrorCount);
         }
         BikePower_Unlock();
+    }
+    if (bChargeStatusValid)
+    {
+        BikePower_UpdateChargeSound(bExternalPower);
     }
 
     return true;
@@ -425,6 +466,8 @@ bool BIKE_POWER_Init(void)
     }
     (void)memset(&l_tBikePowerSnapshot, 0,
                  sizeof(l_tBikePowerSnapshot));
+    l_bBikePowerHasChargeSample = false;
+    l_bBikePowerPreviousExternalPower = false;
     BIKE_POWER_ResetFilter(&l_tBikePowerFilter);
     eResult = rt_mutex_init(&l_tBikePowerMutex, "bike_pwr",
                             RT_IPC_FLAG_FIFO);

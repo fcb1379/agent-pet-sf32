@@ -13,6 +13,7 @@
 #include "bike_history.h"
 #include "bike_pedometer.h"
 #include "bike_settings.h"
+#include "bike_sound.h"
 #include "bike_storage.h"
 #include "bike_time.h"
 
@@ -33,6 +34,14 @@
 #define BIKE_DEMO_MAX_SEQUENCE ((28U * BIKE_DEMO_DAY_SECONDS) - 1U)
 #define BIKE_DEMO_LATITUDE_E7 (225430960)
 #define BIKE_DEMO_LONGITUDE_E7 (1140578650)
+
+/* BIKE_GNSS_SOUND_STATUS: 用于 GNSS 状态边沿提示的稳定状态。 */
+typedef enum _BIKE_GNSS_SOUND_STATUS
+{
+    BIKE_GNSS_SOUND_DISCONNECTED = 0,
+    BIKE_GNSS_SOUND_UNSTABLE,
+    BIKE_GNSS_SOUND_CONNECTED
+} BIKE_GNSS_SOUND_STATUS;
 
 /* l_tBikeSnapshot: 码表服务共享快照，只能在 l_tBikeMutex 保护下访问。 */
 static BIKE_SERVICE_SNAPSHOT l_tBikeSnapshot;
@@ -87,6 +96,9 @@ static uint32_t l_ulBikeLastHistoryCheckpointMs;
 /* l_bBikeHasRideUpdate: 已执行至少一次速度融合更新。 */
 static bool l_bBikeHasRideUpdate;
 
+/* l_eBikeGnssSoundStatus: GNSS 线程上次已提示的连接状态。 */
+static BIKE_GNSS_SOUND_STATUS l_eBikeGnssSoundStatus;
+
 /* l_ulBikeDemoSequence: 模拟定位秒序号，饱和在 28 天内以保持 UTC 单调。 */
 static uint32_t l_ulBikeDemoSequence;
 
@@ -96,6 +108,53 @@ static uint32_t l_ulBikeLastDemoUpdateMs;
 static bool BikeService_Lock(void);
 static void BikeService_Unlock(void);
 static void BikeService_UpdateRide(uint32_t ulNowMs, bool bForce);
+
+/* BikeService_UpdateGnssSound: 按卫星和定位状态边沿提交提示音。
+ * 参数：
+ *   - pGnss: 当前 GNSS 数据，NULL 表示数据超时
+ * 返回值：无
+ */
+static void BikeService_UpdateGnssSound(const BIKE_GNSS_DATA *pGnss)
+{
+    BIKE_GNSS_SOUND_STATUS eStatus;
+    BIKE_SOUND_EVENT eEvent;
+
+    if ((NULL == pGnss) || (0U == pGnss->ucSatellites))
+    {
+        eStatus = BIKE_GNSS_SOUND_DISCONNECTED;
+    }
+    else if (pGnss->bFixValid && (7U < pGnss->ucSatellites))
+    {
+        eStatus = BIKE_GNSS_SOUND_CONNECTED;
+    }
+    else
+    {
+        eStatus = BIKE_GNSS_SOUND_UNSTABLE;
+    }
+    if (l_eBikeGnssSoundStatus == eStatus)
+    {
+        return;
+    }
+    if (BIKE_GNSS_SOUND_CONNECTED == eStatus)
+    {
+        eEvent = BIKE_SOUND_EVENT_CONNECT;
+    }
+    else if (BIKE_GNSS_SOUND_UNSTABLE == eStatus)
+    {
+        eEvent = BIKE_SOUND_EVENT_UNSTABLE;
+    }
+    else
+    {
+        eEvent = BIKE_SOUND_EVENT_DISCONNECT;
+    }
+    l_eBikeGnssSoundStatus = eStatus;
+    if (!BIKE_SOUND_Request(eEvent))
+    {
+        LOG_W("GNSS sound request failed status=%u", eStatus);
+    }
+
+    return;
+}
 
 /* BikeService_SyncRtc: 首次有效 RMC 后按配置时区校准片上 RTC。
  * 参数：
@@ -441,6 +500,7 @@ static void BikeService_CommitParserData(BIKE_NMEA_RESULT eResult, uint32_t ulNo
     }
 
     BikeService_Unlock();
+    BikeService_UpdateGnssSound(pGnss);
     if ((BIKE_NMEA_RESULT_RMC == eResult) ||
         (BIKE_NMEA_RESULT_VTG == eResult))
     {
@@ -462,6 +522,9 @@ static void BikeService_CommitParserData(BIKE_NMEA_RESULT eResult, uint32_t ulNo
  */
 static void BikeService_CheckStale(uint32_t ulNowMs)
 {
+    bool bBecameStale;
+
+    bBecameStale = false;
     if (!BikeService_Lock())
     {
         return;
@@ -473,9 +536,14 @@ static void BikeService_CheckStale(uint32_t ulNowMs)
         l_tBikeSnapshot.tGnss.bFixValid = false;
         l_tBikeSnapshot.tGnss.ulSpeedCmPerSec = 0U;
         BIKE_RIDE_InvalidateFix(&l_tBikeSnapshot.tRide);
+        bBecameStale = true;
     }
 
     BikeService_Unlock();
+    if (bBecameStale)
+    {
+        BikeService_UpdateGnssSound(NULL);
+    }
     BikeService_UpdateRide(ulNowMs, false);
 
     return;
@@ -572,6 +640,7 @@ static int BikeService_Init(void)
     l_bBikeHasRmcUpdate = false;
     l_bBikeHasRideUpdate = false;
     l_bBikeThreadReady = false;
+    l_eBikeGnssSoundStatus = BIKE_GNSS_SOUND_DISCONNECTED;
     BIKE_AUTO_PAUSE_Init(&l_tBikeAutoPause);
     eResult = BIKE_SETTINGS_Init();
     if (RT_EOK != eResult)
@@ -790,6 +859,12 @@ bool BIKE_SERVICE_StartRide(void)
         }
     }
 
+    if (!BIKE_SOUND_Request(bResult ? BIKE_SOUND_EVENT_CONNECT :
+                                      BIKE_SOUND_EVENT_ERROR))
+    {
+        LOG_W("start sound request failed result=%u", bResult);
+    }
+
     return bResult;
 }
 
@@ -816,6 +891,12 @@ bool BIKE_SERVICE_PauseRide(void)
             LOG_E("history pause checkpoint queue full");
         }
         bResult = true;
+    }
+
+    if (!BIKE_SOUND_Request(bResult ? BIKE_SOUND_EVENT_UNSTABLE :
+                                      BIKE_SOUND_EVENT_ERROR))
+    {
+        LOG_W("pause sound request failed result=%u", bResult);
     }
 
     return bResult;
@@ -846,6 +927,12 @@ bool BIKE_SERVICE_StopRide(void)
         bResult = true;
     }
 
+    if (!BIKE_SOUND_Request(bResult ? BIKE_SOUND_EVENT_DISCONNECT :
+                                      BIKE_SOUND_EVENT_ERROR))
+    {
+        LOG_W("stop sound request failed result=%u", bResult);
+    }
+
     return bResult;
 }
 
@@ -870,6 +957,12 @@ bool BIKE_SERVICE_DiscardRide(void)
             LOG_E("history discard queue full");
         }
         bResult = true;
+    }
+
+    if (!BIKE_SOUND_Request(bResult ? BIKE_SOUND_EVENT_DISCONNECT :
+                                      BIKE_SOUND_EVENT_ERROR))
+    {
+        LOG_W("discard sound request failed result=%u", bResult);
     }
 
     return bResult;

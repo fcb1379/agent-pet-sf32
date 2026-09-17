@@ -20,6 +20,7 @@
 #include "bike_pedometer.h"
 #include "bike_power.h"
 #include "bike_ride_model.h"
+#include "bike_sound.h"
 #include "bike_speed_source.h"
 #include "bike_storage.h"
 #include "bike_time.h"
@@ -33,6 +34,58 @@
  * 仅用于构造测试文件并接收加载结果，避免测试中使用动态内存。
  */
 static uint8_t l_aMapImageTestBuffer[BIKE_MAP_IMAGE_DATA_SIZE];
+
+/* Test_SoundPatterns: 覆盖 X-TRACK 提示音名称、序列、静音节点和非法参数。
+ * 返回值：无
+ */
+static void Test_SoundPatterns(void)
+{
+    const BIKE_SOUND_NODE *pPattern;
+    uint8_t ucNodeCount;
+    uint8_t ucEvent;
+    uint16_t usDurationMs;
+
+    assert(NULL == BIKE_SOUND_GetPattern(BIKE_SOUND_EVENT_STARTUP, NULL));
+    assert(NULL == BIKE_SOUND_GetPattern(BIKE_SOUND_EVENT_COUNT,
+                                         &ucNodeCount));
+    assert(0U == ucNodeCount);
+    assert(NULL == BIKE_SOUND_GetEventName(BIKE_SOUND_EVENT_COUNT));
+    assert(!BIKE_SOUND_Request(BIKE_SOUND_EVENT_STARTUP));
+
+    for (ucEvent = 0U; ucEvent < (uint8_t)BIKE_SOUND_EVENT_COUNT; ucEvent++)
+    {
+        pPattern = BIKE_SOUND_GetPattern((BIKE_SOUND_EVENT)ucEvent,
+                                         &ucNodeCount);
+        assert(NULL != pPattern);
+        assert(0U < ucNodeCount);
+        assert(NULL != BIKE_SOUND_GetEventName((BIKE_SOUND_EVENT)ucEvent));
+        usDurationMs = 0U;
+        for (uint8_t ucNode = 0U; ucNode < ucNodeCount; ucNode++)
+        {
+            assert(0U < pPattern[ucNode].usDurationMs);
+            usDurationMs += pPattern[ucNode].usDurationMs;
+        }
+        assert(160U <= usDurationMs);
+        assert(280U >= usDurationMs);
+    }
+
+    pPattern = BIKE_SOUND_GetPattern(BIKE_SOUND_EVENT_STARTUP, &ucNodeCount);
+    assert(3U == ucNodeCount);
+    assert(523U == pPattern[0].usFrequencyHz);
+    assert(880U == pPattern[1].usFrequencyHz);
+    assert(659U == pPattern[2].usFrequencyHz);
+    pPattern = BIKE_SOUND_GetPattern(BIKE_SOUND_EVENT_ERROR, &ucNodeCount);
+    assert(0U == pPattern[1].usFrequencyHz);
+    pPattern = BIKE_SOUND_GetPattern(BIKE_SOUND_EVENT_NO_OPERATION,
+                                     &ucNodeCount);
+    assert(5U == ucNodeCount);
+    assert(0U == pPattern[1].usFrequencyHz);
+    assert(0U == pPattern[3].usFrequencyHz);
+    assert(0 == strcmp("charge_start",
+                       BIKE_SOUND_GetEventName(BIKE_SOUND_EVENT_CHARGE_START)));
+
+    return;
+}
 
 /* Test_PowerFilter: 覆盖 X-TRACK 电压百分比边界、低通、2% 回差、
  * 满量程边界、非法电压和空指针保护。
@@ -1485,6 +1538,7 @@ static void Test_HistoryRecord(void)
 
 int main(void)
 {
+    Test_SoundPatterns();
     Test_PowerFilter();
     Test_CompassCalibration();
     Test_PedometerAccumulator();

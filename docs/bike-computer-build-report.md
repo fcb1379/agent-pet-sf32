@@ -4,7 +4,7 @@
 
 分支：`codex/feature-bike-computer`
 
-目标：在 `sf32lb52-lchspi-ulp` 开发板上建立 X-TRACK 功能移植的可构建基线，包括 DX-GP10 NMEA 输入、骑行数据模型、GPX/BLE 传感器、TF 存储、板载计步/电子罗盘、电池状态和 LVGL 四页骑行界面。
+目标：在 `sf32lb52-lchspi-ulp` 开发板上建立 X-TRACK 功能移植的可构建基线，包括 DX-GP10 NMEA 输入、骑行数据模型、GPX/BLE 传感器、TF 存储、板载计步/电子罗盘、电池状态、事件提示音和 LVGL 四页骑行界面。
 
 ## 1. 已实现范围
 
@@ -58,10 +58,12 @@
 - 已补齐黄山派 GPADC1 板级配置，使用 `bat1` 的 SF32LB52 内部 VBAT channel 7 读取 SDK 校准后的 0.1 mV 电压；每次采样均执行使能、返回长度检查和关闭，避免 ADC 常开。
 - 电池线程使用 1,536 bytes 静态栈并以 30 秒周期采样；电压采用四分之一权重低通和 2% 显示回差，百分比沿用 X-TRACK 的 3.3~4.1 V 线性估算模型，不将其描述为库仑计 SOC。
 - 片上 `charge` 设备用于区分电池、USB/外部供电和充满状态；充电状态失败不丢弃有效电压，ADC 与充电状态分别累计错误。主页面显示轨迹/电池状态，GNSS 详情页显示电压和诊断计数。
+- X-TRACK `MusicCode` 的启动、错误、连接、断开、信号不稳、充电开始/结束和无操作提示序列已转换为 16 kHz/16-bit/单声道方波 PCM，通过黄山派 `AUDIO_TYPE_NOTIFY` 固定输出到片上 Codec/扬声器。
+- 提示音使用 2,048 bytes 静态线程栈、八消息静态队列和 20 ms 静态 PCM 缓冲；码表页面启动、GNSS 状态边沿、骑行开始/暂停/停止/丢弃及外部供电边沿只做非阻塞投递。`sound_en` 通过 FlashDB 持久化，`bikeset sound <0|1>` 和 `bikesound play <event>` 提供配置与实机诊断入口。
 
 ## 2. 主机测试
 
-测试对象：NMEA、骑行模型、GPX、时间/自动暂停、计步累计、磁力计校准/航向、电池电压估算/滤波、BLE 广播与 HR/CSC/Cycling Power Measurement 解析和 CSC 派生算法。
+测试对象：NMEA、骑行模型、GPX、时间/自动暂停、计步累计、磁力计校准/航向、电池电压估算/滤波、提示音固定序列、BLE 广播与 HR/CSC/Cycling Power Measurement 解析和 CSC 派生算法。
 
 ```text
 gcc -std=c11 -Wall -Wextra -Werror ... -lm -o /tmp/bike_core_test
@@ -97,6 +99,7 @@ gcc -Wall -Wextra -Werror -fanalyzer -c ...
 - 计步累计覆盖首帧基线、正常递增、异常跳变重同步、传感器计数复位、16 位自然回绕、32 位饱和和空指针保护；主机测试不访问 I2C。
 - 磁力计覆盖 X/Y 极值和中心偏移、校准进度、最少样本门限、四象限 0~359.9 度航向、样本计数饱和和空指针保护；主机测试不访问 I2C。
 - 电池模型覆盖 3.3/4.1 V 百分比边界、四分之一权重低通、2% 回差、0/100% 边界更新、无效电压和空指针保护；主机测试不访问 ADC/charger。
+- 提示音模型覆盖全部已接入 X-TRACK 事件的节点数量、频率、时长、静音节点、稳定名称、非法事件和空指针保护；主机测试不访问 Audio Codec。
 
 目标编译同时验证了设置写入的事务顺序修正：单字段在持久化成功后才更新运行态，双字段第二次写入失败时回滚首字段。摘要页字号与行距也已按当前 390 px 可用高度收紧，不以此替代最终屏幕实机验收。
 
@@ -113,12 +116,12 @@ scons: done building targets.
 
 | 产物 | 大小 |
 |---|---:|
-| `main.bin` | 3,338,420 bytes |
+| `main.bin` | 3,340,516 bytes |
 | `fs_root.bin` | 4,194,304 bytes |
 
 完整重构建输出 SDK 既有的 FlashDB/LVGL/音频等静态告警，以及 `dfu` 分区未定义和 ftab 入口符号警告；新增 `bike_*` 模块在 `-Werror` 主机测试中无告警，且目标编译成功。生成配置已确认 `CONFIG_BSP_USING_UART3=y`、`CONFIG_BSP_UART3_RX_USING_DMA=y`，未启用 UART2 或 USB Device/Host；同时启用 `CONFIG_BSP_USING_SPI1=y`、`CONFIG_RT_USING_SPI_MSD=y`、`CONFIG_RT_USING_SENSOR=y`、`CONFIG_ACC_USING_LSM6DSL=y`、仅 `CONFIG_PKG_USING_LSM6DSL_STEP=y`，以及 `CONFIG_RT_USING_ADC=y`、`CONFIG_BSP_USING_ADC1=y`、`CONFIG_BSP_BATTERY_DETECT_ADC="bat1"`、`CONFIG_BSP_BATTERY_DETECT_ADC_CHANNEL=7`；加速度/陀螺仪 RT-Thread 设备未启用。
 
-HCPU ELF 汇总为 `.text=3,330,897 bytes`、`.data=7,492 bytes`、`.bss=4,147,904 bytes`。其中地图新增的 1,179,648 bytes 固定像素缓冲位于 `0x601db5c0` 的 PSRAM 非缓存段，不占用片上 SRAM。目标编译已实际生成 `lsm6dsl.o`、`lsm6dsl_reg.o`、`st_lsm6dsl_sensor_v1.o`、`sensor.o`、`drv_adc.o`、`bike_pedometer.o`、`bike_compass.o`、`bike_power.o` 和 `bike_map_image.o`。
+HCPU ELF 汇总为 `.text=3,332,993 bytes`、`.data=7,492 bytes`、`.bss=4,150,848 bytes`。其中地图新增的 1,179,648 bytes 固定像素缓冲位于 `0x601db5c0` 的 PSRAM 非缓存段，不占用片上 SRAM。目标编译已实际生成 `lsm6dsl.o`、`lsm6dsl_reg.o`、`st_lsm6dsl_sensor_v1.o`、`sensor.o`、`drv_adc.o`、`bike_pedometer.o`、`bike_compass.o`、`bike_power.o`、`bike_sound.o` 和 `bike_map_image.o`。
 
 ## 4. 资源占用
 
@@ -126,7 +129,7 @@ HCPU ELF 链接结果：
 
 | 区域 | 当前占用 | 链接容量 | 余量 |
 |---|---:|---:|---:|
-| 片上 SRAM 地址范围 | 353,196 bytes | 523,264 bytes | 170,068 bytes |
+| 片上 SRAM 地址范围 | 356,140 bytes | 523,264 bytes | 167,124 bytes |
 | PSRAM 可写段 | 3,828,720 bytes | 8,388,608 bytes | 4,559,888 bytes |
 
 码表新增对象文件在链接前的直接占用：
@@ -148,16 +151,17 @@ HCPU ELF 链接结果：
 | `bike_map_image.o` | 212 bytes | 0 bytes |
 | `bike_compass.o` | 1,905 bytes | 2,273 bytes |
 | `bike_pedometer.o` | 1,299 bytes | 2,253 bytes |
-| `bike_power.o` | 1,184 bytes | 1,745 bytes |
+| `bike_sound.o` | 1,427 bytes | 2,937 bytes |
+| `bike_power.o` | 1,321 bytes | 1,747 bytes |
 | `bike_storage.o` | 977 bytes | 2 bytes |
 | `bike_recorder.o` | 1,301 bytes | 3,865 bytes |
-| `bike_settings.o` | 2,898 bytes | 95 bytes |
+| `bike_settings.o` | 3,081 bytes | 95 bytes |
 | `bike_sensor_ble.o` | 5,925 bytes | 2,545 bytes |
-| `bike_service.o` | 3,934 bytes | 3,929 bytes |
-| `app_bike.o` | 8,075 bytes | 1,181,496 bytes |
-| 合计 | 42,156 bytes | 1,200,521 bytes |
+| `bike_service.o` | 4,351 bytes | 3,930 bytes |
+| `app_bike.o` | 8,083 bytes | 1,181,496 bytes |
+| 合计 | 44,328 bytes | 1,203,461 bytes |
 
-`app_bike.o` 的 `.bss` 包含明确放入 PSRAM 的 1,179,648 bytes 地图像素缓存，不是片上 SRAM 占用。`bike_service.o` 和 `bike_recorder.o` 分别包含 3,072 bytes 静态线程栈，`bike_sensor_ble.o`、`bike_pedometer.o` 与 `bike_compass.o` 分别包含 2,048 bytes 静态线程栈，`bike_history.o` 与 `bike_power.o` 分别包含 1,536 bytes 静态线程栈。对象文件合计只用于描述新增模块的直接体积，不等同于最终镜像增量；最终镜像还包含本轮启用的 SDK LSM6DSL、RT-Thread sensor 与 GPADC1 驱动，并受链接消除、库引用和资源打包影响。
+`app_bike.o` 的 `.bss` 包含明确放入 PSRAM 的 1,179,648 bytes 地图像素缓存，不是片上 SRAM 占用。`bike_service.o` 和 `bike_recorder.o` 分别包含 3,072 bytes 静态线程栈，`bike_sensor_ble.o`、`bike_pedometer.o`、`bike_compass.o` 与 `bike_sound.o` 分别包含 2,048 bytes 静态线程栈，`bike_history.o` 与 `bike_power.o` 分别包含 1,536 bytes 静态线程栈。对象文件合计只用于描述新增模块的直接体积，不等同于最终镜像增量；最终镜像还包含本轮启用的 SDK LSM6DSL、RT-Thread sensor、GPADC1 与音频服务，并受链接消除、库引用和资源打包影响。
 
 ## 5. 验证边界
 
@@ -180,4 +184,5 @@ HCPU ELF 链接结果：
 - X-TRACK 计步已完成板载 LSM6DS3TR-C、I2C2 PA39/PA40、SDK LSM6DSL 兼容驱动、寄存器回读和 UI 状态的源码/测试/目标构建；尚未实机确认 WHO_AM_I、走动计数准确率、16 位回绕、长时间稳定性和功耗。
 - X-TRACK 磁力信息已适配板载 MMC5603NJ，并完成产品 ID、单次测量、数据就绪超时、三轴解码、运行时水平校准和 UI 状态的源码/主机测试/目标构建；尚未实机确认安装轴向、硬铁/软铁校准、磁偏角、倾斜误差、共享 I2C 稳定性和功耗。
 - X-TRACK 电源信息已适配板载 GPADC1 channel 7 与片上充电状态，并完成电压范围、低通/回差、错误传播、UI 状态和目标构建；尚未用电池和 USB 实机标定空载/负载电压曲线、充满状态、低电压阈值、ADC 校准精度、30 秒状态延迟和采样功耗，因此当前百分比只能视为电压估算。
+- X-TRACK 事件提示音已适配黄山派 Audio Codec/扬声器并完成纯序列主机回归与目标链接；尚未实机确认扬声器通路、响度、音色、首尾截断、提示音与本地音乐/蓝牙音频混音以及休眠和关机边界行为。
 - FIT 与路线导航属于其他参考工程扩展，不是 X-TRACK 主线必备项。
