@@ -16,6 +16,7 @@
 - GNSS 详情页显示经纬度、海拔、航向、UTC、卫星数、定位质量、RTC 同步状态和 NMEA 统计；未定位时不伪造零坐标。
 - GNSS 接收线程只持有静态栈和静态缓冲；串口回调只释放信号量，共享快照使用互斥锁保护。
 - GPX 使用独立静态线程和十二消息队列异步落盘，正常结束后原子发布 `.gpx` 文件。
+- 主数据页可保存结束轨迹；总结页分别提供 `SAVE` 和 `DISCARD`，丢弃路径关闭文件并删除 `.part` 与 `.active`，不会发布最终 GPX。
 - 每五个轨迹点执行一次 `fsync`；暂停和结束时强制同步，启动前保留 64 KiB 文件系统余量。
 - 使用 `.active` 状态标记和 `.part` 临时文件恢复异常中断；恢复时只复制完整 XML 行。
 - 单点异常跳变不会画出跨区连线；连续两个新位置点确认后建立新的 `<trkseg>`。
@@ -53,7 +54,7 @@ bike_core_test: PASS
 - 坏校验语句拒绝。
 - NMEA 分段输入。
 - 骑行状态切换、移动时间、里程、平均速度和异常跳点过滤。
-- GPX 正常闭合、暂停/继续、空间安全路径、异常跳点断段和掉电恢复。
+- GPX 正常闭合、暂停/继续、空间安全路径、异常跳点断段、未发布轨迹丢弃和掉电恢复。
 - 生成的正常文件与恢复文件均通过 Python `xml.etree.ElementTree` 解析。
 - UTC 时区转换覆盖正负偏移、跨年、闰日和非法日期。
 - 自动暂停覆盖低速防抖、恢复回差、定位失效、计时回绕和手动暂停隔离。
@@ -75,7 +76,7 @@ scons: done building targets.
 
 | 产物 | 大小 |
 |---|---:|
-| `main.bin` | 3,400,684 bytes |
+| `main.bin` | 3,401,164 bytes |
 | `fs_root.bin` | 4,194,304 bytes |
 
 编译仅输出原工程已有的 `dfu` 分区未定义和 ftab 入口符号警告；新增 `bike_*` 模块在 `-Werror` 主机测试中无告警，且目标编译成功。
@@ -86,7 +87,7 @@ HCPU ELF 链接结果：
 
 | 区域 | 当前占用 | 链接容量 | 余量 |
 |---|---:|---:|---:|
-| 片上 SRAM 地址范围 | 342,544 bytes | 523,264 bytes | 180,720 bytes |
+| 片上 SRAM 地址范围 | 342,540 bytes | 523,264 bytes | 180,724 bytes |
 | PSRAM 可写段 | 2,649,032 bytes | 8,388,608 bytes | 5,739,576 bytes |
 
 码表新增对象文件在链接前的直接占用：
@@ -102,13 +103,13 @@ HCPU ELF 链接结果：
 | `bike_ble_measurement.o` | 208 bytes | 0 bytes |
 | `bike_ble_gatt_client.o` | 2,473 bytes | 89 bytes |
 | `bike_csc.o` | 216 bytes | 0 bytes |
-| `bike_gpx.o` | 2,710 bytes | 0 bytes |
-| `bike_recorder.o` | 1,301 bytes | 3,865 bytes |
+| `bike_gpx.o` | 2,862 bytes | 0 bytes |
+| `bike_recorder.o` | 1,349 bytes | 3,865 bytes |
 | `bike_settings.o` | 1,770 bytes | 53 bytes |
 | `bike_sensor_ble.o` | 5,097 bytes | 2,529 bytes |
-| `bike_service.o` | 2,310 bytes | 3,760 bytes |
-| `app_bike.o` | 4,289 bytes | 52 bytes |
-| 合计 | 23,816 bytes | 10,348 bytes |
+| `bike_service.o` | 2,370 bytes | 3,760 bytes |
+| `app_bike.o` | 4,502 bytes | 48 bytes |
+| 合计 | 24,289 bytes | 10,344 bytes |
 
 `bike_service.o` 和 `bike_recorder.o` 分别包含 3,072 bytes 静态线程栈，`bike_sensor_ble.o` 包含 2,048 bytes 静态线程栈以及固定消息队列和连接状态。对象文件合计只用于描述新增模块的直接体积，不等同于最终镜像增量；最终镜像还受链接消除、库引用和资源打包影响。
 

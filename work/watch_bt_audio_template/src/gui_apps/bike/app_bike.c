@@ -26,7 +26,6 @@ LV_IMG_DECLARE(img_workout);
  *   - pTimeLabel: 移动时间标签
  *   - pAltitudeLabel: 海拔标签
  *   - pStartLabel: 开始/暂停按钮文字
- *   - pSummaryStartLabel: 总结页开始/暂停按钮文字
  *   - pLocationLabel: 定位详情页文本
  *   - pSummaryLabel: 骑行总结页文本
  *   - pTimer: 500 ms UI 刷新定时器
@@ -42,7 +41,6 @@ typedef struct _BIKE_UI_CONTEXT
     lv_obj_t *pTimeLabel;
     lv_obj_t *pAltitudeLabel;
     lv_obj_t *pStartLabel;
-    lv_obj_t *pSummaryStartLabel;
     lv_obj_t *pLocationLabel;
     lv_obj_t *pSummaryLabel;
     lv_timer_t *pTimer;
@@ -470,7 +468,6 @@ static void BikeUi_Update(void)
         pStartText = "START";
     }
     lv_label_set_text(l_tBikeUi.pStartLabel, pStartText);
-    lv_label_set_text(l_tBikeUi.pSummaryStartLabel, pStartText);
 
     if ((!tSnapshot.tGnss.bFixValid) ||
         (!BikeUi_FormatCoordinate(tSnapshot.tGnss.lLatitudeE7,
@@ -617,6 +614,22 @@ static void BikeUi_StopEvent(lv_event_t *pEvent)
     if ((NULL != pEvent) && (LV_EVENT_CLICKED == lv_event_get_code(pEvent)))
     {
         (void)BIKE_SERVICE_StopRide();
+        BikeUi_Update();
+    }
+
+    return;
+}
+
+/* BikeUi_DiscardEvent: 结束骑行并丢弃当前未发布轨迹。
+ * 参数：
+ *   - pEvent: LVGL 事件
+ * 返回值：无
+ */
+static void BikeUi_DiscardEvent(lv_event_t *pEvent)
+{
+    if ((NULL != pEvent) && (LV_EVENT_CLICKED == lv_event_get_code(pEvent)))
+    {
+        (void)BIKE_SERVICE_DiscardRide();
         BikeUi_Update();
     }
 
@@ -808,12 +821,12 @@ static void BikeUi_OnStart(void)
     lv_obj_set_style_text_color(l_tBikeUi.pSummaryLabel, lv_color_hex(0xDCE6F0),
                                 LV_PART_MAIN);
     lv_obj_set_style_text_line_space(l_tBikeUi.pSummaryLabel, 3, LV_PART_MAIN);
-    l_tBikeUi.pSummaryStartLabel = BikeUi_CreateButton(pSummaryPage, "START", 16,
-                                                       lv_color_hex(0x168B4D),
-                                                       BikeUi_StartEvent);
-    (void)BikeUi_CreateButton(pSummaryPage, "STOP", 204,
-                              lv_color_hex(0xA9323A), BikeUi_StopEvent);
-    RT_ASSERT(NULL != l_tBikeUi.pSummaryStartLabel);
+    RT_ASSERT(NULL != BikeUi_CreateButton(pSummaryPage, "SAVE", 16,
+                                          lv_color_hex(0x168B4D),
+                                          BikeUi_StopEvent));
+    RT_ASSERT(NULL != BikeUi_CreateButton(pSummaryPage, "DISCARD", 204,
+                                          lv_color_hex(0xA9323A),
+                                          BikeUi_DiscardEvent));
 
     l_tBikeUi.pTimer = lv_timer_create(BikeUi_TimerCallback, BIKE_UI_REFRESH_PERIOD_MS, NULL);
     RT_ASSERT(NULL != l_tBikeUi.pTimer);

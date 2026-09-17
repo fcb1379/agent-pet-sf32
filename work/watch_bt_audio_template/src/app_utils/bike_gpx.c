@@ -628,6 +628,55 @@ bool BIKE_GPX_Stop(BIKE_GPX_WRITER *pWriter)
     return true;
 }
 
+/* BIKE_GPX_Discard: 关闭并删除当前未发布轨迹及恢复标记。
+ * 参数：
+ *   - pWriter: GPX 写入状态
+ * 返回值：成功返回 true，否则返回 false
+ */
+bool BIKE_GPX_Discard(BIKE_GPX_WRITER *pWriter)
+{
+    char aDirectory[BIKE_GPX_PATH_MAX];
+    bool bResult;
+
+    if ((NULL == pWriter) ||
+        ((BIKE_GPX_STATE_ACTIVE != pWriter->eState) &&
+         (BIKE_GPX_STATE_PAUSED != pWriter->eState) &&
+         (BIKE_GPX_STATE_ERROR != pWriter->eState)) ||
+        ('\0' == pWriter->aPartPath[0]) ||
+        (!BikeGpx_GetDirectory(pWriter->aPartPath, aDirectory,
+                               sizeof(aDirectory))))
+    {
+        return false;
+    }
+
+    bResult = true;
+    if (0 <= pWriter->lFileDescriptor)
+    {
+        if (0 != close((int)pWriter->lFileDescriptor))
+        {
+            bResult = false;
+        }
+        pWriter->lFileDescriptor = -1;
+    }
+    if ((0 == access(pWriter->aPartPath, 0)) &&
+        (0 != unlink(pWriter->aPartPath)))
+    {
+        bResult = false;
+    }
+    if (!BikeGpx_RemoveMarker(aDirectory))
+    {
+        bResult = false;
+    }
+    if (!bResult)
+    {
+        return BikeGpx_SetError(pWriter, BIKE_GPX_ERROR_DISCARD);
+    }
+
+    BIKE_GPX_Init(pWriter);
+
+    return true;
+}
+
 /* BikeGpx_IsClosingLine: 判断恢复输入是否为旧的 GPX 关闭标记。
  * 参数：
  *   - pLine: 完整文本行

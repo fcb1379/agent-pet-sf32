@@ -35,6 +35,7 @@ typedef enum _BIKE_GPX_ERROR
     BIKE_GPX_ERROR_WRITE,
     BIKE_GPX_ERROR_SYNC,
     BIKE_GPX_ERROR_RENAME,
+    BIKE_GPX_ERROR_DISCARD,
     BIKE_GPX_ERROR_RECOVERY
 } BIKE_GPX_ERROR;
 
@@ -82,6 +83,7 @@ bool BIKE_GPX_Append(BIKE_GPX_WRITER *pWriter, const BIKE_GNSS_DATA *pGnss);
 bool BIKE_GPX_Pause(BIKE_GPX_WRITER *pWriter);
 bool BIKE_GPX_Resume(BIKE_GPX_WRITER *pWriter);
 bool BIKE_GPX_Stop(BIKE_GPX_WRITER *pWriter);
+bool BIKE_GPX_Discard(BIKE_GPX_WRITER *pWriter);
 BIKE_GPX_RECOVERY_RESULT BIKE_GPX_Recover(const char *pDirectory,
                                           char *pRecoveredPath,
                                           size_t ulRecoveredPathSize);

@@ -55,6 +55,7 @@ bool BIKE_SERVICE_GetSnapshot(BIKE_SERVICE_SNAPSHOT *pSnapshot);
 bool BIKE_SERVICE_StartRide(void);
 bool BIKE_SERVICE_PauseRide(void);
 bool BIKE_SERVICE_StopRide(void);
+bool BIKE_SERVICE_DiscardRide(void);
 
 #ifdef __cplusplus
 }

@@ -573,15 +573,19 @@ static void Test_GpxWriter(void)
     char aRecoveredPath[BIKE_GPX_PATH_MAX];
     const char *pFirstFile;
     const char *pSecondFile;
+    const char *pDiscardFile;
 
     pFirstFile = TEST_GPX_DIRECTORY "/TRK_20240923_123519.gpx";
     pSecondFile = TEST_GPX_DIRECTORY "/TRK_20240923_123529.gpx";
+    pDiscardFile = TEST_GPX_DIRECTORY "/TRK_20240923_123539.gpx";
     (void)unlink(TEST_GPX_DIRECTORY "/.active");
     (void)unlink(TEST_GPX_DIRECTORY "/.active.tmp");
     (void)unlink(TEST_GPX_DIRECTORY "/TRK_20240923_123519.gpx.part");
     (void)unlink(TEST_GPX_DIRECTORY "/TRK_20240923_123529.gpx.part");
+    (void)unlink(TEST_GPX_DIRECTORY "/TRK_20240923_123539.gpx.part");
     (void)unlink(pFirstFile);
     (void)unlink(pSecondFile);
+    (void)unlink(pDiscardFile);
     (void)rmdir(TEST_GPX_DIRECTORY);
 
     (void)memset(&tGnss, 0, sizeof(tGnss));
@@ -638,6 +642,18 @@ static void Test_GpxWriter(void)
     assert(2U == Test_CountText(aFileData, "<trkseg>"));
     assert(NULL != strstr(aFileData, "</trkseg></trk></gpx>"));
     assert(0 != access(TEST_GPX_DIRECTORY "/.active", F_OK));
+
+    tGnss.ucSecond = 39U;
+    tGnss.lLongitudeE7 = 3592;
+    BIKE_GPX_Init(&tWriter);
+    assert(BIKE_GPX_Start(&tWriter, TEST_GPX_DIRECTORY, &tGnss));
+    assert(BIKE_GPX_Discard(&tWriter));
+    assert(BIKE_GPX_STATE_IDLE == tWriter.eState);
+    assert(0 != access(TEST_GPX_DIRECTORY "/.active", F_OK));
+    assert(0 != access(TEST_GPX_DIRECTORY "/TRK_20240923_123539.gpx.part",
+                       F_OK));
+    assert(0 != access(pDiscardFile, F_OK));
+    assert(!BIKE_GPX_Discard(&tWriter));
 
 #ifndef BIKE_GPX_TEST_KEEP_FILES
     assert(0 == unlink(pFirstFile));

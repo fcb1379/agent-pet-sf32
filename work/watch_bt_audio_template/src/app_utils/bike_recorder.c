@@ -20,6 +20,7 @@ typedef enum _BIKE_RECORDER_COMMAND
     BIKE_RECORDER_COMMAND_PAUSE,
     BIKE_RECORDER_COMMAND_RESUME,
     BIKE_RECORDER_COMMAND_STOP,
+    BIKE_RECORDER_COMMAND_DISCARD,
     BIKE_RECORDER_COMMAND_POINT
 } BIKE_RECORDER_COMMAND;
 
@@ -316,6 +317,27 @@ static void BikeRecorder_ThreadEntry(void *pParameter)
             }
             break;
 
+        case BIKE_RECORDER_COMMAND_DISCARD:
+            bSessionRequested = false;
+            bPaused = false;
+            if ((BIKE_GPX_STATE_ACTIVE == tWriter.eState) ||
+                (BIKE_GPX_STATE_PAUSED == tWriter.eState) ||
+                (BIKE_GPX_STATE_ERROR == tWriter.eState))
+            {
+                bResult = BIKE_GPX_Discard(&tWriter);
+                BikeRecorder_UpdateSnapshot(bResult ?
+                                             BIKE_RECORDER_STATUS_IDLE :
+                                             BIKE_RECORDER_STATUS_ERROR,
+                                             &tWriter, "");
+            }
+            else
+            {
+                BIKE_GPX_Init(&tWriter);
+                BikeRecorder_UpdateSnapshot(BIKE_RECORDER_STATUS_IDLE,
+                                             &tWriter, "");
+            }
+            break;
+
         case BIKE_RECORDER_COMMAND_POINT:
             BikeRecorder_HandlePoint(&tWriter, &tMessage, &bSessionRequested, &bPaused);
             break;
@@ -443,6 +465,14 @@ bool BIKE_RECORDER_Resume(void)
 bool BIKE_RECORDER_Stop(void)
 {
     return BikeRecorder_SendCommand(BIKE_RECORDER_COMMAND_STOP, NULL);
+}
+
+/* BIKE_RECORDER_Discard: 请求删除当前未发布轨迹。
+ * 返回值：命令入队成功返回 true，否则返回 false
+ */
+bool BIKE_RECORDER_Discard(void)
+{
+    return BikeRecorder_SendCommand(BIKE_RECORDER_COMMAND_DISCARD, NULL);
 }
 
 /* BIKE_RECORDER_SubmitPoint: 非阻塞提交一帧 GNSS 数据。

@@ -43,6 +43,7 @@ bool BIKE_RECORDER_Start(void);
 bool BIKE_RECORDER_Pause(void);
 bool BIKE_RECORDER_Resume(void);
 bool BIKE_RECORDER_Stop(void);
+bool BIKE_RECORDER_Discard(void);
 bool BIKE_RECORDER_SubmitPoint(const BIKE_GNSS_DATA *pGnss);
 bool BIKE_RECORDER_GetSnapshot(BIKE_RECORDER_SNAPSHOT *pSnapshot);
 

@@ -594,3 +594,23 @@ bool BIKE_SERVICE_StopRide(void)
 
     return bResult;
 }
+
+/* BIKE_SERVICE_DiscardRide: 结束骑行并删除当前未发布轨迹。
+ * 返回值：成功返回 true，否则返回 false
+ */
+bool BIKE_SERVICE_DiscardRide(void)
+{
+    bool bResult;
+
+    bResult = false;
+    if (BIKE_RECORDER_Discard() && BikeService_Lock())
+    {
+        BIKE_AUTO_PAUSE_Init(&l_tBikeAutoPause);
+        l_tBikeSnapshot.bAutoPaused = false;
+        BIKE_RIDE_Stop(&l_tBikeSnapshot.tRide);
+        BikeService_Unlock();
+        bResult = true;
+    }
+
+    return bResult;
+}
