@@ -23,7 +23,6 @@
 #define BIKE_UI_MAP_ZOOM_DEFAULT (16U)
 #define BIKE_UI_MAP_TRACK_LEVEL (16U)
 #define BIKE_UI_MAP_TRACK_OFFSET_THRESHOLD_PX (2U)
-#define BIKE_UI_MAP_EXTENSION "bin"
 
 #if 16 != LV_COLOR_DEPTH
 #error "Bike map tiles require LVGL RGB565 color depth"
@@ -64,7 +63,7 @@ typedef struct _BIKE_UI_MAP_TRACK_POINT
  *   - pMapTrackLine/pMapMarker: 实时轨迹线和当前位置标记
  *   - aMapTrackPoints/aMapLinePoints: 固定级别轨迹点和可见线段点
  *   - atMapTileImages: 由 PSRAM 像素缓冲支撑的 LVGL 变量图像描述符
- *   - aMapDirectory/aMapRoot: 持久化逻辑地图目录和当前介质实际路径
+ *   - aMapDirectory/aMapRoot/aMapExtension: 地图目录、实际路径和扩展名
  *   - ucMapZoomMin/ucMapZoomMax: 当前地图介质实际可用的缩放范围
  *   - bMapUseWgs84: 当前离线瓦片坐标系选择
  *   - pTimer: 500 ms UI 刷新定时器
@@ -93,6 +92,7 @@ typedef struct _BIKE_UI_CONTEXT
     lv_img_dsc_t atMapTileImages[BIKE_UI_MAP_TILE_COUNT];
     char aMapDirectory[BIKE_STORAGE_MAP_DIRECTORY_MAX];
     char aMapRoot[BIKE_STORAGE_MAP_ROOT_MAX];
+    char aMapExtension[BIKE_MAP_EXTENSION_MAX];
     uint32_t ulMapTrackPointCount;
     uint32_t ulMapCenterTileX;
     uint32_t ulMapCenterTileY;
@@ -122,25 +122,35 @@ L2_NON_RET_BSS_SECT_END
 
 static void BikeUi_Update(void);
 
-/* BikeUi_MapApplyDirectory: 应用逻辑地图目录并重新扫描可用缩放级别。
+/* BikeUi_MapApplySource: 应用地图目录和扩展名并重新扫描可用缩放级别。
  * 参数：
  *   - pDirectory: 当前介质内的地图逻辑绝对路径
+ *   - pExtension: 不含点号的瓦片文件扩展名
  * 返回值：路径解析成功返回 true，否则返回 false
  */
-static bool BikeUi_MapApplyDirectory(const char *pDirectory)
+static bool BikeUi_MapApplySource(const char *pDirectory,
+                                  const char *pExtension)
 {
-    size_t ulLength;
+    size_t ulDirectoryLength;
+    size_t ulExtensionLength;
 
-    if (!BIKE_STORAGE_FormatMapRoot(BIKE_STORAGE_IsTfMounted(), pDirectory,
-                                    l_tBikeUi.aMapRoot,
-                                    sizeof(l_tBikeUi.aMapRoot)))
+    if ((!BIKE_MAP_IsExtensionValid(pExtension)) ||
+        (!BIKE_STORAGE_FormatMapRoot(BIKE_STORAGE_IsTfMounted(), pDirectory,
+                                     l_tBikeUi.aMapRoot,
+                                     sizeof(l_tBikeUi.aMapRoot))))
     {
         return false;
     }
-    ulLength = strlen(pDirectory);
+    ulDirectoryLength = strlen(pDirectory);
+    ulExtensionLength = strlen(pExtension);
     (void)memset(l_tBikeUi.aMapDirectory, 0,
                  sizeof(l_tBikeUi.aMapDirectory));
-    (void)memcpy(l_tBikeUi.aMapDirectory, pDirectory, ulLength + 1U);
+    (void)memcpy(l_tBikeUi.aMapDirectory, pDirectory,
+                 ulDirectoryLength + 1U);
+    (void)memset(l_tBikeUi.aMapExtension, 0,
+                 sizeof(l_tBikeUi.aMapExtension));
+    (void)memcpy(l_tBikeUi.aMapExtension, pExtension,
+                 ulExtensionLength + 1U);
     l_tBikeUi.ucMapZoomMin = BIKE_MAP_ZOOM_MIN;
     l_tBikeUi.ucMapZoomMax = BIKE_MAP_ZOOM_MAX;
     (void)BIKE_STORAGE_FindMapZoomRange(l_tBikeUi.aMapRoot,
@@ -219,7 +229,7 @@ static uint8_t BikeUi_MapReloadTiles(const BIKE_MAP_POINT *pPoint)
             if ((0LL <= dTileY) && ((int64_t)ulTileCount > dTileY) &&
                 BIKE_MAP_FormatTilePath(
                     l_tBikeUi.aMapRoot, pPoint->ucZoom, ulActualTileX,
-                    (uint32_t)dTileY, BIKE_UI_MAP_EXTENSION,
+                    (uint32_t)dTileY, l_tBikeUi.aMapExtension,
                     aMapTilePath, sizeof(aMapTilePath)) &&
                 BIKE_MAP_IMAGE_Load(
                     aMapTilePath, l_aaBikeMapTileData[ucIndex],
@@ -424,13 +434,16 @@ static void BikeUi_MapUpdate(const BIKE_SERVICE_SNAPSHOT *pSnapshot)
     if ((RT_EOK == BIKE_SETTINGS_GetSnapshot(&tSettings)) &&
         ((l_tBikeUi.bMapUseWgs84 != tSettings.bMapUseWgs84) ||
          (0 != strcmp(l_tBikeUi.aMapDirectory,
-                      tSettings.aMapDirectory))))
+                      tSettings.aMapDirectory)) ||
+         (0 != strcmp(l_tBikeUi.aMapExtension,
+                      tSettings.aMapExtension))))
     {
-        (void)BikeUi_MapApplyDirectory(tSettings.aMapDirectory);
-        l_tBikeUi.bMapUseWgs84 = tSettings.bMapUseWgs84;
-        l_tBikeUi.bMapTilesLoaded = false;
-        l_tBikeUi.ucMapLoadedCount = 0U;
-        BikeUi_MapClearTrack();
+        if (BikeUi_MapApplySource(tSettings.aMapDirectory,
+                                  tSettings.aMapExtension))
+        {
+            l_tBikeUi.bMapUseWgs84 = tSettings.bMapUseWgs84;
+            BikeUi_MapClearTrack();
+        }
     }
     if (l_tBikeUi.bMapUseWgs84)
     {
@@ -1463,14 +1476,17 @@ static void BikeUi_OnStart(void)
 
     (void)memset(&l_tBikeUi, 0, sizeof(l_tBikeUi));
     l_tBikeUi.ucMapZoom = BIKE_UI_MAP_ZOOM_DEFAULT;
-    if (RT_EOK == BIKE_SETTINGS_GetSnapshot(&tSettings))
+    if ((RT_EOK == BIKE_SETTINGS_GetSnapshot(&tSettings)) &&
+        BikeUi_MapApplySource(tSettings.aMapDirectory,
+                              tSettings.aMapExtension))
     {
         l_tBikeUi.bMapUseWgs84 = tSettings.bMapUseWgs84;
-        (void)BikeUi_MapApplyDirectory(tSettings.aMapDirectory);
     }
     else
     {
-        (void)BikeUi_MapApplyDirectory(BIKE_SETTINGS_DEFAULT_MAP_DIRECTORY);
+        l_tBikeUi.bMapUseWgs84 = BIKE_SETTINGS_DEFAULT_MAP_USE_WGS84;
+        (void)BikeUi_MapApplySource(BIKE_SETTINGS_DEFAULT_MAP_DIRECTORY,
+                                    BIKE_SETTINGS_DEFAULT_MAP_EXTENSION);
     }
     l_tBikeUi.ePreviousRideMode = BIKE_RIDE_MODE_STOPPED;
     l_tBikeUi.pRoot = lv_tileview_create(lv_scr_act());

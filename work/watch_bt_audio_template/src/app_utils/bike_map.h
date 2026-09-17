@@ -12,6 +12,7 @@ extern "C" {
 #define BIKE_MAP_ZOOM_MIN (0U)
 #define BIKE_MAP_ZOOM_MAX (19U)
 #define BIKE_MAP_TILE_SIZE_PX (256U)
+#define BIKE_MAP_EXTENSION_MAX (8U)
 
 /* BIKE_MAP_COORDINATE_SYSTEM: 离线瓦片采用的地理坐标系。 */
 typedef enum _BIKE_MAP_COORDINATE_SYSTEM
@@ -54,6 +55,7 @@ bool BIKE_MAP_ConvertPixelLevel(uint32_t ulSourcePixelX,
                                 uint8_t ucDestinationZoom,
                                 uint32_t *pDestinationPixelX,
                                 uint32_t *pDestinationPixelY);
+bool BIKE_MAP_IsExtensionValid(const char *pExtension);
 bool BIKE_MAP_FormatTilePath(const char *pRoot, uint8_t ucZoom,
                              uint32_t ulTileX, uint32_t ulTileY,
                              const char *pExtension, char *pPath,

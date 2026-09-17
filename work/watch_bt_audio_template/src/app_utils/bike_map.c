@@ -152,32 +152,36 @@ bool BIKE_MAP_ConvertCoordinate(int32_t lLatitudeE7, int32_t lLongitudeE7,
     return true;
 }
 
-/* BikeMap_IsExtensionValid: 校验瓦片扩展名只含字母和数字。
+/* BIKE_MAP_IsExtensionValid: 校验瓦片扩展名只含字母和数字。
  * 参数：
  *   - pExtension: 不含点号的扩展名
  * 返回值：可安全组合路径返回 true，否则返回 false
  */
-static bool BikeMap_IsExtensionValid(const char *pExtension)
+bool BIKE_MAP_IsExtensionValid(const char *pExtension)
 {
-    const char *pCursor;
+    size_t ulIndex;
+    char cValue;
 
     if ((NULL == pExtension) || ('\0' == pExtension[0]))
     {
         return false;
     }
-    pCursor = pExtension;
-    while ('\0' != *pCursor)
+    for (ulIndex = 0U; ulIndex < BIKE_MAP_EXTENSION_MAX; ulIndex++)
     {
-        if (((('a' > *pCursor) || ('z' < *pCursor)) &&
-             (('A' > *pCursor) || ('Z' < *pCursor))) &&
-            (('0' > *pCursor) || ('9' < *pCursor)))
+        cValue = pExtension[ulIndex];
+        if ('\0' == cValue)
+        {
+            return true;
+        }
+        if (((('a' > cValue) || ('z' < cValue)) &&
+             (('A' > cValue) || ('Z' < cValue))) &&
+            (('0' > cValue) || ('9' < cValue)))
         {
             return false;
         }
-        pCursor++;
     }
 
-    return true;
+    return false;
 }
 
 /* BIKE_MAP_Project: 将 WGS84 定点经纬度投影到 Web Mercator 瓦片平面。
@@ -346,7 +350,7 @@ bool BIKE_MAP_FormatTilePath(const char *pRoot, uint8_t ucZoom,
 
     if ((NULL == pRoot) || (NULL == pPath) || (0U == ulPathSize) ||
         ('/' != pRoot[0]) || (BIKE_MAP_ZOOM_MAX < ucZoom) ||
-        (!BikeMap_IsExtensionValid(pExtension)) ||
+        (!BIKE_MAP_IsExtensionValid(pExtension)) ||
         (NULL != strstr(pRoot, "..")) || (NULL != strchr(pRoot, '\\')))
     {
         return false;

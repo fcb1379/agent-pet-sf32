@@ -1390,11 +1390,23 @@ static void Test_MapProjection(void)
                                        &lMapLongitudeE7));
     assert(!BIKE_MAP_ProjectCoordinate(399074150, 1163913320, 16U,
                                        BIKE_MAP_COORDINATE_GCJ02, NULL));
+    assert(BIKE_MAP_IsExtensionValid("bin"));
+    assert(BIKE_MAP_IsExtensionValid("abcdef7"));
+    assert(!BIKE_MAP_IsExtensionValid(NULL));
+    assert(!BIKE_MAP_IsExtensionValid(""));
+    assert(!BIKE_MAP_IsExtensionValid("abcdefgh"));
+    assert(!BIKE_MAP_IsExtensionValid(".bin"));
+    assert(!BIKE_MAP_IsExtensionValid("b/in"));
+    assert(!BIKE_MAP_IsExtensionValid("bin_"));
     assert(BIKE_MAP_FormatTilePath("/MAP", tPoint.ucZoom,
                                    tPoint.ulTileX, tPoint.ulTileY, "bin",
                                    aPath, sizeof(aPath)));
     assert(NULL != strstr(aPath, "/MAP/16/"));
     assert(NULL != strstr(aPath, ".bin"));
+    assert(BIKE_MAP_FormatTilePath("/MAP", tPoint.ucZoom,
+                                   tPoint.ulTileX, tPoint.ulTileY, "png",
+                                   aPath, sizeof(aPath)));
+    assert(NULL != strstr(aPath, ".png"));
 
     assert(BIKE_MAP_Project(900000000, 1800000000, 19U, &tPoint));
     assert((1UL << 19U) > tPoint.ulTileX);
