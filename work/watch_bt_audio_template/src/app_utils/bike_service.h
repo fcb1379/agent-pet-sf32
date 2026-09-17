@@ -31,6 +31,7 @@ typedef enum _BIKE_GNSS_PORT_STATUS
  *   - tGnss: 最近定位数据
  *   - tRide: 本次骑行统计
  *   - tRecorder: GPX 轨迹记录状态
+ *   - bRtcSynchronized: RTC 是否已被有效 GNSS 时间校准
  */
 typedef struct _BIKE_SERVICE_SNAPSHOT
 {
@@ -42,6 +43,7 @@ typedef struct _BIKE_SERVICE_SNAPSHOT
     BIKE_GNSS_DATA tGnss;
     BIKE_RIDE_STATE tRide;
     BIKE_RECORDER_SNAPSHOT tRecorder;
+    bool bRtcSynchronized;
 } BIKE_SERVICE_SNAPSHOT;
 
 bool BIKE_SERVICE_GetSnapshot(BIKE_SERVICE_SNAPSHOT *pSnapshot);

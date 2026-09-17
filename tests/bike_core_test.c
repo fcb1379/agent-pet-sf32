@@ -10,6 +10,7 @@
 #include "bike_gpx.h"
 #include "bike_nmea.h"
 #include "bike_ride_model.h"
+#include "bike_time.h"
 
 #define TEST_GPX_DIRECTORY "/tmp/sf32_bike_gpx_test"
 
@@ -170,6 +171,48 @@ static void Test_RideModel(void)
     return;
 }
 
+/* Test_TimeConversion: 覆盖正负时区、跨年和闰日转换。
+ * 返回值：无
+ */
+static void Test_TimeConversion(void)
+{
+    BIKE_GNSS_DATA tGnss;
+    BIKE_LOCAL_TIME tLocalTime;
+
+    (void)memset(&tGnss, 0, sizeof(tGnss));
+    tGnss.usYear = 2024U;
+    tGnss.ucMonth = 12U;
+    tGnss.ucDay = 31U;
+    tGnss.ucHour = 18U;
+    tGnss.ucMinute = 30U;
+    tGnss.ucSecond = 15U;
+    assert(BIKE_TIME_ConvertUtc(&tGnss, 480, &tLocalTime));
+    assert(2025U == tLocalTime.usYear);
+    assert(1U == tLocalTime.ucMonth);
+    assert(1U == tLocalTime.ucDay);
+    assert(2U == tLocalTime.ucHour);
+    assert(30U == tLocalTime.ucMinute);
+
+    tGnss.usYear = 2024U;
+    tGnss.ucMonth = 3U;
+    tGnss.ucDay = 1U;
+    tGnss.ucHour = 0U;
+    tGnss.ucMinute = 30U;
+    assert(BIKE_TIME_ConvertUtc(&tGnss, -60, &tLocalTime));
+    assert(2024U == tLocalTime.usYear);
+    assert(2U == tLocalTime.ucMonth);
+    assert(29U == tLocalTime.ucDay);
+    assert(23U == tLocalTime.ucHour);
+    assert(30U == tLocalTime.ucMinute);
+
+    tGnss.ucMonth = 2U;
+    tGnss.ucDay = 30U;
+    assert(!BIKE_TIME_ConvertUtc(&tGnss, 0, &tLocalTime));
+    assert(!BIKE_TIME_ConvertUtc(&tGnss, 900, &tLocalTime));
+
+    return;
+}
+
 /* Test_GpxWriter: 覆盖流式写点、暂停、闭合和断电恢复。
  * 返回值：无
  */
@@ -261,6 +304,7 @@ int main(void)
 {
     Test_NmeaParser();
     Test_RideModel();
+    Test_TimeConversion();
     Test_GpxWriter();
     (void)printf("bike_core_test: PASS\n");
 

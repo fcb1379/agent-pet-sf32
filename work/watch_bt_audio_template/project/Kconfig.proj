@@ -16,6 +16,12 @@ config BIKE_COMPUTER
     bool "Enable X-TRACK based bike computer"
     default y
 
+config BIKE_TIMEZONE_MINUTES
+    int "Bike computer timezone offset in minutes"
+    range -720 840
+    default 480
+    depends on BIKE_COMPUTER
+
 menu "app cache Memory configuration"   
 
 choice

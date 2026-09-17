@@ -2,9 +2,12 @@
 
 #include <board.h>
 #include <bf0_hal.h>
+#include <drivers/rtc.h>
 #include <rtdevice.h>
 #include <rtthread.h>
 #include <string.h>
+
+#include "bike_time.h"
 
 #define LOG_TAG "bike.gnss"
 #define LOG_LVL LOG_LVL_INFO
@@ -16,6 +19,10 @@
 #define BIKE_GNSS_THREAD_STACK_SIZE (3072U)
 #define BIKE_GNSS_THREAD_PRIORITY (20U)
 #define BIKE_GNSS_STALE_TIMEOUT_MS (3000U)
+
+#ifndef CONFIG_BIKE_TIMEZONE_MINUTES
+#define CONFIG_BIKE_TIMEZONE_MINUTES (480)
+#endif
 
 /* l_tBikeSnapshot: 码表服务共享快照，只能在 l_tBikeMutex 保护下访问。 */
 static BIKE_SERVICE_SNAPSHOT l_tBikeSnapshot;
@@ -41,6 +48,56 @@ static rt_device_t l_pBikeUart;
 
 /* l_bBikeServiceReady: 共享对象已经初始化的标志。 */
 static bool l_bBikeServiceReady;
+
+/* l_bBikeRtcSynchronized: 防止每秒重复写 RTC 的一次性校时标志。 */
+static bool l_bBikeRtcSynchronized;
+
+static bool BikeService_Lock(void);
+static void BikeService_Unlock(void);
+
+/* BikeService_SyncRtc: 首次有效 RMC 后按配置时区校准片上 RTC。
+ * 参数：
+ *   - pGnss: GNSS UTC 日期时间
+ * 返回值：成功或已经同步返回 true，否则返回 false
+ */
+static bool BikeService_SyncRtc(const BIKE_GNSS_DATA *pGnss)
+{
+    BIKE_LOCAL_TIME tLocalTime;
+    rt_err_t eResult;
+
+    if (l_bBikeRtcSynchronized)
+    {
+        return true;
+    }
+    if (!BIKE_TIME_ConvertUtc(pGnss, (int16_t)CONFIG_BIKE_TIMEZONE_MINUTES, &tLocalTime))
+    {
+        return false;
+    }
+
+    eResult = set_date(tLocalTime.usYear, tLocalTime.ucMonth, tLocalTime.ucDay);
+    if (RT_EOK == eResult)
+    {
+        eResult = set_time(tLocalTime.ucHour, tLocalTime.ucMinute, tLocalTime.ucSecond);
+    }
+    if (RT_EOK != eResult)
+    {
+        LOG_E("RTC sync failed: %d", eResult);
+        return false;
+    }
+
+    l_bBikeRtcSynchronized = true;
+    if (BikeService_Lock())
+    {
+        l_tBikeSnapshot.bRtcSynchronized = true;
+        BikeService_Unlock();
+    }
+    LOG_I("RTC synchronized: %04u-%02u-%02u %02u:%02u:%02u UTC%+dmin",
+          tLocalTime.usYear, tLocalTime.ucMonth, tLocalTime.ucDay,
+          tLocalTime.ucHour, tLocalTime.ucMinute, tLocalTime.ucSecond,
+          CONFIG_BIKE_TIMEZONE_MINUTES);
+
+    return true;
+}
 
 /* BikeService_Lock: 获取共享快照互斥锁。
  * 返回值：成功返回 true，否则返回 false
@@ -126,6 +183,7 @@ static void BikeService_CommitParserData(BIKE_NMEA_RESULT eResult, uint32_t ulNo
     BikeService_Unlock();
     if (BIKE_NMEA_RESULT_RMC == eResult)
     {
+        (void)BikeService_SyncRtc(pGnss);
         (void)BIKE_RECORDER_SubmitPoint(pGnss);
     }
 

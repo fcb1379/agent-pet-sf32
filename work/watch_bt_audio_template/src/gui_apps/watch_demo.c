@@ -4,6 +4,7 @@
 #include "littlevgl2rtt.h"
 #include "lv_ext_resource_manager.h"
 #include <rtdevice.h>
+#include <string.h>
 #ifndef _WIN32
     #include "drv_lcd.h"
 #endif
@@ -12,6 +13,7 @@
 #include "app_mem.h"
 #include "log.h"
 #include "lv_freetype.h"
+#include "bike_service.h"
 
 #ifdef BSP_USING_PM
     #include "bf0_pm.h"
@@ -22,6 +24,7 @@
 #define APP_WATCH_GUI_TASK_STACK_SIZE 16*1024
 
 #define SLEEP_CTRL_PIN   (BSP_KEY1_PIN)
+#define BIKE_CTRL_PIN    (BSP_KEY2_PIN)
 #define LCD_DEVICE_NAME  "lcd"
 #define IDLE_TIME_LIMIT  (10000)
 
@@ -30,7 +33,10 @@ typedef enum
     BTN_EVT_SHUTDOWN = 0x01,
     BTN_EVT_UI_CLOSE = 0x02,
     BTN_EVT_UI_OPEN  = 0x04,
-    BTN_EVT_ALL = BTN_EVT_SHUTDOWN | BTN_EVT_UI_CLOSE | BTN_EVT_UI_OPEN,
+    BTN_EVT_BIKE_TOGGLE = 0x08,
+    BTN_EVT_BIKE_STOP = 0x10,
+    BTN_EVT_ALL = BTN_EVT_SHUTDOWN | BTN_EVT_UI_CLOSE | BTN_EVT_UI_OPEN |
+                  BTN_EVT_BIKE_TOGGLE | BTN_EVT_BIKE_STOP,
 } btn_evt_type_t;
 
 
@@ -103,6 +109,12 @@ static int32_t default_keypad_handler(lv_key_t key, lv_indev_state_t event)
     #define BUTTON_ACTIVE_POL BUTTON_ACTIVE_LOW
 #endif
 
+#ifdef BSP_KEY2_ACTIVE_HIGH
+    #define BIKE_BUTTON_ACTIVE_POL BUTTON_ACTIVE_HIGH
+#else
+    #define BIKE_BUTTON_ACTIVE_POL BUTTON_ACTIVE_LOW
+#endif
+
 
 typedef enum
 {
@@ -121,7 +133,6 @@ typedef struct
     keypad_key_state_t last_key_state;
 } keypad_status_t;
 
-static int32_t key1_button_handle = -1;
 static keypad_status_t keypad_status;
 
 void button_key_read(uint32_t *last_key, lv_indev_state_t *state)
@@ -144,6 +155,21 @@ void button_key_read(uint32_t *last_key, lv_indev_state_t *state)
 /* button event handler in UI inactive state */
 static void button_event_handler(int32_t pin, button_action_t action)
 {
+#ifdef BSP_USING_PM
+    if (BIKE_CTRL_PIN == pin)
+    {
+        if (BUTTON_CLICKED == action)
+        {
+            (void)rt_event_send(&btn_event, BTN_EVT_BIKE_TOGGLE);
+        }
+        else if (BUTTON_LONG_PRESSED == action)
+        {
+            (void)rt_event_send(&btn_event, BTN_EVT_BIKE_STOP);
+        }
+        return;
+    }
+#endif /* BSP_USING_PM */
+
 #ifdef BSP_USING_PM
     gui_pm_action_t pm_action;
 
@@ -205,15 +231,25 @@ static void button_event_handler(int32_t pin, button_action_t action)
 static void init_pin(void)
 {
     button_cfg_t cfg;
+    int32_t lButtonId;
 
+    (void)memset(&cfg, 0, sizeof(cfg));
     cfg.pin = SLEEP_CTRL_PIN;
     cfg.active_state = BUTTON_ACTIVE_POL;
     cfg.mode = PIN_MODE_INPUT;
     cfg.button_handler = button_event_handler;
-    int32_t id = button_init(&cfg);
-    RT_ASSERT(id >= 0);
-    RT_ASSERT(SF_EOK == button_enable(id));
-    key1_button_handle = id;
+    lButtonId = button_init(&cfg);
+    RT_ASSERT(0 <= lButtonId);
+    RT_ASSERT(SF_EOK == button_enable(lButtonId));
+
+    (void)memset(&cfg, 0, sizeof(cfg));
+    cfg.pin = BIKE_CTRL_PIN;
+    cfg.active_state = BIKE_BUTTON_ACTIVE_POL;
+    cfg.mode = PIN_MODE_INPUT;
+    cfg.button_handler = button_event_handler;
+    lButtonId = button_init(&cfg);
+    RT_ASSERT(0 <= lButtonId);
+    RT_ASSERT(SF_EOK == button_enable(lButtonId));
 }
 
 #else
@@ -281,6 +317,9 @@ static void button_event_task_entry(struct _lv_timer_t *task)
 {
     rt_uint32_t evt;
     rt_err_t err;
+    BIKE_SERVICE_SNAPSHOT tBikeSnapshot;
+
+    (void)task;
 
     if (lv_disp_get_inactive_time(NULL) > IDLE_TIME_LIMIT)
     {
@@ -298,6 +337,22 @@ static void button_event_task_entry(struct _lv_timer_t *task)
     {
         lv_disp_trig_activity(NULL);
         show_shutdown_msgbox();
+    }
+    if ((evt & BTN_EVT_BIKE_TOGGLE) && gui_app_is_actived("Bike") &&
+            BIKE_SERVICE_GetSnapshot(&tBikeSnapshot))
+    {
+        if (BIKE_RIDE_MODE_RUNNING == tBikeSnapshot.tRide.eMode)
+        {
+            (void)BIKE_SERVICE_PauseRide();
+        }
+        else
+        {
+            (void)BIKE_SERVICE_StartRide();
+        }
+    }
+    if ((evt & BTN_EVT_BIKE_STOP) && gui_app_is_actived("Bike"))
+    {
+        (void)BIKE_SERVICE_StopRide();
     }
 }
 
@@ -430,19 +485,15 @@ void app_watch_entry(void *parameter)
         extern int wait_platform_init_done(void);
         wait_platform_init_done();
     }
-#else
-    {
-        set_date(2022, 7, 1);
-        set_time(9, 0, 0);
-    }
 #endif /* _MSC_VER */
 
+#ifdef BSP_USING_PM
+    RT_ASSERT(RT_EOK == rt_event_init(&btn_event, "btn", RT_IPC_FLAG_FIFO));
+#endif /* BSP_USING_PM */
     init_pin();
     lcd_device = rt_device_find(LCD_DEVICE_NAME);
 
 #ifdef BSP_USING_PM
-    rt_event_init(&btn_event, "btn", RT_IPC_FLAG_FIFO);
-
     int8_t wakeup_pin;
     uint16_t gpio_pin;
     GPIO_TypeDef *gpio;

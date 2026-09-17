@@ -18,6 +18,8 @@
 - 每五个轨迹点执行一次 `fsync`；暂停和结束时强制同步，启动前保留 64 KiB 文件系统余量。
 - 使用 `.active` 状态标记和 `.part` 临时文件恢复异常中断；恢复时只复制完整 XML 行。
 - 单点异常跳变不会画出跨区连线；连续两个新位置点确认后建立新的 `<trkseg>`。
+- 首次有效 RMC 按 `CONFIG_BIKE_TIMEZONE_MINUTES` 校准片上 RTC，已移除模板启动时写死的 2022 年时间。
+- 黄山派 KEY2 已适配为骑行控制键：短按开始/暂停/继续，长按结束并闭合 GPX。
 
 ## 2. 主机测试
 
@@ -36,6 +38,7 @@ bike_core_test: PASS
 - 骑行状态切换、移动时间、里程、平均速度和异常跳点过滤。
 - GPX 正常闭合、暂停/继续、空间安全路径、异常跳点断段和掉电恢复。
 - 生成的正常文件与恢复文件均通过 Python `xml.etree.ElementTree` 解析。
+- UTC 时区转换覆盖正负偏移、跨年、闰日和非法日期。
 
 ## 3. SF32 整机编译
 
@@ -50,7 +53,7 @@ scons: done building targets.
 
 | 产物 | 大小 |
 |---|---:|
-| `main.bin` | 3,385,296 bytes |
+| `main.bin` | 3,386,008 bytes |
 | `fs_root.bin` | 4,194,304 bytes |
 
 编译仍输出 SDK/原模板已有的 FlashDB、LVGL、蓝牙音频和汇编兼容性警告；新增 `bike_*` 模块在 `-Werror` 主机测试中无告警，且目标编译成功。
@@ -61,7 +64,7 @@ HCPU ELF 链接结果：
 
 | 区域 | 当前占用 | 链接容量 | 余量 |
 |---|---:|---:|---:|
-| 片上 SRAM 地址范围 | 339,764 bytes | 523,264 bytes | 183,500 bytes |
+| 片上 SRAM 地址范围 | 339,768 bytes | 523,264 bytes | 183,496 bytes |
 | PSRAM 可写段 | 2,649,000 bytes | 8,388,608 bytes | 5,739,608 bytes |
 
 码表新增对象文件在链接前的直接占用：
@@ -69,12 +72,13 @@ HCPU ELF 链接结果：
 | 模块 | `.text` | `.bss` |
 |---|---:|---:|
 | `bike_nmea.o` | 1,488 bytes | 0 bytes |
+| `bike_time.o` | 320 bytes | 0 bytes |
 | `bike_ride_model.o` | 800 bytes | 0 bytes |
 | `bike_gpx.o` | 2,710 bytes | 0 bytes |
 | `bike_recorder.o` | 1,301 bytes | 3,865 bytes |
-| `bike_service.o` | 1,369 bytes | 3,693 bytes |
+| `bike_service.o` | 1,619 bytes | 3,698 bytes |
 | `app_bike.o` | 1,956 bytes | 36 bytes |
-| 合计 | 9,624 bytes | 7,594 bytes |
+| 合计 | 10,194 bytes | 7,599 bytes |
 
 `bike_service.o` 和 `bike_recorder.o` 分别包含 3,072 bytes 静态线程栈。对象文件合计只用于描述新增模块的直接体积，不等同于最终镜像增量；最终镜像还受链接消除、库引用和资源打包影响。
 
@@ -87,5 +91,6 @@ HCPU ELF 链接结果：
 - 未烧录开发板，不能声明页面、触摸、UART2 或休眠唤醒已通过实机验证。
 - 未取得转接板导出网表，PA20/PA27、3V3、GND 以及 PPS/WAKE/RESET 的实际网络仍需硬件复核。
 - 未接 DX-GP10，尚未验证真实 NMEA 连续输入、首次定位时间、丢星恢复、天线性能和整机功耗。
+- RTC 校时和 KEY2 控制已通过代码与目标构建验证，尚未做实板按键电平、长按阈值和 RTC 走时验证。
 - GPX 已完成源码、主机测试和目标构建验证，但尚未在板载 Elm FAT 上进行复位中断和空间耗尽实机测试。
 - X-TRACK 的离线地图、BLE 传感器和导航等后续功能尚未移植。
