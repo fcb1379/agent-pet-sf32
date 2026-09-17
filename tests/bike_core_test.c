@@ -17,12 +17,64 @@
 #include "bike_compass.h"
 #include "bike_nmea.h"
 #include "bike_pedometer.h"
+#include "bike_power.h"
 #include "bike_ride_model.h"
 #include "bike_speed_source.h"
 #include "bike_storage.h"
 #include "bike_time.h"
 
 #define TEST_GPX_DIRECTORY "/tmp/sf32_bike_gpx_test"
+
+/* Test_PowerFilter: 覆盖 X-TRACK 电压百分比边界、低通、2% 回差、
+ * 满量程边界、非法电压和空指针保护。
+ * 返回值：无
+ */
+static void Test_PowerFilter(void)
+{
+    BIKE_POWER_FILTER tFilter;
+    uint32_t ulFilteredVoltageDeciMv;
+    uint8_t ucPercent;
+
+    assert(0U == BIKE_POWER_VoltageToPercent(32000U));
+    assert(0U == BIKE_POWER_VoltageToPercent(33000U));
+    assert(50U == BIKE_POWER_VoltageToPercent(37000U));
+    assert(99U == BIKE_POWER_VoltageToPercent(40999U));
+    assert(100U == BIKE_POWER_VoltageToPercent(41000U));
+    assert(100U == BIKE_POWER_VoltageToPercent(45000U));
+
+    BIKE_POWER_ResetFilter(&tFilter);
+    assert(!tFilter.bInitialized);
+    assert(BIKE_POWER_UpdateFilter(&tFilter, 37000U,
+                                   &ulFilteredVoltageDeciMv, &ucPercent));
+    assert(37000U == ulFilteredVoltageDeciMv);
+    assert(50U == ucPercent);
+    assert(BIKE_POWER_UpdateFilter(&tFilter, 37080U,
+                                   &ulFilteredVoltageDeciMv, &ucPercent));
+    assert(37020U == ulFilteredVoltageDeciMv);
+    assert(50U == ucPercent);
+    assert(BIKE_POWER_UpdateFilter(&tFilter, 38600U,
+                                   &ulFilteredVoltageDeciMv, &ucPercent));
+    assert(37415U == ulFilteredVoltageDeciMv);
+    assert(55U == ucPercent);
+
+    tFilter.ulFilteredVoltageDeciMv = 40996U;
+    tFilter.ucDisplayedPercent = 99U;
+    assert(BIKE_POWER_UpdateFilter(&tFilter, 41012U,
+                                   &ulFilteredVoltageDeciMv, &ucPercent));
+    assert(41000U == ulFilteredVoltageDeciMv);
+    assert(100U == ucPercent);
+    assert(!BIKE_POWER_UpdateFilter(&tFilter, 0U,
+                                    &ulFilteredVoltageDeciMv, &ucPercent));
+    assert(41000U == tFilter.ulFilteredVoltageDeciMv);
+    assert(!BIKE_POWER_UpdateFilter(NULL, 37000U,
+                                    &ulFilteredVoltageDeciMv, &ucPercent));
+    assert(!BIKE_POWER_UpdateFilter(&tFilter, 37000U, NULL, &ucPercent));
+    assert(!BIKE_POWER_UpdateFilter(&tFilter, 37000U,
+                                    &ulFilteredVoltageDeciMv, NULL));
+    BIKE_POWER_ResetFilter(NULL);
+
+    return;
+}
 
 /* Test_CompassCalibration: 覆盖磁力计水平面校准进度、中心偏移、
  * 四象限航向、无效参数和样本计数饱和。
@@ -1065,6 +1117,7 @@ static void Test_HistoryRecord(void)
 
 int main(void)
 {
+    Test_PowerFilter();
     Test_CompassCalibration();
     Test_PedometerAccumulator();
     Test_StoragePaths();

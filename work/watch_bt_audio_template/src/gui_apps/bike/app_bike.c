@@ -29,6 +29,7 @@ LV_IMG_DECLARE(img_workout);
  * 成员说明：
  *   - pRoot: 页面根对象
  *   - pGpsLabel: GNSS 状态标签
+ *   - pPowerLabel: 轨迹记录与电池状态标签
  *   - pSpeedLabel: 当前速度标签
  *   - pSpeedUnit: 当前速度单位和来源标签
  *   - pDistanceLabel: 本次里程标签
@@ -47,6 +48,7 @@ typedef struct _BIKE_UI_CONTEXT
 {
     lv_obj_t *pRoot;
     lv_obj_t *pGpsLabel;
+    lv_obj_t *pPowerLabel;
     lv_obj_t *pSpeedLabel;
     lv_obj_t *pSpeedUnit;
     lv_obj_t *pDistanceLabel;
@@ -721,11 +723,13 @@ static void BikeUi_Update(void)
     char aPower[16];
     char aPowerBattery[12];
     char aCompass[24];
+    char aBattery[40];
     const char *pAltitudeSign;
     const char *pGpsState;
     const char *pRecordState;
     const char *pRideState;
     const char *pStepState;
+    const char *pPowerState;
     const char *pSpeedSource;
     const char *pFileName;
     const char *pStartText;
@@ -859,17 +863,76 @@ static void BikeUi_Update(void)
         break;
     }
 
+    switch (tSnapshot.tPower.eStatus)
+    {
+    case BIKE_POWER_STATUS_READY:
+        if (!tSnapshot.tPower.bChargeStatusValid)
+        {
+            pPowerState = "PWR?";
+        }
+        else if (tSnapshot.tPower.bFull)
+        {
+            pPowerState = "FULL";
+        }
+        else if (tSnapshot.tPower.bExternalPower)
+        {
+            pPowerState = "USB";
+        }
+        else
+        {
+            pPowerState = "BAT";
+        }
+        (void)snprintf(aBattery, sizeof(aBattery), "%s %u%% %lu.%03lu V",
+                       pPowerState,
+                       (unsigned int)tSnapshot.tPower.ucPercent,
+                       (unsigned long)(
+                           tSnapshot.tPower.ulVoltageDeciMv / 10000U),
+                       (unsigned long)(
+                           (tSnapshot.tPower.ulVoltageDeciMv % 10000U) /
+                           10U));
+        break;
+
+    case BIKE_POWER_STATUS_SEARCHING:
+        pPowerState = "PWR";
+        (void)snprintf(aBattery, sizeof(aBattery), "PWR WAIT");
+        break;
+
+    case BIKE_POWER_STATUS_ERROR:
+        pPowerState = "PWR";
+        (void)snprintf(aBattery, sizeof(aBattery), "PWR ERROR");
+        break;
+
+    case BIKE_POWER_STATUS_DISABLED:
+    default:
+        pPowerState = "PWR";
+        (void)snprintf(aBattery, sizeof(aBattery), "PWR OFF");
+        break;
+    }
+
     ulAgeMs = 0U;
     if (0U != tSnapshot.ulLastUpdateMs)
     {
         ulAgeMs = (uint32_t)rt_tick_get_millisecond() - tSnapshot.ulLastUpdateMs;
     }
-    lv_label_set_text_fmt(l_tBikeUi.pGpsLabel, "%s S%u A%lus | %s %lu",
+    lv_label_set_text_fmt(l_tBikeUi.pGpsLabel, "%s S%u A%lus",
                           pGpsState,
                           (unsigned int)tSnapshot.tGnss.ucSatellites,
-                          (unsigned long)(ulAgeMs / 1000U),
-                          pRecordState,
-                          (unsigned long)tSnapshot.tRecorder.ulPointCount);
+                          (unsigned long)(ulAgeMs / 1000U));
+    if (BIKE_POWER_STATUS_READY == tSnapshot.tPower.eStatus)
+    {
+        lv_label_set_text_fmt(l_tBikeUi.pPowerLabel, "%s %lu | %s %u%%",
+                              pRecordState,
+                              (unsigned long)tSnapshot.tRecorder.ulPointCount,
+                              pPowerState,
+                              (unsigned int)tSnapshot.tPower.ucPercent);
+    }
+    else
+    {
+        lv_label_set_text_fmt(l_tBikeUi.pPowerLabel, "%s %lu | %s --",
+                              pRecordState,
+                              (unsigned long)tSnapshot.tRecorder.ulPointCount,
+                              pPowerState);
+    }
 
     lv_label_set_text_fmt(l_tBikeUi.pSpeedLabel, "%u.%02u",
                           (unsigned int)(tSnapshot.tRide.usSpeedCentiKph / 100U),
@@ -927,6 +990,7 @@ static void BikeUi_Update(void)
                           "SAT  %u   FIX  %u   RTC  %s\nNMEA  %lu   CRC ERR  %lu   OVF  %lu\n"
                           "STEPS  %lu   IMU  %s   I2C ERR  %lu\n"
                           "MAG  %s   ERR  %lu\nXYZ  %ld  %ld  %ld mG\n"
+                          "PWR  %s\nADC ERR  %lu   CHG ERR  %lu\n"
                           "LIFE  %llu.%02llu km   %llu h\nRIDES  %lu   MAX  %u.%02u km/h",
                           aLatitude, aLongitude, pAltitudeSign,
                           (unsigned long)(ulAltitudeAbsoluteCm / 100U),
@@ -949,6 +1013,9 @@ static void BikeUi_Update(void)
                           (long)tSnapshot.tCompass.lXMilliGauss,
                           (long)tSnapshot.tCompass.lYMilliGauss,
                           (long)tSnapshot.tCompass.lZMilliGauss,
+                          aBattery,
+                          (unsigned long)tSnapshot.tPower.ulAdcErrorCount,
+                          (unsigned long)tSnapshot.tPower.ulChargeErrorCount,
                           (unsigned long long)(udHistoryCentiKm / 100ULL),
                           (unsigned long long)(udHistoryCentiKm % 100ULL),
                           (unsigned long long)udHistoryHours,
@@ -1287,9 +1354,26 @@ static void BikeUi_OnStart(void)
     BikeUi_SetPageStyle(pSummaryPage);
 
     l_tBikeUi.pGpsLabel = lv_label_create(pDashboardPage);
-    lv_label_set_text(l_tBikeUi.pGpsLabel, "SEARCHING  SAT 0  AGE 0s");
+    lv_label_set_text(l_tBikeUi.pGpsLabel, "SEARCHING S0 A0s");
+    lv_obj_set_width(l_tBikeUi.pGpsLabel, 176);
+    lv_label_set_long_mode(l_tBikeUi.pGpsLabel, LV_LABEL_LONG_DOT);
+    lv_obj_set_style_text_font(l_tBikeUi.pGpsLabel, &lv_font_montserrat_16,
+                               LV_PART_MAIN);
     lv_obj_set_style_text_color(l_tBikeUi.pGpsLabel, lv_color_hex(0x45D483), LV_PART_MAIN);
-    lv_obj_align(l_tBikeUi.pGpsLabel, LV_ALIGN_TOP_MID, 0, 14);
+    lv_obj_align(l_tBikeUi.pGpsLabel, LV_ALIGN_TOP_LEFT, 16, 14);
+
+    l_tBikeUi.pPowerLabel = lv_label_create(pDashboardPage);
+    RT_ASSERT(NULL != l_tBikeUi.pPowerLabel);
+    lv_label_set_text(l_tBikeUi.pPowerLabel, "IDLE 0 | PWR --");
+    lv_obj_set_width(l_tBikeUi.pPowerLabel, 176);
+    lv_label_set_long_mode(l_tBikeUi.pPowerLabel, LV_LABEL_LONG_DOT);
+    lv_obj_set_style_text_font(l_tBikeUi.pPowerLabel,
+                               &lv_font_montserrat_16, LV_PART_MAIN);
+    lv_obj_set_style_text_align(l_tBikeUi.pPowerLabel, LV_TEXT_ALIGN_RIGHT,
+                                LV_PART_MAIN);
+    lv_obj_set_style_text_color(l_tBikeUi.pPowerLabel,
+                                lv_color_hex(0x8FA3B8), LV_PART_MAIN);
+    lv_obj_align(l_tBikeUi.pPowerLabel, LV_ALIGN_TOP_RIGHT, -16, 14);
 
     l_tBikeUi.pSpeedLabel = lv_label_create(pDashboardPage);
     lv_label_set_text(l_tBikeUi.pSpeedLabel, "0.00");
@@ -1328,11 +1412,11 @@ static void BikeUi_OnStart(void)
     lv_obj_set_pos(l_tBikeUi.pLocationLabel, 20, 66);
     lv_obj_set_width(l_tBikeUi.pLocationLabel, 350);
     lv_label_set_long_mode(l_tBikeUi.pLocationLabel, LV_LABEL_LONG_WRAP);
-    lv_obj_set_style_text_font(l_tBikeUi.pLocationLabel, &lv_font_montserrat_20,
+    lv_obj_set_style_text_font(l_tBikeUi.pLocationLabel, &lv_font_montserrat_16,
                                LV_PART_MAIN);
     lv_obj_set_style_text_color(l_tBikeUi.pLocationLabel, lv_color_hex(0xDCE6F0),
                                 LV_PART_MAIN);
-    lv_obj_set_style_text_line_space(l_tBikeUi.pLocationLabel, 8, LV_PART_MAIN);
+    lv_obj_set_style_text_line_space(l_tBikeUi.pLocationLabel, 4, LV_PART_MAIN);
 
     l_tBikeUi.pMapContainer = lv_obj_create(pMapPage);
     RT_ASSERT(NULL != l_tBikeUi.pMapContainer);
