@@ -22,6 +22,11 @@
 #define BIKE_GNSS_THREAD_PRIORITY (20U)
 #define BIKE_GNSS_STALE_TIMEOUT_MS (3000U)
 #define BIKE_RIDE_UPDATE_PERIOD_MS (1000U)
+#define BIKE_DEMO_PERIOD_MS (1000U)
+#define BIKE_DEMO_DAY_SECONDS (86400U)
+#define BIKE_DEMO_MAX_SEQUENCE ((28U * BIKE_DEMO_DAY_SECONDS) - 1U)
+#define BIKE_DEMO_LATITUDE_E7 (225430960)
+#define BIKE_DEMO_LONGITUDE_E7 (1140578650)
 
 /* l_tBikeSnapshot: 码表服务共享快照，只能在 l_tBikeMutex 保护下访问。 */
 static BIKE_SERVICE_SNAPSHOT l_tBikeSnapshot;
@@ -48,6 +53,9 @@ static rt_device_t l_pBikeUart;
 /* l_bBikeServiceReady: 共享对象已经初始化的标志。 */
 static bool l_bBikeServiceReady;
 
+/* l_bBikeThreadReady: GNSS/模拟数据工作线程已经启动。 */
+static bool l_bBikeThreadReady;
+
 /* l_bBikeRtcSynchronized: 防止每秒重复写 RTC 的一次性校时标志。 */
 static bool l_bBikeRtcSynchronized;
 
@@ -70,8 +78,15 @@ static uint32_t l_ulBikeLastRideUpdateMs;
 /* l_bBikeHasRideUpdate: 已执行至少一次速度融合更新。 */
 static bool l_bBikeHasRideUpdate;
 
+/* l_ulBikeDemoSequence: 模拟定位秒序号，饱和在 28 天内以保持 UTC 单调。 */
+static uint32_t l_ulBikeDemoSequence;
+
+/* l_ulBikeLastDemoUpdateMs: 最近模拟定位发布时间。 */
+static uint32_t l_ulBikeLastDemoUpdateMs;
+
 static bool BikeService_Lock(void);
 static void BikeService_Unlock(void);
+static void BikeService_UpdateRide(uint32_t ulNowMs, bool bForce);
 
 /* BikeService_SyncRtc: 首次有效 RMC 后按配置时区校准片上 RTC。
  * 参数：
@@ -171,6 +186,115 @@ static rt_err_t BikeService_UartRxIndicate(rt_device_t pDevice, rt_size_t ulSize
     }
 
     return RT_EOK;
+}
+
+/* BikeService_IsDemoMode: 读取模拟定位开关。
+ * 返回值：模拟模式已启用返回 true
+ */
+static bool BikeService_IsDemoMode(void)
+{
+    bool bEnabled;
+
+    bEnabled = false;
+    if (BikeService_Lock())
+    {
+        bEnabled = l_tBikeSnapshot.bDemoMode;
+        BikeService_Unlock();
+    }
+
+    return bEnabled;
+}
+
+/* BikeService_SetDemoMode: 切换无 GPS 模组的固定容量模拟定位。
+ * 参数：
+ *   - bEnabled: 是否启用
+ * 返回值：更新成功返回 true
+ */
+static bool BikeService_SetDemoMode(bool bEnabled)
+{
+    uint32_t ulNowMs;
+
+    if ((!l_bBikeThreadReady) || (!BikeService_Lock()))
+    {
+        return false;
+    }
+    ulNowMs = (uint32_t)rt_tick_get_millisecond();
+    l_tBikeSnapshot.bDemoMode = bEnabled;
+    l_ulBikeDemoSequence = 0U;
+    l_ulBikeLastDemoUpdateMs = ulNowMs - BIKE_DEMO_PERIOD_MS;
+    if (!bEnabled)
+    {
+        l_tBikeSnapshot.tGnss.bFixValid = false;
+        l_tBikeSnapshot.tGnss.ulSpeedCmPerSec = 0U;
+        l_tBikeSnapshot.ulLastUpdateMs = 0U;
+        l_bBikeHasRmcUpdate = false;
+        BIKE_RIDE_InvalidateFix(&l_tBikeSnapshot.tRide);
+    }
+    BikeService_Unlock();
+    if (bEnabled)
+    {
+        (void)rt_sem_release(&l_tBikeRxSemaphore);
+    }
+
+    return true;
+}
+
+/* BikeService_PublishDemo: 每秒发布一个单调 UTC 的模拟定位点。
+ * 参数：
+ *   - ulNowMs: 当前单调时钟毫秒数
+ * 返回值：无
+ */
+static void BikeService_PublishDemo(uint32_t ulNowMs)
+{
+    BIKE_GNSS_DATA tGnss;
+    uint32_t ulDaySeconds;
+    uint32_t ulSequence;
+
+    if (!BikeService_Lock())
+    {
+        return;
+    }
+    if ((!l_tBikeSnapshot.bDemoMode) ||
+        (BIKE_DEMO_PERIOD_MS > (ulNowMs - l_ulBikeLastDemoUpdateMs)))
+    {
+        BikeService_Unlock();
+        return;
+    }
+
+    ulSequence = l_ulBikeDemoSequence;
+    (void)memset(&tGnss, 0, sizeof(tGnss));
+    ulDaySeconds = ulSequence % BIKE_DEMO_DAY_SECONDS;
+    tGnss.bFixValid = true;
+    tGnss.ucFixQuality = 1U;
+    tGnss.ucSatellites = 12U;
+    tGnss.usYear = 2026U;
+    tGnss.ucMonth = 1U;
+    tGnss.ucDay = (uint8_t)(1U + (ulSequence / BIKE_DEMO_DAY_SECONDS));
+    tGnss.ucHour = (uint8_t)(ulDaySeconds / 3600U);
+    tGnss.ucMinute = (uint8_t)((ulDaySeconds % 3600U) / 60U);
+    tGnss.ucSecond = (uint8_t)(ulDaySeconds % 60U);
+    tGnss.lLatitudeE7 = BIKE_DEMO_LATITUDE_E7 +
+                        (int32_t)((ulSequence % 600U) * 20U);
+    tGnss.lLongitudeE7 = BIKE_DEMO_LONGITUDE_E7 +
+                         (int32_t)((ulSequence % 600U) * 20U);
+    tGnss.lAltitudeCm = 4320 + (int32_t)((ulSequence % 20U) * 5U);
+    tGnss.ulSpeedCmPerSec = 500U + ((ulSequence % 20U) * 25U);
+    tGnss.usCourseDeg10 = (uint16_t)((ulSequence * 30U) % 3600U);
+    l_tBikeSnapshot.tGnss = tGnss;
+    l_tBikeSnapshot.ulLastUpdateMs = ulNowMs;
+    l_ulBikeLastRmcUpdateMs = ulNowMs;
+    l_bBikeHasRmcUpdate = true;
+    l_ulBikeLastDemoUpdateMs = ulNowMs;
+    if (BIKE_DEMO_MAX_SEQUENCE > l_ulBikeDemoSequence)
+    {
+        l_ulBikeDemoSequence++;
+    }
+    BikeService_Unlock();
+
+    BikeService_UpdateRide(ulNowMs, true);
+    (void)BIKE_RECORDER_SubmitPoint(&tGnss);
+
+    return;
 }
 
 /* BikeService_UpdateRide: 每秒选择 CSC/GNSS 速度并更新骑行和自动暂停。
@@ -341,29 +465,45 @@ static void BikeService_ThreadEntry(void *pParameter)
     uint32_t ulIndex;
     uint32_t ulNowMs;
     BIKE_NMEA_RESULT eResult;
+    bool bDemoMode;
 
     (void)pParameter;
     while (true)
     {
         (void)rt_sem_take(&l_tBikeRxSemaphore, rt_tick_from_millisecond(1000));
-        do
+        bDemoMode = BikeService_IsDemoMode();
+        if (NULL != l_pBikeUart)
         {
-            ulReadLength = rt_device_read(l_pBikeUart, 0, aBuffer, sizeof(aBuffer));
-            for (ulIndex = 0U; ulIndex < ulReadLength; ulIndex++)
+            do
             {
-                eResult = BIKE_NMEA_Feed(&l_tBikeParser, aBuffer[ulIndex]);
-                if ((BIKE_NMEA_RESULT_GGA == eResult) ||
-                    (BIKE_NMEA_RESULT_RMC == eResult) ||
-                    (BIKE_NMEA_RESULT_VTG == eResult))
+                ulReadLength = rt_device_read(l_pBikeUart, 0, aBuffer,
+                                              sizeof(aBuffer));
+                for (ulIndex = 0U; ulIndex < ulReadLength; ulIndex++)
                 {
-                    ulNowMs = (uint32_t)rt_tick_get_millisecond();
-                    BikeService_CommitParserData(eResult, ulNowMs);
+                    eResult = BIKE_NMEA_Feed(&l_tBikeParser,
+                                             aBuffer[ulIndex]);
+                    if ((!bDemoMode) &&
+                        ((BIKE_NMEA_RESULT_GGA == eResult) ||
+                         (BIKE_NMEA_RESULT_RMC == eResult) ||
+                         (BIKE_NMEA_RESULT_VTG == eResult)))
+                    {
+                        ulNowMs = (uint32_t)rt_tick_get_millisecond();
+                        BikeService_CommitParserData(eResult, ulNowMs);
+                    }
                 }
             }
+            while (0U < ulReadLength);
         }
-        while (0U < ulReadLength);
 
-        BikeService_CheckStale((uint32_t)rt_tick_get_millisecond());
+        ulNowMs = (uint32_t)rt_tick_get_millisecond();
+        if (bDemoMode)
+        {
+            BikeService_PublishDemo(ulNowMs);
+        }
+        else
+        {
+            BikeService_CheckStale(ulNowMs);
+        }
     }
 
     return;
@@ -390,12 +530,17 @@ static int BikeService_Init(void)
 {
     struct serial_configure tConfig;
     rt_err_t eResult;
+    bool bUartOpened;
 
     (void)memset(&l_tBikeSnapshot, 0, sizeof(l_tBikeSnapshot));
+    bUartOpened = false;
     l_ulBikeLastRmcUpdateMs = 0U;
     l_ulBikeLastRideUpdateMs = 0U;
+    l_ulBikeDemoSequence = 0U;
+    l_ulBikeLastDemoUpdateMs = 0U;
     l_bBikeHasRmcUpdate = false;
     l_bBikeHasRideUpdate = false;
+    l_bBikeThreadReady = false;
     BIKE_AUTO_PAUSE_Init(&l_tBikeAutoPause);
     eResult = BIKE_SETTINGS_Init();
     if (RT_EOK != eResult)
@@ -432,40 +577,48 @@ static int BikeService_Init(void)
     if (NULL == l_pBikeUart)
     {
         l_tBikeSnapshot.ePortStatus = BIKE_GNSS_PORT_ERROR;
-        LOG_E("%s not found", BIKE_GNSS_UART_NAME);
-        return RT_EOK;
+        LOG_E("%s not found; demo mode remains available",
+              BIKE_GNSS_UART_NAME);
     }
-
-    tConfig = (struct serial_configure)RT_SERIAL_CONFIG_DEFAULT;
-    tConfig.baud_rate = BIKE_GNSS_BAUD_RATE;
-    eResult = rt_device_control(l_pBikeUart, RT_DEVICE_CTRL_CONFIG, &tConfig);
-    if (RT_EOK != eResult)
+    else
     {
-        l_tBikeSnapshot.ePortStatus = BIKE_GNSS_PORT_ERROR;
-        LOG_E("uart config failed: %d", eResult);
-        return RT_EOK;
-    }
-
-    eResult = rt_device_open(l_pBikeUart, RT_DEVICE_OFLAG_RDWR | RT_DEVICE_FLAG_DMA_RX);
-    if (-RT_EIO == eResult)
-    {
-        eResult = rt_device_open(l_pBikeUart, RT_DEVICE_OFLAG_RDWR | RT_DEVICE_FLAG_INT_RX);
-    }
-    if (RT_EOK != eResult)
-    {
-        l_tBikeSnapshot.ePortStatus = BIKE_GNSS_PORT_ERROR;
-        LOG_E("uart open failed: %d", eResult);
-        return RT_EOK;
-    }
-
-    eResult = rt_device_set_rx_indicate(l_pBikeUart, BikeService_UartRxIndicate);
-    if (RT_EOK != eResult)
-    {
-        (void)rt_device_close(l_pBikeUart);
-        l_pBikeUart = NULL;
-        l_tBikeSnapshot.ePortStatus = BIKE_GNSS_PORT_ERROR;
-        LOG_E("uart callback failed: %d", eResult);
-        return RT_EOK;
+        tConfig = (struct serial_configure)RT_SERIAL_CONFIG_DEFAULT;
+        tConfig.baud_rate = BIKE_GNSS_BAUD_RATE;
+        eResult = rt_device_control(l_pBikeUart, RT_DEVICE_CTRL_CONFIG,
+                                    &tConfig);
+        if (RT_EOK == eResult)
+        {
+            eResult = rt_device_open(l_pBikeUart,
+                                     RT_DEVICE_OFLAG_RDWR |
+                                     RT_DEVICE_FLAG_DMA_RX);
+            if (-RT_EIO == eResult)
+            {
+                eResult = rt_device_open(l_pBikeUart,
+                                         RT_DEVICE_OFLAG_RDWR |
+                                         RT_DEVICE_FLAG_INT_RX);
+            }
+        }
+        if (RT_EOK == eResult)
+        {
+            bUartOpened = true;
+            eResult = rt_device_set_rx_indicate(l_pBikeUart,
+                                                BikeService_UartRxIndicate);
+        }
+        if (RT_EOK != eResult)
+        {
+            if (bUartOpened)
+            {
+                (void)rt_device_close(l_pBikeUart);
+            }
+            l_pBikeUart = NULL;
+            l_tBikeSnapshot.ePortStatus = BIKE_GNSS_PORT_ERROR;
+            LOG_E("uart init failed: %d; demo mode remains available",
+                  eResult);
+        }
+        else
+        {
+            l_tBikeSnapshot.ePortStatus = BIKE_GNSS_PORT_READY;
+        }
     }
 
     eResult = rt_thread_init(&l_tBikeThread, "bike_gnss", BikeService_ThreadEntry, NULL,
@@ -477,16 +630,23 @@ static int BikeService_Init(void)
     }
     if (RT_EOK != eResult)
     {
-        (void)rt_device_set_rx_indicate(l_pBikeUart, NULL);
-        (void)rt_device_close(l_pBikeUart);
-        l_pBikeUart = NULL;
+        if (NULL != l_pBikeUart)
+        {
+            (void)rt_device_set_rx_indicate(l_pBikeUart, NULL);
+            (void)rt_device_close(l_pBikeUart);
+            l_pBikeUart = NULL;
+        }
         l_tBikeSnapshot.ePortStatus = BIKE_GNSS_PORT_ERROR;
         LOG_E("thread start failed: %d", eResult);
         return RT_EOK;
     }
+    l_bBikeThreadReady = true;
 
-    l_tBikeSnapshot.ePortStatus = BIKE_GNSS_PORT_READY;
-    LOG_I("DX-GP10 ready on %s at %u", BIKE_GNSS_UART_NAME, BIKE_GNSS_BAUD_RATE);
+    if (NULL != l_pBikeUart)
+    {
+        LOG_I("DX-GP10 ready on %s at %u", BIKE_GNSS_UART_NAME,
+              BIKE_GNSS_BAUD_RATE);
+    }
 
     return RT_EOK;
 }
@@ -614,3 +774,41 @@ bool BIKE_SERVICE_DiscardRide(void)
 
     return bResult;
 }
+
+/* BikeService_DemoCommand: 控制无 GNSS 模组时的模拟定位数据。
+ * 参数：
+ *   - lArgumentCount: shell 参数数量
+ *   - pArguments: shell 参数数组
+ * 返回值：无
+ */
+static void BikeService_DemoCommand(int lArgumentCount, char **pArguments)
+{
+    bool bResult;
+
+    if (!l_bBikeServiceReady)
+    {
+        rt_kprintf("bike demo service not ready\n");
+        return;
+    }
+    if ((2 > lArgumentCount) || (0 == strcmp(pArguments[1], "status")))
+    {
+        rt_kprintf("bike demo=%u\n", BikeService_IsDemoMode());
+        rt_kprintf("usage: bikedemo on | off | status\n");
+        return;
+    }
+
+    bResult = false;
+    if ((2 == lArgumentCount) && (0 == strcmp(pArguments[1], "on")))
+    {
+        bResult = BikeService_SetDemoMode(true);
+    }
+    else if ((2 == lArgumentCount) && (0 == strcmp(pArguments[1], "off")))
+    {
+        bResult = BikeService_SetDemoMode(false);
+    }
+    rt_kprintf("bike demo update=%u\n", bResult);
+
+    return;
+}
+MSH_CMD_EXPORT_ALIAS(BikeService_DemoCommand, bikedemo,
+                     bike GNSS demo mode);

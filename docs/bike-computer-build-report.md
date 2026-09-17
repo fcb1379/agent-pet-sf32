@@ -15,6 +15,7 @@
 - LVGL 使用横向 TileView 提供主数据、GNSS 详情和骑行总结三页；主数据和总结页均可开始/暂停/停止骑行。
 - GNSS 详情页显示经纬度、海拔、航向、UTC、卫星数、定位质量、RTC 同步状态和 NMEA 统计；未定位时不伪造零坐标。
 - GNSS 接收线程只持有静态栈和静态缓冲；串口回调只释放信号量，共享快照使用互斥锁保护。
+- `bikedemo on/off/status` 提供无 GPS 模组演示模式，每秒生成单调 UTC、坐标、海拔、航向和速度；UART2 不存在或初始化失败时，工作线程仍启动以保留演示能力，真实串口数据在演示期间只解析不提交。
 - GPX 使用独立静态线程和十二消息队列异步落盘，正常结束后原子发布 `.gpx` 文件。
 - 主数据页可保存结束轨迹；总结页分别提供 `SAVE` 和 `DISCARD`，丢弃路径关闭文件并删除 `.part` 与 `.active`，不会发布最终 GPX。
 - 每五个轨迹点执行一次 `fsync`；暂停和结束时强制同步，启动前保留 64 KiB 文件系统余量。
@@ -76,7 +77,7 @@ scons: done building targets.
 
 | 产物 | 大小 |
 |---|---:|
-| `main.bin` | 3,401,164 bytes |
+| `main.bin` | 3,402,000 bytes |
 | `fs_root.bin` | 4,194,304 bytes |
 
 编译仅输出原工程已有的 `dfu` 分区未定义和 ftab 入口符号警告；新增 `bike_*` 模块在 `-Werror` 主机测试中无告警，且目标编译成功。
@@ -87,7 +88,7 @@ HCPU ELF 链接结果：
 
 | 区域 | 当前占用 | 链接容量 | 余量 |
 |---|---:|---:|---:|
-| 片上 SRAM 地址范围 | 342,540 bytes | 523,264 bytes | 180,724 bytes |
+| 片上 SRAM 地址范围 | 342,552 bytes | 523,264 bytes | 180,712 bytes |
 | PSRAM 可写段 | 2,649,032 bytes | 8,388,608 bytes | 5,739,576 bytes |
 
 码表新增对象文件在链接前的直接占用：
@@ -107,9 +108,9 @@ HCPU ELF 链接结果：
 | `bike_recorder.o` | 1,349 bytes | 3,865 bytes |
 | `bike_settings.o` | 1,770 bytes | 53 bytes |
 | `bike_sensor_ble.o` | 5,097 bytes | 2,529 bytes |
-| `bike_service.o` | 2,370 bytes | 3,760 bytes |
-| `app_bike.o` | 4,502 bytes | 48 bytes |
-| 合计 | 24,289 bytes | 10,344 bytes |
+| `bike_service.o` | 3,188 bytes | 3,769 bytes |
+| `app_bike.o` | 4,523 bytes | 48 bytes |
+| 合计 | 25,128 bytes | 10,353 bytes |
 
 `bike_service.o` 和 `bike_recorder.o` 分别包含 3,072 bytes 静态线程栈，`bike_sensor_ble.o` 包含 2,048 bytes 静态线程栈以及固定消息队列和连接状态。对象文件合计只用于描述新增模块的直接体积，不等同于最终镜像增量；最终镜像还受链接消除、库引用和资源打包影响。
 

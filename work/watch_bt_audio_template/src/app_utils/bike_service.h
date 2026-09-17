@@ -25,8 +25,8 @@ typedef enum _BIKE_GNSS_PORT_STATUS
 /* BIKE_SERVICE_SNAPSHOT: GNSS 服务提供给 UI 的线程安全快照。
  * 成员说明：
  *   - ePortStatus: UART2 端口状态
- *   - ulLastUpdateMs: 最近一次通过校验的 GGA/RMC 时间戳
- *   - ulAcceptedCount: 已接受的 GGA/RMC 语句数
+ *   - ulLastUpdateMs: 最近一次通过校验的 GGA/RMC 或模拟定位时间戳
+ *   - ulAcceptedCount: 已接受的 GGA/RMC/VTG 语句数
  *   - ulChecksumErrorCount: 校验错误语句数
  *   - ulOverflowCount: 超长语句数
  *   - tGnss: 最近定位数据
@@ -35,6 +35,7 @@ typedef enum _BIKE_GNSS_PORT_STATUS
  *   - tSensors: BLE 心率和 CSC 传感器状态
  *   - bRtcSynchronized: RTC 是否已被有效 GNSS 时间校准
  *   - bAutoPaused: 当前是否由低速自动暂停
+ *   - bDemoMode: 是否启用无模组模拟定位
  */
 typedef struct _BIKE_SERVICE_SNAPSHOT
 {
@@ -49,6 +50,7 @@ typedef struct _BIKE_SERVICE_SNAPSHOT
     BIKE_SENSOR_BLE_SNAPSHOT tSensors;
     bool bRtcSynchronized;
     bool bAutoPaused;
+    bool bDemoMode;
 } BIKE_SERVICE_SNAPSHOT;
 
 bool BIKE_SERVICE_GetSnapshot(BIKE_SERVICE_SNAPSHOT *pSnapshot);

@@ -348,7 +348,11 @@ static void BikeUi_Update(void)
         return;
     }
 
-    if (BIKE_GNSS_PORT_ERROR == tSnapshot.ePortStatus)
+    if (tSnapshot.bDemoMode)
+    {
+        pGpsState = "DEMO";
+    }
+    else if (BIKE_GNSS_PORT_ERROR == tSnapshot.ePortStatus)
     {
         pGpsState = "UART2 ERROR";
     }
