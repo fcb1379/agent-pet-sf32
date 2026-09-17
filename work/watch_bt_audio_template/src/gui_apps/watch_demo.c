@@ -14,6 +14,7 @@
 #include "log.h"
 #include "lv_freetype.h"
 #include "bike_service.h"
+#include "bike_settings.h"
 
 #ifdef BSP_USING_PM
     #include "bf0_pm.h"
@@ -26,7 +27,7 @@
 #define SLEEP_CTRL_PIN   (BSP_KEY1_PIN)
 #define BIKE_CTRL_PIN    (BSP_KEY2_PIN)
 #define LCD_DEVICE_NAME  "lcd"
-#define IDLE_TIME_LIMIT  (10000)
+#define BIKE_DISPLAY_SETTINGS_REFRESH_MS (1000U)
 
 typedef enum
 {
@@ -49,6 +50,15 @@ static rt_device_t lcd_device;
 static lv_timer_t *button_event_task;
 static struct rt_event btn_event;
 static lv_obj_t *mbox;
+
+/* l_tBikeDisplaySettings: GUI 线程缓存的亮度和熄屏策略。 */
+static BIKE_SETTINGS_SNAPSHOT l_tBikeDisplaySettings;
+
+/* l_ulBikeDisplaySettingsRefreshMs: 最近一次读取持久化显示设置的时刻。 */
+static uint32_t l_ulBikeDisplaySettingsRefreshMs;
+
+/* l_bBikeDisplaySettingsReady: 显示设置已经读取且亮度已应用。 */
+static bool l_bBikeDisplaySettingsReady;
 
 /*Compatible with private lib*/
 uint32_t g_mainmenu[2];
@@ -158,6 +168,15 @@ static void button_event_handler(int32_t pin, button_action_t action)
 #ifdef BSP_USING_PM
     if (BIKE_CTRL_PIN == pin)
     {
+        if (!gui_is_active())
+        {
+            if ((BUTTON_CLICKED == action) || (BUTTON_LONG_PRESSED == action))
+            {
+                gui_pm_fsm(GUI_PM_ACTION_WAKEUP);
+            }
+            return;
+        }
+        lv_disp_trig_activity(NULL);
         if (BUTTON_CLICKED == action)
         {
             (void)rt_event_send(&btn_event, BTN_EVT_BIKE_TOGGLE);
@@ -256,6 +275,50 @@ static void init_pin(void)
 #define init_pin()
 #endif /* USING_BUTTON_LIB */
 
+/* BikeDisplay_RefreshSettings: 周期读取设置并在变化时应用 LCD 亮度。
+ * 参数：
+ *   - bForce: 是否忽略刷新周期并强制应用亮度
+ * 返回值：读取设置成功返回 true，否则返回 false
+ */
+static bool BikeDisplay_RefreshSettings(bool bForce)
+{
+    BIKE_SETTINGS_SNAPSHOT tSettings;
+    uint32_t ulNowMs;
+    rt_err_t eResult;
+
+    ulNowMs = (uint32_t)rt_tick_get_millisecond();
+    if ((!bForce) && l_bBikeDisplaySettingsReady &&
+        (BIKE_DISPLAY_SETTINGS_REFRESH_MS >
+         (ulNowMs - l_ulBikeDisplaySettingsRefreshMs)))
+    {
+        return true;
+    }
+    l_ulBikeDisplaySettingsRefreshMs = ulNowMs;
+    eResult = BIKE_SETTINGS_GetSnapshot(&tSettings);
+    if (RT_EOK != eResult)
+    {
+        LOG_E("bike display settings read failed: %d", eResult);
+        return false;
+    }
+
+    if (bForce || (!l_bBikeDisplaySettingsReady) ||
+        (l_tBikeDisplaySettings.ucBrightnessPercent !=
+         tSettings.ucBrightnessPercent))
+    {
+        eResult = rt_device_control(lcd_device, RTGRAPHIC_CTRL_SET_BRIGHTNESS,
+                                    &tSettings.ucBrightnessPercent);
+        if (RT_EOK != eResult)
+        {
+            LOG_E("set brightness failed: %d", eResult);
+            return false;
+        }
+    }
+    l_tBikeDisplaySettings = tSettings;
+    l_bBikeDisplaySettingsReady = true;
+
+    return true;
+}
+
 #ifdef BSP_USING_PM
 static void opa_anim(void *bg, int32_t v)
 {
@@ -318,10 +381,14 @@ static void button_event_task_entry(struct _lv_timer_t *task)
     rt_uint32_t evt;
     rt_err_t err;
     BIKE_SERVICE_SNAPSHOT tBikeSnapshot;
+    uint32_t ulIdleLimitMs;
 
     (void)task;
 
-    if (lv_disp_get_inactive_time(NULL) > IDLE_TIME_LIMIT)
+    (void)BikeDisplay_RefreshSettings(false);
+    ulIdleLimitMs = (uint32_t)l_tBikeDisplaySettings.usScreenTimeoutSeconds * 1000U;
+    if (l_bBikeDisplaySettingsReady && (0U < ulIdleLimitMs) &&
+        (ulIdleLimitMs < lv_disp_get_inactive_time(NULL)))
     {
         gui_pm_fsm(GUI_PM_ACTION_SLEEP);
     }
@@ -368,6 +435,7 @@ static void pm_event_handler(gui_pm_event_type_t event)
     case GUI_PM_EVT_RESUME:
     {
         lv_timer_enable(true);
+        (void)BikeDisplay_RefreshSettings(true);
         break;
     }
     case GUI_PM_EVT_SHUTDOWN:
@@ -571,9 +639,7 @@ void app_watch_entry(void *parameter)
         if (first_loop)
         {
 #ifndef WIN32
-            //Turn on lcd backlight after power on
-            uint8_t brightness = 100;
-            rt_device_control(lcd_device, RTGRAPHIC_CTRL_SET_BRIGHTNESS, &brightness);
+            (void)BikeDisplay_RefreshSettings(true);
 #endif /* WIN32 */
             first_loop = 0;
         }
