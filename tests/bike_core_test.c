@@ -8,6 +8,7 @@
 #include <unistd.h>
 
 #include "bike_gpx.h"
+#include "bike_map.h"
 #include "bike_auto_pause.h"
 #include "bike_ble_advertising.h"
 #include "bike_ble_measurement.h"
@@ -845,6 +846,55 @@ static void Test_GpxWriter(void)
     return;
 }
 
+/* Test_MapProjection: 验证 Web Mercator 边界、瓦片坐标和路径安全性。
+ * 返回值：无
+ */
+static void Test_MapProjection(void)
+{
+    BIKE_MAP_POINT tPoint;
+    char aPath[64];
+
+    assert(BIKE_MAP_Project(0, 0, 0U, &tPoint));
+    assert(128U == tPoint.ulPixelX);
+    assert(128U == tPoint.ulPixelY);
+    assert(0U == tPoint.ulTileX);
+    assert(0U == tPoint.ulTileY);
+    assert(128U == tPoint.usOffsetX);
+    assert(128U == tPoint.usOffsetY);
+
+    assert(BIKE_MAP_Project(399074150, 1163913320, 16U, &tPoint));
+    assert(16U == tPoint.ucZoom);
+    assert(tPoint.ulTileX < (1UL << 16U));
+    assert(tPoint.ulTileY < (1UL << 16U));
+    assert(256U > tPoint.usOffsetX);
+    assert(256U > tPoint.usOffsetY);
+    assert(BIKE_MAP_FormatTilePath("/MAP", tPoint.ucZoom,
+                                   tPoint.ulTileX, tPoint.ulTileY, "bin",
+                                   aPath, sizeof(aPath)));
+    assert(NULL != strstr(aPath, "/MAP/16/"));
+    assert(NULL != strstr(aPath, ".bin"));
+
+    assert(BIKE_MAP_Project(900000000, 1800000000, 19U, &tPoint));
+    assert((1UL << 19U) > tPoint.ulTileX);
+    assert((1UL << 19U) > tPoint.ulTileY);
+    assert(!BIKE_MAP_Project(0, 1800000001, 16U, &tPoint));
+    assert(!BIKE_MAP_Project(0, 0, 20U, &tPoint));
+    assert(!BIKE_MAP_Project(0, 0, 16U, NULL));
+
+    assert(!BIKE_MAP_FormatTilePath("MAP", 16U, 0U, 0U, "bin",
+                                    aPath, sizeof(aPath)));
+    assert(!BIKE_MAP_FormatTilePath("/MAP/../BAD", 16U, 0U, 0U, "bin",
+                                    aPath, sizeof(aPath)));
+    assert(!BIKE_MAP_FormatTilePath("/MAP", 16U, (1UL << 16U), 0U,
+                                    "bin", aPath, sizeof(aPath)));
+    assert(!BIKE_MAP_FormatTilePath("/MAP", 16U, 0U, 0U, "b/in",
+                                    aPath, sizeof(aPath)));
+    assert(!BIKE_MAP_FormatTilePath("/MAP", 16U, 0U, 0U, "bin",
+                                    aPath, 8U));
+
+    return;
+}
+
 int main(void)
 {
     Test_NmeaParser();
@@ -856,6 +906,7 @@ int main(void)
     Test_CscCalculation();
     Test_TimeConversion();
     Test_GpxWriter();
+    Test_MapProjection();
     (void)printf("bike_core_test: PASS\n");
 
     return 0;

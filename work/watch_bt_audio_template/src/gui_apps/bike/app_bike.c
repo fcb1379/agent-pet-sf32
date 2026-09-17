@@ -1,7 +1,9 @@
 #include <rtthread.h>
 #include <stdio.h>
 #include <string.h>
+#include <dfs_posix.h>
 
+#include "bike_map.h"
 #include "bike_service.h"
 #include "gui_app_fwk.h"
 #include "littlevgl2rtt.h"
@@ -12,6 +14,14 @@
 #define BIKE_UI_REFRESH_PERIOD_MS (500U)
 #define BIKE_UI_SIDE_MARGIN (16)
 #define BIKE_UI_PANEL_RADIUS (16)
+#define BIKE_UI_MAP_TILE_COUNT (9U)
+#define BIKE_UI_MAP_TRACK_POINT_MAX (128U)
+#define BIKE_UI_MAP_PATH_MAX (96U)
+#define BIKE_UI_MAP_ZOOM_DEFAULT (16U)
+#define BIKE_UI_MAP_ZOOM_MIN (3U)
+#define BIKE_UI_MAP_ZOOM_MAX (19U)
+#define BIKE_UI_MAP_ROOT "/MAP"
+#define BIKE_UI_MAP_EXTENSION "bin"
 
 LV_IMG_DECLARE(img_workout);
 
@@ -28,6 +38,9 @@ LV_IMG_DECLARE(img_workout);
  *   - pStartLabel: 开始/暂停按钮文字
  *   - pLocationLabel: 定位详情页文本
  *   - pSummaryLabel: 骑行总结页文本
+ *   - pMapContainer/apMapTiles: 离线地图瓦片容器和 3 x 3 固定瓦片
+ *   - pMapTrackLine/pMapMarker: 实时轨迹线和当前位置标记
+ *   - aMapTrackPoints/aMapLinePoints: 固定容量全局像素点和可见线段点
  *   - pTimer: 500 ms UI 刷新定时器
  */
 typedef struct _BIKE_UI_CONTEXT
@@ -43,11 +56,343 @@ typedef struct _BIKE_UI_CONTEXT
     lv_obj_t *pStartLabel;
     lv_obj_t *pLocationLabel;
     lv_obj_t *pSummaryLabel;
+    lv_obj_t *pMapContainer;
+    lv_obj_t *apMapTiles[BIKE_UI_MAP_TILE_COUNT];
+    lv_obj_t *pMapTrackLine;
+    lv_obj_t *pMapMarker;
+    lv_obj_t *pMapStatusLabel;
+    BIKE_MAP_POINT aMapTrackPoints[BIKE_UI_MAP_TRACK_POINT_MAX];
+    lv_point_t aMapLinePoints[BIKE_UI_MAP_TRACK_POINT_MAX];
+    char aaMapTileSource[BIKE_UI_MAP_TILE_COUNT][BIKE_UI_MAP_PATH_MAX];
+    uint32_t ulMapTrackPointCount;
+    uint32_t ulMapCenterTileX;
+    uint32_t ulMapCenterTileY;
+    uint8_t ucMapZoom;
+    uint8_t ucMapLoadedCount;
+    BIKE_RIDE_MODE ePreviousRideMode;
+    bool bMapTilesLoaded;
     lv_timer_t *pTimer;
 } BIKE_UI_CONTEXT;
 
 /* l_tBikeUi: 仅由 LVGL GUI 线程访问的码表页面上下文。 */
 static BIKE_UI_CONTEXT l_tBikeUi;
+
+static void BikeUi_Update(void);
+
+/* BikeUi_MapClearTrack: 清空当前实时轨迹的固定点缓冲。
+ * 返回值：无
+ */
+static void BikeUi_MapClearTrack(void)
+{
+    l_tBikeUi.ulMapTrackPointCount = 0U;
+    if (NULL != l_tBikeUi.pMapTrackLine)
+    {
+        lv_obj_add_flag(l_tBikeUi.pMapTrackLine, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    return;
+}
+
+/* BikeUi_MapReloadTiles: 按中心瓦片重载 3 x 3 离线地图。
+ * 参数：
+ *   - pPoint: 当前定位的投影坐标
+ * 返回值：成功设置的瓦片数量
+ */
+static uint8_t BikeUi_MapReloadTiles(const BIKE_MAP_POINT *pPoint)
+{
+    int64_t dTileX;
+    int64_t dTileY;
+    uint32_t ulTileCount;
+    uint32_t ulActualTileX;
+    uint8_t ucIndex;
+    uint8_t ucLoadedCount;
+    int8_t cColumn;
+    int8_t cRow;
+
+    if ((NULL == pPoint) || (NULL == l_tBikeUi.pMapContainer))
+    {
+        return 0U;
+    }
+    ulTileCount = 1UL << pPoint->ucZoom;
+    ucLoadedCount = 0U;
+    ucIndex = 0U;
+    for (cRow = -1; cRow <= 1; cRow++)
+    {
+        for (cColumn = -1; cColumn <= 1; cColumn++)
+        {
+            dTileX = (int64_t)pPoint->ulTileX + cColumn;
+            dTileY = (int64_t)pPoint->ulTileY + cRow;
+            while (0LL > dTileX)
+            {
+                dTileX += ulTileCount;
+            }
+            ulActualTileX = (uint32_t)dTileX % ulTileCount;
+            lv_obj_set_pos(l_tBikeUi.apMapTiles[ucIndex],
+                           (lv_coord_t)((cColumn + 1) *
+                                        (int32_t)BIKE_MAP_TILE_SIZE_PX),
+                           (lv_coord_t)((cRow + 1) *
+                                        (int32_t)BIKE_MAP_TILE_SIZE_PX));
+            l_tBikeUi.aaMapTileSource[ucIndex][0] = '/';
+            if ((0LL <= dTileY) && ((int64_t)ulTileCount > dTileY) &&
+                BIKE_MAP_FormatTilePath(
+                    BIKE_UI_MAP_ROOT, pPoint->ucZoom, ulActualTileX,
+                    (uint32_t)dTileY, BIKE_UI_MAP_EXTENSION,
+                    &l_tBikeUi.aaMapTileSource[ucIndex][1],
+                    sizeof(l_tBikeUi.aaMapTileSource[ucIndex]) - 1U) &&
+                (0 == access(&l_tBikeUi.aaMapTileSource[ucIndex][1], 0)))
+            {
+                lv_img_set_src(l_tBikeUi.apMapTiles[ucIndex],
+                               l_tBikeUi.aaMapTileSource[ucIndex]);
+                lv_obj_clear_flag(l_tBikeUi.apMapTiles[ucIndex],
+                                  LV_OBJ_FLAG_HIDDEN);
+                ucLoadedCount++;
+            }
+            else
+            {
+                lv_obj_add_flag(l_tBikeUi.apMapTiles[ucIndex],
+                                LV_OBJ_FLAG_HIDDEN);
+            }
+            ucIndex++;
+        }
+    }
+    l_tBikeUi.ulMapCenterTileX = pPoint->ulTileX;
+    l_tBikeUi.ulMapCenterTileY = pPoint->ulTileY;
+    l_tBikeUi.ucMapLoadedCount = ucLoadedCount;
+    l_tBikeUi.bMapTilesLoaded = true;
+
+    return ucLoadedCount;
+}
+
+/* BikeUi_MapRebuildLine: 将全局轨迹点转换为当前瓦片容器内坐标。
+ * 参数：
+ *   - pCenter: 当前地图中心点
+ * 返回值：无
+ */
+static void BikeUi_MapRebuildLine(const BIKE_MAP_POINT *pCenter)
+{
+    int64_t dFirstPixelX;
+    int64_t dFirstPixelY;
+    int64_t dMapSize;
+    int64_t dRelativeX;
+    int64_t dRelativeY;
+    uint32_t ulIndex;
+    uint32_t ulVisibleCount;
+
+    if ((NULL == pCenter) || (NULL == l_tBikeUi.pMapTrackLine))
+    {
+        return;
+    }
+    dMapSize = (int64_t)BIKE_MAP_TILE_SIZE_PX << pCenter->ucZoom;
+    dFirstPixelX = ((int64_t)pCenter->ulTileX - 1LL) *
+                   BIKE_MAP_TILE_SIZE_PX;
+    dFirstPixelY = ((int64_t)pCenter->ulTileY - 1LL) *
+                   BIKE_MAP_TILE_SIZE_PX;
+    ulVisibleCount = 0U;
+    for (ulIndex = 0U; ulIndex < l_tBikeUi.ulMapTrackPointCount; ulIndex++)
+    {
+        dRelativeX = (int64_t)l_tBikeUi.aMapTrackPoints[ulIndex].ulPixelX -
+                     dFirstPixelX;
+        if (0LL > dRelativeX)
+        {
+            dRelativeX += dMapSize;
+        }
+        else if (dMapSize <= dRelativeX)
+        {
+            dRelativeX -= dMapSize;
+        }
+        dRelativeY = (int64_t)l_tBikeUi.aMapTrackPoints[ulIndex].ulPixelY -
+                     dFirstPixelY;
+        if ((0LL <= dRelativeX) && (768LL > dRelativeX) &&
+            (0LL <= dRelativeY) && (768LL > dRelativeY))
+        {
+            l_tBikeUi.aMapLinePoints[ulVisibleCount].x =
+                (lv_coord_t)dRelativeX;
+            l_tBikeUi.aMapLinePoints[ulVisibleCount].y =
+                (lv_coord_t)dRelativeY;
+            ulVisibleCount++;
+        }
+        else if (0U < ulVisibleCount)
+        {
+            /* 只绘制最近的连续可见段，避免跨越屏外点连直线。 */
+            ulVisibleCount = 0U;
+        }
+    }
+    if (2U <= ulVisibleCount)
+    {
+        lv_line_set_points(l_tBikeUi.pMapTrackLine,
+                           l_tBikeUi.aMapLinePoints, ulVisibleCount);
+        lv_obj_clear_flag(l_tBikeUi.pMapTrackLine, LV_OBJ_FLAG_HIDDEN);
+    }
+    else
+    {
+        lv_obj_add_flag(l_tBikeUi.pMapTrackLine, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    return;
+}
+
+/* BikeUi_MapAppendTrack: 追加固定容量轨迹点，满时对历史点二分抽稀。
+ * 参数：
+ *   - pPoint: 当前投影点
+ * 返回值：无
+ */
+static void BikeUi_MapAppendTrack(const BIKE_MAP_POINT *pPoint)
+{
+    BIKE_MAP_POINT *pPrevious;
+    uint32_t ulReadIndex;
+    uint32_t ulWriteIndex;
+    uint32_t ulDeltaX;
+    uint32_t ulDeltaY;
+
+    if (NULL == pPoint)
+    {
+        return;
+    }
+    if (0U < l_tBikeUi.ulMapTrackPointCount)
+    {
+        pPrevious = &l_tBikeUi.aMapTrackPoints[
+            l_tBikeUi.ulMapTrackPointCount - 1U];
+        ulDeltaX = (pPrevious->ulPixelX > pPoint->ulPixelX) ?
+                   (pPrevious->ulPixelX - pPoint->ulPixelX) :
+                   (pPoint->ulPixelX - pPrevious->ulPixelX);
+        ulDeltaY = (pPrevious->ulPixelY > pPoint->ulPixelY) ?
+                   (pPrevious->ulPixelY - pPoint->ulPixelY) :
+                   (pPoint->ulPixelY - pPrevious->ulPixelY);
+        if ((2U > ulDeltaX) && (2U > ulDeltaY))
+        {
+            return;
+        }
+    }
+    if (BIKE_UI_MAP_TRACK_POINT_MAX == l_tBikeUi.ulMapTrackPointCount)
+    {
+        ulWriteIndex = 0U;
+        for (ulReadIndex = 0U;
+             ulReadIndex < l_tBikeUi.ulMapTrackPointCount;
+             ulReadIndex += 2U)
+        {
+            l_tBikeUi.aMapTrackPoints[ulWriteIndex] =
+                l_tBikeUi.aMapTrackPoints[ulReadIndex];
+            ulWriteIndex++;
+        }
+        l_tBikeUi.ulMapTrackPointCount = ulWriteIndex;
+    }
+    l_tBikeUi.aMapTrackPoints[l_tBikeUi.ulMapTrackPointCount] = *pPoint;
+    l_tBikeUi.ulMapTrackPointCount++;
+
+    return;
+}
+
+/* BikeUi_MapUpdate: 更新离线瓦片、当前位置和实时轨迹。
+ * 参数：
+ *   - pSnapshot: 骑行服务一致性快照
+ * 返回值：无
+ */
+static void BikeUi_MapUpdate(const BIKE_SERVICE_SNAPSHOT *pSnapshot)
+{
+    BIKE_MAP_POINT tPoint;
+    uint8_t ucLoadedCount;
+
+    if ((NULL == pSnapshot) || (NULL == l_tBikeUi.pMapStatusLabel) ||
+        (NULL == l_tBikeUi.pMapContainer))
+    {
+        return;
+    }
+    if ((BIKE_RIDE_MODE_STOPPED == l_tBikeUi.ePreviousRideMode) &&
+        (BIKE_RIDE_MODE_RUNNING == pSnapshot->tRide.eMode))
+    {
+        BikeUi_MapClearTrack();
+    }
+    l_tBikeUi.ePreviousRideMode = pSnapshot->tRide.eMode;
+    if ((!pSnapshot->tGnss.bFixValid) ||
+        (!BIKE_MAP_Project(pSnapshot->tGnss.lLatitudeE7,
+                           pSnapshot->tGnss.lLongitudeE7,
+                           l_tBikeUi.ucMapZoom, &tPoint)))
+    {
+        lv_label_set_text_fmt(l_tBikeUi.pMapStatusLabel, "MAP Z%u  WAIT FIX",
+                              (unsigned int)l_tBikeUi.ucMapZoom);
+        return;
+    }
+    ucLoadedCount = 0U;
+    if ((!l_tBikeUi.bMapTilesLoaded) ||
+        (l_tBikeUi.ulMapCenterTileX != tPoint.ulTileX) ||
+        (l_tBikeUi.ulMapCenterTileY != tPoint.ulTileY))
+    {
+        ucLoadedCount = BikeUi_MapReloadTiles(&tPoint);
+    }
+    else
+    {
+        ucLoadedCount = l_tBikeUi.ucMapLoadedCount;
+    }
+    lv_obj_set_pos(l_tBikeUi.pMapContainer,
+                   (lv_coord_t)(195 - 256 - tPoint.usOffsetX),
+                   (lv_coord_t)(225 - 256 - tPoint.usOffsetY));
+    if (BIKE_RIDE_MODE_RUNNING == pSnapshot->tRide.eMode)
+    {
+        BikeUi_MapAppendTrack(&tPoint);
+    }
+    BikeUi_MapRebuildLine(&tPoint);
+    lv_label_set_text_fmt(l_tBikeUi.pMapStatusLabel,
+                          "MAP Z%u  %lu/%lu  T%lu",
+                          (unsigned int)l_tBikeUi.ucMapZoom,
+                          (unsigned long)ucLoadedCount,
+                          (unsigned long)BIKE_UI_MAP_TILE_COUNT,
+                          (unsigned long)l_tBikeUi.ulMapTrackPointCount);
+
+    return;
+}
+
+/* BikeUi_MapChangeZoom: 调整离线地图级别并清理不同级别的像素轨迹。
+ * 参数：
+ *   - cDelta: 缩放级别增量，仅支持 -1 或 1
+ * 返回值：无
+ */
+static void BikeUi_MapChangeZoom(int8_t cDelta)
+{
+    int16_t sNewZoom;
+
+    sNewZoom = (int16_t)l_tBikeUi.ucMapZoom + cDelta;
+    if ((BIKE_UI_MAP_ZOOM_MIN <= sNewZoom) &&
+        (BIKE_UI_MAP_ZOOM_MAX >= sNewZoom))
+    {
+        l_tBikeUi.ucMapZoom = (uint8_t)sNewZoom;
+        l_tBikeUi.bMapTilesLoaded = false;
+        l_tBikeUi.ucMapLoadedCount = 0U;
+        BikeUi_MapClearTrack();
+        BikeUi_Update();
+    }
+
+    return;
+}
+
+/* BikeUi_MapZoomInEvent: 处理地图放大按钮。
+ * 参数：
+ *   - pEvent: LVGL 事件
+ * 返回值：无
+ */
+static void BikeUi_MapZoomInEvent(lv_event_t *pEvent)
+{
+    if ((NULL != pEvent) && (LV_EVENT_CLICKED == lv_event_get_code(pEvent)))
+    {
+        BikeUi_MapChangeZoom(1);
+    }
+
+    return;
+}
+
+/* BikeUi_MapZoomOutEvent: 处理地图缩小按钮。
+ * 参数：
+ *   - pEvent: LVGL 事件
+ * 返回值：无
+ */
+static void BikeUi_MapZoomOutEvent(lv_event_t *pEvent)
+{
+    if ((NULL != pEvent) && (LV_EVENT_CLICKED == lv_event_get_code(pEvent)))
+    {
+        BikeUi_MapChangeZoom(-1);
+    }
+
+    return;
+}
 
 /* BikeUi_SetPanelStyle: 设置深色高对比数据卡片样式。
  * 参数：
@@ -608,6 +953,7 @@ static void BikeUi_Update(void)
                           pRecordState,
                           (unsigned long)tSnapshot.tRecorder.ulPointCount,
                           pFileName);
+    BikeUi_MapUpdate(&tSnapshot);
 
     return;
 }
@@ -729,6 +1075,48 @@ static lv_obj_t *BikeUi_CreateButton(lv_obj_t *pParent, const char *pText, lv_co
     return pLabel;
 }
 
+/* BikeUi_CreateMapButton: 创建地图页右下角缩放按钮。
+ * 参数：
+ *   - pParent: 地图页对象
+ *   - pText: 按钮文字
+ *   - lX: X 坐标
+ *   - pCallback: 点击回调
+ * 返回值：按钮对象，失败返回 NULL
+ */
+static lv_obj_t *BikeUi_CreateMapButton(lv_obj_t *pParent, const char *pText,
+                                        lv_coord_t lX,
+                                        lv_event_cb_t pCallback)
+{
+    lv_obj_t *pButton;
+    lv_obj_t *pLabel;
+
+    if ((NULL == pParent) || (NULL == pText) || (NULL == pCallback))
+    {
+        return NULL;
+    }
+    pButton = lv_btn_create(pParent);
+    if (NULL == pButton)
+    {
+        return NULL;
+    }
+    lv_obj_set_pos(pButton, lX, 384);
+    lv_obj_set_size(pButton, 52, 52);
+    lv_obj_set_style_bg_color(pButton, lv_color_hex(0x17212B), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(pButton, LV_OPA_90, LV_PART_MAIN);
+    lv_obj_set_style_radius(pButton, 26, LV_PART_MAIN);
+    lv_obj_add_event_cb(pButton, pCallback, LV_EVENT_CLICKED, NULL);
+    pLabel = lv_label_create(pButton);
+    if (NULL != pLabel)
+    {
+        lv_label_set_text(pLabel, pText);
+        lv_obj_set_style_text_font(pLabel, &lv_font_montserrat_24,
+                                   LV_PART_MAIN);
+        lv_obj_center(pLabel);
+    }
+
+    return pButton;
+}
+
 /* BikeUi_SetPageStyle: 设置 tileview 子页面统一背景。
  * 参数：
  *   - pPage: tileview 页面
@@ -783,16 +1171,21 @@ static void BikeUi_CreatePageTitle(lv_obj_t *pPage, const char *pTitle, const ch
     return;
 }
 
-/* BikeUi_OnStart: 创建 390 x 450 主数据、定位和总结三页码表。
+/* BikeUi_OnStart: 创建 390 x 450 主数据、定位、地图和总结四页码表。
  * 返回值：无
  */
 static void BikeUi_OnStart(void)
 {
     lv_obj_t *pDashboardPage;
     lv_obj_t *pLocationPage;
+    lv_obj_t *pMapPage;
     lv_obj_t *pSummaryPage;
+    lv_obj_t *pTile;
+    uint8_t ucIndex;
 
     (void)memset(&l_tBikeUi, 0, sizeof(l_tBikeUi));
+    l_tBikeUi.ucMapZoom = BIKE_UI_MAP_ZOOM_DEFAULT;
+    l_tBikeUi.ePreviousRideMode = BIKE_RIDE_MODE_STOPPED;
     l_tBikeUi.pRoot = lv_tileview_create(lv_scr_act());
     RT_ASSERT(NULL != l_tBikeUi.pRoot);
     lv_obj_set_size(l_tBikeUi.pRoot, LV_HOR_RES, LV_VER_RES);
@@ -806,11 +1199,14 @@ static void BikeUi_OnStart(void)
     pDashboardPage = lv_tileview_add_tile(l_tBikeUi.pRoot, 0U, 0U, LV_DIR_RIGHT);
     pLocationPage = lv_tileview_add_tile(l_tBikeUi.pRoot, 1U, 0U,
                                          LV_DIR_LEFT | LV_DIR_RIGHT);
-    pSummaryPage = lv_tileview_add_tile(l_tBikeUi.pRoot, 2U, 0U, LV_DIR_LEFT);
+    pMapPage = lv_tileview_add_tile(l_tBikeUi.pRoot, 2U, 0U,
+                                    LV_DIR_LEFT | LV_DIR_RIGHT);
+    pSummaryPage = lv_tileview_add_tile(l_tBikeUi.pRoot, 3U, 0U, LV_DIR_LEFT);
     RT_ASSERT((NULL != pDashboardPage) && (NULL != pLocationPage) &&
-              (NULL != pSummaryPage));
+              (NULL != pMapPage) && (NULL != pSummaryPage));
     BikeUi_SetPageStyle(pDashboardPage);
     BikeUi_SetPageStyle(pLocationPage);
+    BikeUi_SetPageStyle(pMapPage);
     BikeUi_SetPageStyle(pSummaryPage);
 
     l_tBikeUi.pGpsLabel = lv_label_create(pDashboardPage);
@@ -860,6 +1256,67 @@ static void BikeUi_OnStart(void)
     lv_obj_set_style_text_color(l_tBikeUi.pLocationLabel, lv_color_hex(0xDCE6F0),
                                 LV_PART_MAIN);
     lv_obj_set_style_text_line_space(l_tBikeUi.pLocationLabel, 8, LV_PART_MAIN);
+
+    l_tBikeUi.pMapContainer = lv_obj_create(pMapPage);
+    RT_ASSERT(NULL != l_tBikeUi.pMapContainer);
+    lv_obj_set_size(l_tBikeUi.pMapContainer, 768, 768);
+    lv_obj_set_style_bg_color(l_tBikeUi.pMapContainer,
+                              lv_color_hex(0x101B24), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(l_tBikeUi.pMapContainer, LV_OPA_COVER,
+                            LV_PART_MAIN);
+    lv_obj_set_style_border_width(l_tBikeUi.pMapContainer, 0, LV_PART_MAIN);
+    lv_obj_set_style_radius(l_tBikeUi.pMapContainer, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(l_tBikeUi.pMapContainer, 0, LV_PART_MAIN);
+    lv_obj_clear_flag(l_tBikeUi.pMapContainer, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(l_tBikeUi.pMapContainer, LV_OBJ_FLAG_CLICKABLE);
+    for (ucIndex = 0U; ucIndex < BIKE_UI_MAP_TILE_COUNT; ucIndex++)
+    {
+        pTile = lv_img_create(l_tBikeUi.pMapContainer);
+        RT_ASSERT(NULL != pTile);
+        l_tBikeUi.apMapTiles[ucIndex] = pTile;
+        lv_obj_add_flag(pTile, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(pTile, LV_OBJ_FLAG_CLICKABLE);
+    }
+    l_tBikeUi.pMapTrackLine = lv_line_create(l_tBikeUi.pMapContainer);
+    RT_ASSERT(NULL != l_tBikeUi.pMapTrackLine);
+    lv_obj_set_style_line_color(l_tBikeUi.pMapTrackLine,
+                                lv_color_hex(0x45D483), LV_PART_MAIN);
+    lv_obj_set_style_line_width(l_tBikeUi.pMapTrackLine, 4, LV_PART_MAIN);
+    lv_obj_set_style_line_rounded(l_tBikeUi.pMapTrackLine, true,
+                                  LV_PART_MAIN);
+    lv_obj_add_flag(l_tBikeUi.pMapTrackLine, LV_OBJ_FLAG_HIDDEN);
+
+    l_tBikeUi.pMapMarker = lv_obj_create(pMapPage);
+    RT_ASSERT(NULL != l_tBikeUi.pMapMarker);
+    lv_obj_set_size(l_tBikeUi.pMapMarker, 18, 18);
+    lv_obj_set_pos(l_tBikeUi.pMapMarker, 186, 216);
+    lv_obj_set_style_radius(l_tBikeUi.pMapMarker, 9, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(l_tBikeUi.pMapMarker,
+                              lv_color_hex(0xFF7A00), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(l_tBikeUi.pMapMarker, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_color(l_tBikeUi.pMapMarker,
+                                  lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+    lv_obj_set_style_border_width(l_tBikeUi.pMapMarker, 3, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(l_tBikeUi.pMapMarker, 0, LV_PART_MAIN);
+    lv_obj_clear_flag(l_tBikeUi.pMapMarker, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(l_tBikeUi.pMapMarker, LV_OBJ_FLAG_CLICKABLE);
+
+    l_tBikeUi.pMapStatusLabel = lv_label_create(pMapPage);
+    RT_ASSERT(NULL != l_tBikeUi.pMapStatusLabel);
+    lv_label_set_text(l_tBikeUi.pMapStatusLabel, "MAP Z16  WAIT FIX");
+    lv_obj_set_style_text_color(l_tBikeUi.pMapStatusLabel,
+                                lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(l_tBikeUi.pMapStatusLabel,
+                              lv_color_hex(0x091017), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(l_tBikeUi.pMapStatusLabel, LV_OPA_70,
+                            LV_PART_MAIN);
+    lv_obj_set_style_pad_all(l_tBikeUi.pMapStatusLabel, 8, LV_PART_MAIN);
+    lv_obj_set_style_radius(l_tBikeUi.pMapStatusLabel, 8, LV_PART_MAIN);
+    lv_obj_align(l_tBikeUi.pMapStatusLabel, LV_ALIGN_TOP_MID, 0, 12);
+    RT_ASSERT(NULL != BikeUi_CreateMapButton(pMapPage, "-", 16,
+                                              BikeUi_MapZoomOutEvent));
+    RT_ASSERT(NULL != BikeUi_CreateMapButton(pMapPage, "+", 322,
+                                              BikeUi_MapZoomInEvent));
 
     BikeUi_CreatePageTitle(pSummaryPage, "RIDE SUMMARY", NULL);
     l_tBikeUi.pSummaryLabel = lv_label_create(pSummaryPage);
