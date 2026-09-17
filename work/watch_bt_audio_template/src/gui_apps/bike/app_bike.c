@@ -1,4 +1,5 @@
 #include <rtthread.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "bike_service.h"
@@ -24,6 +25,9 @@ LV_IMG_DECLARE(img_workout);
  *   - pTimeLabel: 移动时间标签
  *   - pAltitudeLabel: 海拔标签
  *   - pStartLabel: 开始/暂停按钮文字
+ *   - pSummaryStartLabel: 总结页开始/暂停按钮文字
+ *   - pLocationLabel: 定位详情页文本
+ *   - pSummaryLabel: 骑行总结页文本
  *   - pTimer: 500 ms UI 刷新定时器
  */
 typedef struct _BIKE_UI_CONTEXT
@@ -36,6 +40,9 @@ typedef struct _BIKE_UI_CONTEXT
     lv_obj_t *pTimeLabel;
     lv_obj_t *pAltitudeLabel;
     lv_obj_t *pStartLabel;
+    lv_obj_t *pSummaryStartLabel;
+    lv_obj_t *pLocationLabel;
+    lv_obj_t *pSummaryLabel;
     lv_timer_t *pTimer;
 } BIKE_UI_CONTEXT;
 
@@ -139,6 +146,65 @@ static void BikeUi_FormatTime(lv_obj_t *pLabel, uint32_t ulTimeMs)
     return;
 }
 
+/* BikeUi_FormatDuration: 将毫秒格式化为 HH:MM:SS。
+ * 参数：
+ *   - ulTimeMs: 时间毫秒数
+ *   - pBuffer: 输出缓冲
+ *   - ulBufferSize: 输出容量
+ * 返回值：成功返回 true，否则返回 false
+ */
+static bool BikeUi_FormatDuration(uint32_t ulTimeMs, char *pBuffer, size_t ulBufferSize)
+{
+    uint32_t ulTotalSeconds;
+    int lLength;
+
+    if ((NULL == pBuffer) || (0U == ulBufferSize))
+    {
+        return false;
+    }
+
+    ulTotalSeconds = ulTimeMs / 1000U;
+    lLength = snprintf(pBuffer, ulBufferSize, "%02lu:%02lu:%02lu",
+                       (unsigned long)(ulTotalSeconds / 3600U),
+                       (unsigned long)((ulTotalSeconds / 60U) % 60U),
+                       (unsigned long)(ulTotalSeconds % 60U));
+
+    return (0 < lLength) && ((size_t)lLength < ulBufferSize);
+}
+
+/* BikeUi_FormatCoordinate: 将 1e-7 度定点坐标格式化为十进制度。
+ * 参数：
+ *   - lCoordinateE7: 坐标
+ *   - pBuffer: 输出缓冲
+ *   - ulBufferSize: 输出容量
+ * 返回值：成功返回 true，否则返回 false
+ */
+static bool BikeUi_FormatCoordinate(int32_t lCoordinateE7, char *pBuffer,
+                                    size_t ulBufferSize)
+{
+    int64_t dAbsolute;
+    const char *pSign;
+    int lLength;
+
+    if ((NULL == pBuffer) || (0U == ulBufferSize))
+    {
+        return false;
+    }
+
+    dAbsolute = lCoordinateE7;
+    pSign = "";
+    if (0LL > dAbsolute)
+    {
+        pSign = "-";
+        dAbsolute = -dAbsolute;
+    }
+    lLength = snprintf(pBuffer, ulBufferSize, "%s%lld.%07lld", pSign,
+                       (long long)(dAbsolute / 10000000LL),
+                       (long long)(dAbsolute % 10000000LL));
+
+    return (0 < lLength) && ((size_t)lLength < ulBufferSize);
+}
+
 /* BikeUi_Update: 从线程安全快照刷新现有对象，不在每帧重建控件。
  * 返回值：无
  */
@@ -148,9 +214,15 @@ static void BikeUi_Update(void)
     uint32_t ulDistanceCentiKm;
     uint32_t ulAgeMs;
     uint32_t ulAltitudeAbsoluteCm;
+    char aLatitude[24];
+    char aLongitude[24];
+    char aMovingTime[16];
+    char aElapsedTime[16];
     const char *pAltitudeSign;
     const char *pGpsState;
     const char *pRecordState;
+    const char *pRideState;
+    const char *pFileName;
     const char *pStartText;
 
     if (!BIKE_SERVICE_GetSnapshot(&tSnapshot))
@@ -199,6 +271,22 @@ static void BikeUi_Update(void)
         break;
     }
 
+    switch (tSnapshot.tRide.eMode)
+    {
+    case BIKE_RIDE_MODE_RUNNING:
+        pRideState = "RIDING";
+        break;
+
+    case BIKE_RIDE_MODE_PAUSED:
+        pRideState = "PAUSED";
+        break;
+
+    case BIKE_RIDE_MODE_STOPPED:
+    default:
+        pRideState = "STOPPED";
+        break;
+    }
+
     ulAgeMs = 0U;
     if (0U != tSnapshot.ulLastUpdateMs)
     {
@@ -234,6 +322,72 @@ static void BikeUi_Update(void)
 
     pStartText = (BIKE_RIDE_MODE_RUNNING == tSnapshot.tRide.eMode) ? "PAUSE" : "START";
     lv_label_set_text(l_tBikeUi.pStartLabel, pStartText);
+    lv_label_set_text(l_tBikeUi.pSummaryStartLabel, pStartText);
+
+    if ((!tSnapshot.tGnss.bFixValid) ||
+        (!BikeUi_FormatCoordinate(tSnapshot.tGnss.lLatitudeE7,
+                                  aLatitude, sizeof(aLatitude))))
+    {
+        (void)snprintf(aLatitude, sizeof(aLatitude), "--");
+    }
+    if ((!tSnapshot.tGnss.bFixValid) ||
+        (!BikeUi_FormatCoordinate(tSnapshot.tGnss.lLongitudeE7,
+                                  aLongitude, sizeof(aLongitude))))
+    {
+        (void)snprintf(aLongitude, sizeof(aLongitude), "--");
+    }
+    lv_label_set_text_fmt(l_tBikeUi.pLocationLabel,
+                          "LAT  %s\nLON  %s\nALT  %s%lu.%02lu m\n"
+                          "COURSE  %u.%01u deg\nUTC  %04u-%02u-%02u %02u:%02u:%02u\n"
+                          "SAT  %u   FIX  %u   RTC  %s\nNMEA  %lu   CRC ERR  %lu   OVF  %lu",
+                          aLatitude, aLongitude, pAltitudeSign,
+                          (unsigned long)(ulAltitudeAbsoluteCm / 100U),
+                          (unsigned long)(ulAltitudeAbsoluteCm % 100U),
+                          (unsigned int)(tSnapshot.tGnss.usCourseDeg10 / 10U),
+                          (unsigned int)(tSnapshot.tGnss.usCourseDeg10 % 10U),
+                          tSnapshot.tGnss.usYear, tSnapshot.tGnss.ucMonth,
+                          tSnapshot.tGnss.ucDay, tSnapshot.tGnss.ucHour,
+                          tSnapshot.tGnss.ucMinute, tSnapshot.tGnss.ucSecond,
+                          tSnapshot.tGnss.ucSatellites, tSnapshot.tGnss.ucFixQuality,
+                          tSnapshot.bRtcSynchronized ? "SYNC" : "WAIT",
+                          (unsigned long)tSnapshot.ulAcceptedCount,
+                          (unsigned long)tSnapshot.ulChecksumErrorCount,
+                          (unsigned long)tSnapshot.ulOverflowCount);
+
+    (void)BikeUi_FormatDuration(tSnapshot.tRide.ulMovingTimeMs,
+                                aMovingTime, sizeof(aMovingTime));
+    (void)BikeUi_FormatDuration(tSnapshot.tRide.ulElapsedTimeMs,
+                                aElapsedTime, sizeof(aElapsedTime));
+    pFileName = strrchr(tSnapshot.tRecorder.aFilePath, '/');
+    if (NULL != pFileName)
+    {
+        pFileName++;
+    }
+    else if ('\0' != tSnapshot.tRecorder.aFilePath[0])
+    {
+        pFileName = tSnapshot.tRecorder.aFilePath;
+    }
+    else
+    {
+        pFileName = "--";
+    }
+    lv_label_set_text_fmt(l_tBikeUi.pSummaryLabel,
+                          "STATE  %s\nDIST  %lu.%02lu km\nMOVING  %s\nELAPSED  %s\n"
+                          "AVG  %u.%02u km/h\nMAX  %u.%02u km/h\n"
+                          "CAL  %lu.%03lu kcal\nTRACK  %s / %lu pt\nFILE  %s",
+                          pRideState,
+                          (unsigned long)(ulDistanceCentiKm / 100U),
+                          (unsigned long)(ulDistanceCentiKm % 100U),
+                          aMovingTime, aElapsedTime,
+                          (unsigned int)(tSnapshot.tRide.usAverageSpeedCentiKph / 100U),
+                          (unsigned int)(tSnapshot.tRide.usAverageSpeedCentiKph % 100U),
+                          (unsigned int)(tSnapshot.tRide.usMaximumSpeedCentiKph / 100U),
+                          (unsigned int)(tSnapshot.tRide.usMaximumSpeedCentiKph % 100U),
+                          (unsigned long)(tSnapshot.tRide.ulCaloriesMilliKcal / 1000U),
+                          (unsigned long)(tSnapshot.tRide.ulCaloriesMilliKcal % 1000U),
+                          pRecordState,
+                          (unsigned long)tSnapshot.tRecorder.ulPointCount,
+                          pFileName);
 
     return;
 }
@@ -339,15 +493,72 @@ static lv_obj_t *BikeUi_CreateButton(lv_obj_t *pParent, const char *pText, lv_co
     return pLabel;
 }
 
-/* BikeUi_OnStart: 创建 390 x 450 码表主页面。
+/* BikeUi_SetPageStyle: 设置 tileview 子页面统一背景。
+ * 参数：
+ *   - pPage: tileview 页面
+ * 返回值：无
+ */
+static void BikeUi_SetPageStyle(lv_obj_t *pPage)
+{
+    if (NULL != pPage)
+    {
+        lv_obj_set_style_bg_color(pPage, lv_color_hex(0x091017), LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(pPage, LV_OPA_COVER, LV_PART_MAIN);
+        lv_obj_set_style_border_width(pPage, 0, LV_PART_MAIN);
+        lv_obj_set_style_pad_all(pPage, 0, LV_PART_MAIN);
+        lv_obj_clear_flag(pPage, LV_OBJ_FLAG_SCROLLABLE);
+    }
+
+    return;
+}
+
+/* BikeUi_CreatePageTitle: 创建页面标题和滑动提示。
+ * 参数：
+ *   - pPage: 页面对象
+ *   - pTitle: 标题文字
+ *   - pHint: 底部提示，可为 NULL
+ * 返回值：无
+ */
+static void BikeUi_CreatePageTitle(lv_obj_t *pPage, const char *pTitle, const char *pHint)
+{
+    lv_obj_t *pLabel;
+
+    if ((NULL == pPage) || (NULL == pTitle))
+    {
+        return;
+    }
+
+    pLabel = lv_label_create(pPage);
+    RT_ASSERT(NULL != pLabel);
+    lv_label_set_text(pLabel, pTitle);
+    lv_obj_set_style_text_font(pLabel, &lv_font_montserrat_24, LV_PART_MAIN);
+    lv_obj_set_style_text_color(pLabel, lv_color_hex(0xF5F7FA), LV_PART_MAIN);
+    lv_obj_align(pLabel, LV_ALIGN_TOP_MID, 0, 16);
+
+    if (NULL != pHint)
+    {
+        pLabel = lv_label_create(pPage);
+        RT_ASSERT(NULL != pLabel);
+        lv_label_set_text(pLabel, pHint);
+        lv_obj_set_style_text_color(pLabel, lv_color_hex(0x60758A), LV_PART_MAIN);
+        lv_obj_align(pLabel, LV_ALIGN_BOTTOM_MID, 0, -8);
+    }
+
+    return;
+}
+
+/* BikeUi_OnStart: 创建 390 x 450 主数据、定位和总结三页码表。
  * 返回值：无
  */
 static void BikeUi_OnStart(void)
 {
+    lv_obj_t *pDashboardPage;
+    lv_obj_t *pLocationPage;
+    lv_obj_t *pSummaryPage;
     lv_obj_t *pSpeedUnit;
 
     (void)memset(&l_tBikeUi, 0, sizeof(l_tBikeUi));
-    l_tBikeUi.pRoot = lv_obj_create(lv_scr_act());
+    l_tBikeUi.pRoot = lv_tileview_create(lv_scr_act());
     RT_ASSERT(NULL != l_tBikeUi.pRoot);
     lv_obj_set_size(l_tBikeUi.pRoot, LV_HOR_RES, LV_VER_RES);
     lv_obj_set_pos(l_tBikeUi.pRoot, 0, 0);
@@ -355,40 +566,80 @@ static void BikeUi_OnStart(void)
     lv_obj_set_style_bg_opa(l_tBikeUi.pRoot, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_set_style_border_width(l_tBikeUi.pRoot, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_all(l_tBikeUi.pRoot, 0, LV_PART_MAIN);
-    lv_obj_clear_flag(l_tBikeUi.pRoot, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollbar_mode(l_tBikeUi.pRoot, LV_SCROLLBAR_MODE_OFF);
 
-    l_tBikeUi.pGpsLabel = lv_label_create(l_tBikeUi.pRoot);
+    pDashboardPage = lv_tileview_add_tile(l_tBikeUi.pRoot, 0U, 0U, LV_DIR_RIGHT);
+    pLocationPage = lv_tileview_add_tile(l_tBikeUi.pRoot, 1U, 0U,
+                                         LV_DIR_LEFT | LV_DIR_RIGHT);
+    pSummaryPage = lv_tileview_add_tile(l_tBikeUi.pRoot, 2U, 0U, LV_DIR_LEFT);
+    RT_ASSERT((NULL != pDashboardPage) && (NULL != pLocationPage) &&
+              (NULL != pSummaryPage));
+    BikeUi_SetPageStyle(pDashboardPage);
+    BikeUi_SetPageStyle(pLocationPage);
+    BikeUi_SetPageStyle(pSummaryPage);
+
+    l_tBikeUi.pGpsLabel = lv_label_create(pDashboardPage);
     lv_label_set_text(l_tBikeUi.pGpsLabel, "SEARCHING  SAT 0  AGE 0s");
     lv_obj_set_style_text_color(l_tBikeUi.pGpsLabel, lv_color_hex(0x45D483), LV_PART_MAIN);
     lv_obj_align(l_tBikeUi.pGpsLabel, LV_ALIGN_TOP_MID, 0, 14);
 
-    l_tBikeUi.pSpeedLabel = lv_label_create(l_tBikeUi.pRoot);
+    l_tBikeUi.pSpeedLabel = lv_label_create(pDashboardPage);
     lv_label_set_text(l_tBikeUi.pSpeedLabel, "0.00");
     lv_obj_set_style_text_color(l_tBikeUi.pSpeedLabel, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
     lv_obj_set_style_text_font(l_tBikeUi.pSpeedLabel, &lv_font_montserrat_36, LV_PART_MAIN);
     lv_obj_align(l_tBikeUi.pSpeedLabel, LV_ALIGN_TOP_MID, -18, 54);
 
-    pSpeedUnit = lv_label_create(l_tBikeUi.pRoot);
+    pSpeedUnit = lv_label_create(pDashboardPage);
     lv_label_set_text(pSpeedUnit, "km/h");
     lv_obj_set_style_text_color(pSpeedUnit, lv_color_hex(0x8FA3B8), LV_PART_MAIN);
     lv_obj_align_to(pSpeedUnit, l_tBikeUi.pSpeedLabel, LV_ALIGN_OUT_RIGHT_BOTTOM, 8, -4);
 
-    l_tBikeUi.pDistanceLabel = BikeUi_CreateMetric(l_tBikeUi.pRoot, "DISTANCE",
+    l_tBikeUi.pDistanceLabel = BikeUi_CreateMetric(pDashboardPage, "DISTANCE",
                                                    BIKE_UI_SIDE_MARGIN, 126, 171, 96);
-    l_tBikeUi.pAverageLabel = BikeUi_CreateMetric(l_tBikeUi.pRoot, "AVERAGE",
+    l_tBikeUi.pAverageLabel = BikeUi_CreateMetric(pDashboardPage, "AVERAGE",
                                                   203, 126, 171, 96);
-    l_tBikeUi.pTimeLabel = BikeUi_CreateMetric(l_tBikeUi.pRoot, "MOVING TIME",
+    l_tBikeUi.pTimeLabel = BikeUi_CreateMetric(pDashboardPage, "MOVING TIME",
                                                BIKE_UI_SIDE_MARGIN, 238, 171, 96);
-    l_tBikeUi.pAltitudeLabel = BikeUi_CreateMetric(l_tBikeUi.pRoot, "ALTITUDE",
+    l_tBikeUi.pAltitudeLabel = BikeUi_CreateMetric(pDashboardPage, "ALTITUDE",
                                                    203, 238, 171, 96);
     RT_ASSERT((NULL != l_tBikeUi.pDistanceLabel) && (NULL != l_tBikeUi.pAverageLabel) &&
               (NULL != l_tBikeUi.pTimeLabel) && (NULL != l_tBikeUi.pAltitudeLabel));
 
-    l_tBikeUi.pStartLabel = BikeUi_CreateButton(l_tBikeUi.pRoot, "START", 16,
+    l_tBikeUi.pStartLabel = BikeUi_CreateButton(pDashboardPage, "START", 16,
                                                 lv_color_hex(0x168B4D), BikeUi_StartEvent);
-    (void)BikeUi_CreateButton(l_tBikeUi.pRoot, "STOP", 204,
+    (void)BikeUi_CreateButton(pDashboardPage, "STOP", 204,
                               lv_color_hex(0xA9323A), BikeUi_StopEvent);
     RT_ASSERT(NULL != l_tBikeUi.pStartLabel);
+
+    BikeUi_CreatePageTitle(pLocationPage, "GNSS", "<  SWIPE  >");
+    l_tBikeUi.pLocationLabel = lv_label_create(pLocationPage);
+    RT_ASSERT(NULL != l_tBikeUi.pLocationLabel);
+    lv_obj_set_pos(l_tBikeUi.pLocationLabel, 20, 66);
+    lv_obj_set_width(l_tBikeUi.pLocationLabel, 350);
+    lv_label_set_long_mode(l_tBikeUi.pLocationLabel, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_font(l_tBikeUi.pLocationLabel, &lv_font_montserrat_20,
+                               LV_PART_MAIN);
+    lv_obj_set_style_text_color(l_tBikeUi.pLocationLabel, lv_color_hex(0xDCE6F0),
+                                LV_PART_MAIN);
+    lv_obj_set_style_text_line_space(l_tBikeUi.pLocationLabel, 8, LV_PART_MAIN);
+
+    BikeUi_CreatePageTitle(pSummaryPage, "RIDE SUMMARY", NULL);
+    l_tBikeUi.pSummaryLabel = lv_label_create(pSummaryPage);
+    RT_ASSERT(NULL != l_tBikeUi.pSummaryLabel);
+    lv_obj_set_pos(l_tBikeUi.pSummaryLabel, 20, 60);
+    lv_obj_set_width(l_tBikeUi.pSummaryLabel, 350);
+    lv_label_set_long_mode(l_tBikeUi.pSummaryLabel, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_font(l_tBikeUi.pSummaryLabel, &lv_font_montserrat_20,
+                               LV_PART_MAIN);
+    lv_obj_set_style_text_color(l_tBikeUi.pSummaryLabel, lv_color_hex(0xDCE6F0),
+                                LV_PART_MAIN);
+    lv_obj_set_style_text_line_space(l_tBikeUi.pSummaryLabel, 3, LV_PART_MAIN);
+    l_tBikeUi.pSummaryStartLabel = BikeUi_CreateButton(pSummaryPage, "START", 16,
+                                                       lv_color_hex(0x168B4D),
+                                                       BikeUi_StartEvent);
+    (void)BikeUi_CreateButton(pSummaryPage, "STOP", 204,
+                              lv_color_hex(0xA9323A), BikeUi_StopEvent);
+    RT_ASSERT(NULL != l_tBikeUi.pSummaryStartLabel);
 
     l_tBikeUi.pTimer = lv_timer_create(BikeUi_TimerCallback, BIKE_UI_REFRESH_PERIOD_MS, NULL);
     RT_ASSERT(NULL != l_tBikeUi.pTimer);
