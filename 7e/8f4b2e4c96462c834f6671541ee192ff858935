@@ -1,0 +1,21 @@
+docs/2026-08-06-lvgl-pet-idea-scan.md
+  s_c60c24ac31a1b9::t_7b582c34a8785f 1-98
+docs/2026-08-06-agent-quest-garden-prd.md
+  s_c60c24ac31a1b9::t_7b582c34a8785f 1-156
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "7e8f4b2e4c96462c834f6671541ee192ff858935",
+  "prompts": {},
+  "sessions": {
+    "s_c60c24ac31a1b9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd614-87fb-78e1-9670-ac384154591f",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}

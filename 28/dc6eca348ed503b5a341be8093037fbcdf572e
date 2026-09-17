@@ -1,0 +1,38 @@
+work/watch_bt_audio_template/src/gui_apps/file_manager/SConscript
+  s_b2058e519504b1::t_2454fde8219c56 6
+.gitmodules
+  s_b2058e519504b1::t_4902d512188db2 3
+work/watch_bt_audio_template/project/Kconfig.proj
+  s_b2058e519504b1::t_2ecc5e7908a677 34
+  s_b2058e519504b1::t_2454fde8219c56 31-33,35-40
+work/watch_bt_audio_template/src/gui_apps/file_manager/app_file_manager.c
+  s_b2058e519504b1::t_2454fde8219c56 2,12-13,26-27,69-89,214-224,355,474,705,712-714,722-724
+work/watch_bt_audio_template/project/proj.conf
+  s_b2058e519504b1::t_2454fde8219c56 11-12
+sdk
+  s_1d2c1a9df4a2e7::t_6b5b9fa136a65a 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "28dc6eca348ed503b5a341be8093037fbcdf572e",
+  "prompts": {},
+  "sessions": {
+    "s_1d2c1a9df4a2e7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc647-59e5-7810-b4a2-5c92f96cf60c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    },
+    "s_b2058e519504b1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd0fc-e4c1-7bb2-999b-24b473d28dd3",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}

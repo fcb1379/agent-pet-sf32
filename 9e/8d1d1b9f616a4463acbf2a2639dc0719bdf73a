@@ -1,0 +1,21 @@
+docs/2026-09-04-lvgl-pet-watch-idea-scan.md
+  s_b991e4ff93e87f::t_09d74855a72f8b 1-105
+docs/2026-09-04-momo-agent-squad-prd.md
+  s_b991e4ff93e87f::t_09d74855a72f8b 1-320
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "9e8d1d1b9f616a4463acbf2a2639dc0719bdf73a",
+  "prompts": {},
+  "sessions": {
+    "s_b991e4ff93e87f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd60c-817e-7cf2-aadd-448c400c6b83",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}

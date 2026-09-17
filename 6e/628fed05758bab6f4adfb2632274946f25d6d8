@@ -1,0 +1,53 @@
+work/watch_bt_audio_template/src/gui_apps/pet/app_pet.c
+  s_b991e4ff93e87f::t_4aa9ee0aacbf65 726,740-741,746-747,750-779,785-791,795-813,815-818,821-827,843-883,885-892,894-927,929-932,937-984,991-992,994-1003,1006-1007,1009-1022,1029-1049,1051-1057,1073-1074,1076,1094-1096,1122-1123,1164-1168
+  s_b991e4ff93e87f::t_299efa6e0f1de0 106-107,727-739,748-749,780-784,792-794,814,993
+  s_b991e4ff93e87f::t_421f51a7410a41 18-20,91-105,154-157,240-245,254-256,308-313,315,345-346
+  s_b991e4ff93e87f::t_0aabcd92a67405 893
+  s_b991e4ff93e87f::t_d5b728eab10f4d 742-745,819-820
+  s_b991e4ff93e87f::t_ff411c5972f1e2 2,348,1609-1615,4603-4609,4832-4834,4892,4896
+  s_b991e4ff93e87f::t_aee43ab9f79840 985-990,1005,1058-1072,1075,1077-1093,1097-1121,1124-1159
+  s_b991e4ff93e87f::t_918877fed66140 928,933-936
+  s_b991e4ff93e87f::t_84683ebdf033ee 1050
+  s_b991e4ff93e87f::t_18557ba84b4597 4893-4895,4975-4989
+  s_b991e4ff93e87f::t_c10afd6f7b39b1 842
+  s_b991e4ff93e87f::t_5e7bf23af6f143 314,347,828-841,884,1004,1008,1023-1028,1160-1163,2166-2168,2798-2803,3565-3568
+  s_b991e4ff93e87f::t_b03182df588fba 2589-2592,2605-2618,2637-2640
+tests/run_momo_stroking_host_test.ps1
+  s_b991e4ff93e87f::t_5714e39057142a 29-31
+  s_b991e4ff93e87f::t_6399e45b93bc3c 1-28,32-33
+work/watch_bt_audio_template/src/gui_apps/pet/SConscript
+  s_b991e4ff93e87f::t_421f51a7410a41 6-8
+docs/2026-08-14-momo-stroking-test-record.md
+  s_b991e4ff93e87f::t_5363900fedb010 1-85
+work/watch_bt_audio_template/project/Kconfig.proj
+  s_b991e4ff93e87f::t_421f51a7410a41 48-55
+  s_b991e4ff93e87f::t_c48c354ae3a9b5 56
+work/watch_bt_audio_template/src/gui_apps/pet/momo_stroking.c
+  s_b991e4ff93e87f::t_5f519ebbf2bf3d 360-370
+  s_b991e4ff93e87f::t_57837c4849788e 298-299
+  s_b991e4ff93e87f::t_6399e45b93bc3c 1-297,300-359,371-379
+work/watch_bt_audio_template/src/gui_apps/pet/momo_stroking.h
+  s_b991e4ff93e87f::t_6399e45b93bc3c 1-105,107-110
+  s_b991e4ff93e87f::t_5f519ebbf2bf3d 106
+tests/momo_stroking_host_test.c
+  s_b991e4ff93e87f::t_7c91574208d5bd 59-61
+  s_b991e4ff93e87f::t_6399e45b93bc3c 1-58,62-103,222-269,273-277
+  s_b991e4ff93e87f::t_d6889668e0dee5 104-172,174-190,197-221,270-272
+  s_b991e4ff93e87f::t_5f519ebbf2bf3d 173,191-196
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "6e628fed05758bab6f4adfb2632274946f25d6d8",
+  "prompts": {},
+  "sessions": {
+    "s_b991e4ff93e87f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd60c-817e-7cf2-aadd-448c400c6b83",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}

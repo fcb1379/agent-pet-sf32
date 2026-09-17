@@ -1,0 +1,55 @@
+work/watch_bt_audio_template/src/app_utils/audio_diagnostics.c
+  s_285146986cdcdb::t_5753eb8e2430fb 1-9,19-37,60-92,123-128,156-263,265-273,275-277,306-318,324-369,372,374-378,396-420,433-440
+  s_285146986cdcdb::t_61e5e995eec02f 264,394-395
+  s_285146986cdcdb::t_9b9cd34beb3a09 379-380
+  s_285146986cdcdb::t_e2b7ae631eaf3c 115-122,294,296-305,319-323
+  s_285146986cdcdb::t_03c6a830487449 11,38-59,274
+  s_285146986cdcdb::t_084d1c04de498f 10,12-18,93-114,129-155,278-293,295,370-371,373,381-393,421-432
+work/watch_bt_audio_template/src/gui_apps/pet/app_pet.c
+  s_285146986cdcdb::t_b68d1e279d6c0c 8,34,2001-2003
+  s_285146986cdcdb::t_c0c429c9664c41 2004-2005
+work/watch_bt_audio_template/src/app_utils/audio_diagnostics.h
+  s_285146986cdcdb::t_5753eb8e2430fb 1-24,40-42,44-45
+  s_285146986cdcdb::t_084d1c04de498f 25-35,43
+  s_285146986cdcdb::t_e2b7ae631eaf3c 36-39
+work/watch_bt_audio_template/project/proj.conf
+  s_285146986cdcdb::t_5753eb8e2430fb 22-27
+work/watch_bt_audio_template/src/app_utils/SConscript
+  s_285146986cdcdb::t_1f82b54249b83e 47-53,55-56
+  s_285146986cdcdb::t_5753eb8e2430fb 14-15
+work/watch_bt_audio_template/src/app_utils/local_music_player.c
+  s_285146986cdcdb::t_f7df9023750457 20,216,219,257,267,279,310,342,350,355-363,428,548,559
+  s_285146986cdcdb::t_ae37cf7289d444 268,273,535-538
+  s_285146986cdcdb::t_7f571f3ce17527 286-290,334-340
+  s_285146986cdcdb::t_dbf9b5c129c5b6 516
+  s_285146986cdcdb::t_976501b8372a74 137-138,144-145,147,149-150,152,154,156-157,159,162-168,170-178,182-185,187,189-215,217-218,221-224,226-256,258-264,266,270-272,274-278,280-285,291-292,294-295,297-309,311-333,343-345,347-349,351-354,364-368
+  s_285146986cdcdb::t_ff76d1730a8a07 32-38,62-63,139-143
+  s_285146986cdcdb::t_084d1c04de498f 265,269,620,633-641
+  s_285146986cdcdb::t_c715f4ebfa30fa 426,429,431-433,525,541,543-544,546,549-551,553-558,560,562
+sdk
+  s_1d2c1a9df4a2e7::t_dc4d1e77d00e54 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "56297be4afe7330b5070b591571975213ebabe35",
+  "prompts": {},
+  "sessions": {
+    "s_1d2c1a9df4a2e7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc647-59e5-7810-b4a2-5c92f96cf60c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    },
+    "s_285146986cdcdb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd167-97e3-7830-af9f-4e8a198f25b3",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}

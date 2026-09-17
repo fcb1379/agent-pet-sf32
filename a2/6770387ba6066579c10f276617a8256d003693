@@ -1,0 +1,21 @@
+work/watch_bt_audio_template/src/gui_apps/calculator/app_calculator.c
+  s_3cd8d4b6c8bcf5::t_351b810be25ec0 50-71,74-79,82-83
+  s_3cd8d4b6c8bcf5::t_91b312f3d470c1 106-110
+  s_3cd8d4b6c8bcf5::t_96a4d6e7633e17 237
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "a26770387ba6066579c10f276617a8256d003693",
+  "prompts": {},
+  "sessions": {
+    "s_3cd8d4b6c8bcf5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b5b3da67-da87-472c-aa4c-65a2c1f3e22f",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}

@@ -1,0 +1,37 @@
+tests/run_agent_quest_garden_host_test.ps1
+  s_c60c24ac31a1b9::t_efac6ca9e4be02 21
+  s_c60c24ac31a1b9::t_124e5340430356 1-20,22-23
+work/watch_bt_audio_template/src/gui_apps/pet/agent_quest_garden.c
+  s_c60c24ac31a1b9::t_9890a4699d768f 250,273,292-293,302
+  s_c60c24ac31a1b9::t_5886476173419e 7-9,256-263
+  s_c60c24ac31a1b9::t_124e5340430356 1-6,10-249,251-255,264-272,274-291,294-301,303-391
+work/watch_bt_audio_template/src/gui_apps/pet/agent_quest_garden.h
+  s_c60c24ac31a1b9::t_124e5340430356 1-64,66-114
+  s_c60c24ac31a1b9::t_9890a4699d768f 65
+tests/agent_quest_garden_host_test.c
+  s_c60c24ac31a1b9::t_5886476173419e 151-188,195
+  s_c60c24ac31a1b9::t_124e5340430356 1-150,189-194,196-198
+work/watch_bt_audio_template/src/gui_apps/pet/app_pet.c
+  s_c60c24ac31a1b9::t_7234b3429bdd23 430-481,499-566,568-573,575-580,582-587,589-594,596-601,603-814
+  s_c60c24ac31a1b9::t_2376a6fb8d6d87 296-307,1132-1135,1189,1204-1205,1249-1262
+  s_c60c24ac31a1b9::t_8aa7bec1fe2665 482-498,567,574,581,588,595,602
+  s_c60c24ac31a1b9::t_62ed809d34512e 5,33-34,39-46,62-68,76,78,92-93,815,1190
+  s_c60c24ac31a1b9::t_f993436693e1a6 178-179,188-198,234-258
+  s_c60c24ac31a1b9::t_331c8b14a87007 94
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "40b30623a410f168dc7fd0b5cf6de8d642b6bbe0",
+  "prompts": {},
+  "sessions": {
+    "s_c60c24ac31a1b9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd614-87fb-78e1-9670-ac384154591f",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}

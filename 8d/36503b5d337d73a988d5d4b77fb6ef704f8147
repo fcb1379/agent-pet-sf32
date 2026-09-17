@@ -1,0 +1,41 @@
+tests/pet_interaction_arbiter_host_test.c
+  s_b991e4ff93e87f::t_fbf1b3528bce2d 1-27,29-40,42-58,60-72,74-89
+  s_b991e4ff93e87f::t_7c1b8359186f76 28,41,59,73
+tests/run_pet_interaction_arbiter_host_test.ps1
+  s_b991e4ff93e87f::t_c4caf2ad41446c 15
+  s_b991e4ff93e87f::t_fbf1b3528bce2d 1-14,16-17
+work/watch_bt_audio_template/src/gui_apps/pet/pet_interaction_arbiter.h
+  s_b991e4ff93e87f::t_fbf1b3528bce2d 1-29
+work/watch_bt_audio_template/src/gui_apps/pet/pet_interaction_arbiter.c
+  s_b991e4ff93e87f::t_fbf1b3528bce2d 1-57
+work/watch_bt_audio_template/src/gui_apps/pet/app_pet.c
+  s_b991e4ff93e87f::t_60cb7d21294238 4297
+  s_b991e4ff93e87f::t_15b54a8b1f8cf6 2230-2235
+  s_b991e4ff93e87f::t_465cae417d32c9 2903,2906,2930,2942,2951-2964
+  s_b991e4ff93e87f::t_5147b131e521f1 2494-2495,2577-2578,2584-2585
+  s_b991e4ff93e87f::t_84d67b5dbeb3e4 3000-3001,3026-3031,3041-3045,3049,3051-3054,3056-3057,3060-3061
+  s_b991e4ff93e87f::t_e89958cdc38a96 5371-5375,5384-5386
+  s_b991e4ff93e87f::t_5acf467709bb84 13,354-355,375-403
+  s_b991e4ff93e87f::t_5659275b458b98 1057-1058,1085-1089
+  s_b991e4ff93e87f::t_4d4d0cee48537d 2508,2519-2524
+  s_b991e4ff93e87f::t_bc3b5240aac82a 4031-4033
+docs/2026-09-02-momo-play-ball-stack-integration.md
+  s_b991e4ff93e87f::t_77252498a6b687 1-71,74-92
+  s_b991e4ff93e87f::t_7668308fe086ce 72-73,93
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "8d36503b5d337d73a988d5d4b77fb6ef704f8147",
+  "prompts": {},
+  "sessions": {
+    "s_b991e4ff93e87f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd60c-817e-7cf2-aadd-448c400c6b83",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}

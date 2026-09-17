@@ -1,0 +1,19 @@
+docs/2026-09-02-pet-stroking-integration.md
+  s_b991e4ff93e87f::t_357b1c849d354b 1-100
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "bc960a75d32d210ba4d5e2b3e1dfaf58c3e3ce40",
+  "prompts": {},
+  "sessions": {
+    "s_b991e4ff93e87f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd60c-817e-7cf2-aadd-448c400c6b83",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}

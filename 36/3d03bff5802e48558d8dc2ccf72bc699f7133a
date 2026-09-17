@@ -1,0 +1,41 @@
+work/watch_bt_audio_template/src/app_utils/SConscript
+  s_c60c24ac31a1b9::t_1693dcdb04752a 7
+work/watch_bt_audio_template/src/app_utils/agent_pet_ble_service.c
+  s_c60c24ac31a1b9::t_818db67dd3d323 10,51-57,68-70,83-88,140-159,162-229,244-253,347,517-553,570-572,636-677
+work/watch_bt_audio_template/src/app_utils/agent_pet_ble_service.h
+  s_c60c24ac31a1b9::t_094d6c9064d831 37
+work/watch_bt_audio_template/src/app_utils/agent_pet_merit.c
+  s_51f5d0a4b5d4d7::t_9c82e01300b480 1-337
+work/watch_bt_audio_template/src/app_utils/agent_pet_merit.h
+  s_c60c24ac31a1b9::t_03ee8899c8a91c 1-30
+work/watch_bt_audio_template/src/app_utils/pc_simulator_services.c
+  s_c60c24ac31a1b9::t_61aad129e256b1 487-491
+work/watch_bt_audio_template/src/gui_apps/pet/app_pet.c
+  s_51f5d0a4b5d4d7::t_85583fefe85b90 7,147,1190,1198-1210,1900,1902-1904,1906-1907,2017-2018,2386
+work/watch_bt_audio_template/src/gui_apps/watch_demo.c
+  s_c60c24ac31a1b9::t_6ec3249f5ac0a7 29,544
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "363d03bff5802e48558d8dc2ccf72bc699f7133a",
+  "prompts": {},
+  "sessions": {
+    "s_51f5d0a4b5d4d7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd07c-648e-7430-a76c-80e86c08144d",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    },
+    "s_c60c24ac31a1b9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd614-87fb-78e1-9670-ac384154591f",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}

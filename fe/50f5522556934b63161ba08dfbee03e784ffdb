@@ -1,0 +1,62 @@
+work/watch_bt_audio_template/boards/sf32lb52-lchspi-ulp/hcpu/board.conf
+  s_7bd03ef1892cf8::t_f1e421f459beb1 9
+work/watch_bt_audio_template/src/gui_apps/pet/app_pet.c
+  s_7bd03ef1892cf8::t_140076f77cc0c7 1568-1575
+  s_7bd03ef1892cf8::t_2ca82177456e03 205-223,272-277,427
+  s_7bd03ef1892cf8::t_05982c3eefefa6 1534
+  s_7bd03ef1892cf8::t_f9bf415dab9cb8 14-16,42,50,64-90,115-117,134-138,146-204,224-271,278-281,290-302,304-426,428-458,464-470,479-502
+  s_7bd03ef1892cf8::t_46b031211f8a2b 43-49,51-57,282-289,303,459-463,471-478,1264-1271,1294,1304,1417-1418
+  s_7bd03ef1892cf8::t_556d13705c2873 36-37,1386-1389
+  s_abbb2bd46b4afc::t_3f85973cf4b012 503,1535
+work/watch_bt_audio_template/src/gui_apps/pet/SConscript
+  s_7bd03ef1892cf8::t_c20727ced4da89 10
+  s_7bd03ef1892cf8::t_5b598e3417e8f1 7,17
+  s_7bd03ef1892cf8::t_66fa70ce1e65fc 9
+  s_7bd03ef1892cf8::t_c390c64df2a5da 11-12,14-16
+  s_7bd03ef1892cf8::t_b03bd2a133c2ea 13
+work/watch_bt_audio_template/src/app_utils/SConscript
+  s_7bd03ef1892cf8::t_dbb0a2743c4d0d 14-16
+work/watch_bt_audio_template/src/app_utils/pet_imu.c
+  s_7bd03ef1892cf8::t_f1e421f459beb1 6-8,22-23,57,68-77,79-94,288-289
+  s_7bd03ef1892cf8::t_dbb0a2743c4d0d 1-5,9-13,24-56,58-67,78,95-263,270-287,290-464,469
+  s_7bd03ef1892cf8::t_fb093dd69c891a 14-21
+  s_7bd03ef1892cf8::t_d50c71522d216f 264-269,465-468,470-472
+work/watch_bt_audio_template/src/app_utils/pet_imu.h
+  s_7bd03ef1892cf8::t_dbb0a2743c4d0d 1-39
+work/watch_bt_audio_template/project/Kconfig.proj
+  s_7bd03ef1892cf8::t_dbb0a2743c4d0d 23-30
+work/watch_bt_audio_template/src/gui_apps/music/app_music.c
+  s_7bd03ef1892cf8::t_f1ab40069b75ea 22
+  s_7bd03ef1892cf8::t_4bf293070878c7 18-19
+work/watch_bt_audio_template/src/app_utils/pc_simulator_services.c
+  s_7bd03ef1892cf8::t_973ddf4819e58e 322-327,459-464
+  s_7bd03ef1892cf8::t_d1cae5fd236b95 328-348,468
+  s_7bd03ef1892cf8::t_4bf293070878c7 465-467
+work/watch_bt_audio_template/project/proj.conf
+  s_7bd03ef1892cf8::t_dbb0a2743c4d0d 53
+  s_7bd03ef1892cf8::t_4fba81311c50bb 54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "fe50f5522556934b63161ba08dfbee03e784ffdb",
+  "prompts": {},
+  "sessions": {
+    "s_7bd03ef1892cf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd082-1b8c-7de0-bc8d-2b42e508a093",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    },
+    "s_abbb2bd46b4afc": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc6ed-063f-7a23-889d-19eb899eb590",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}

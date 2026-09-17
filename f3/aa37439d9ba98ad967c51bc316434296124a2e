@@ -1,0 +1,48 @@
+tests/agent_pet_protocol_host_test.c
+  s_3f7fbad9f6a3fb::t_0d74eb04260e4b 1-169
+README.md
+  s_3f7fbad9f6a3fb::t_ca6e879212fd97 1-82
+tests/run_agent_pet_protocol_host_test.ps1
+  s_3f7fbad9f6a3fb::t_0d74eb04260e4b 1-23
+  s_3f7fbad9f6a3fb::t_ecd4929fc36741 24-30
+docs/agent-pet-sf32lb525-integration.md
+  s_3f7fbad9f6a3fb::t_ca6e879212fd97 1-220
+work/watch_bt_audio_template/src/app_utils/agent_pet_ble_service.c
+  s_3f7fbad9f6a3fb::t_346d57ef0bba10 1-217
+work/watch_bt_audio_template/src/app_utils/agent_pet_protocol.h
+  s_3f7fbad9f6a3fb::t_0d74eb04260e4b 1-80
+work/watch_bt_audio_template/src/app_utils/agent_pet_ble_service.h
+  s_3f7fbad9f6a3fb::t_346d57ef0bba10 1-33
+docs/agent-pet-hardware-protocol-v1.md
+  s_3f7fbad9f6a3fb::t_ca6e879212fd97 1-147
+work/watch_bt_audio_template/src/app_utils/agent_pet_protocol.c
+  s_3f7fbad9f6a3fb::t_0d74eb04260e4b 1-354
+sdk
+  s_3f7fbad9f6a3fb::t_5b7151990c34be 1
+work/watch_bt_audio_template/src/app_utils/SConscript
+  s_3f7fbad9f6a3fb::t_0e02852eb4c963 25-26
+work/watch_bt_audio_template/src/app_utils/ble_watch_link.c
+  s_3f7fbad9f6a3fb::t_8e9c865bd1c3e8 23,33,90-105,141-142,145-149,158-172,565,575,616-619,632-633
+work/watch_bt_audio_template/src/gui_apps/pet/SConscript
+  s_3f7fbad9f6a3fb::t_e708d4c7b17e22 6,8
+work/watch_bt_audio_template/src/gui_apps/pet/app_pet.c
+  s_3f7fbad9f6a3fb::t_d95c3f87811137 6,9,21-25,30-167,249,304-323,328-332
+.gitmodules
+  s_3f7fbad9f6a3fb::t_b294c9e691d7f3 1-3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.18",
+  "base_commit_sha": "f3aa37439d9ba98ad967c51bc316434296124a2e",
+  "prompts": {},
+  "sessions": {
+    "s_3f7fbad9f6a3fb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fb23b-1067-7310-a981-f5372d5fa3b1",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}

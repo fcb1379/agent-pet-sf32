@@ -1,0 +1,19 @@
+work/watch_bt_audio_template/src/gui_apps/pet/app_pet.c
+  s_285146986cdcdb::t_d4bb1cea9e3343 29,141,618,646-649,652,683-688,811-825,828
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "d1bdd910cb2a037c6797597b016e85de06ca18d0",
+  "prompts": {},
+  "sessions": {
+    "s_285146986cdcdb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd167-97e3-7830-af9f-4e8a198f25b3",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}

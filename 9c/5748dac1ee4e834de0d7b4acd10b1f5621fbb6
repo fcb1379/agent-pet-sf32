@@ -1,0 +1,21 @@
+docs/2026-08-08-momo-weather-moments-prd.md
+  s_b991e4ff93e87f::t_a0ed16bb64811e 1-184
+docs/2026-08-08-lvgl-pet-watch-idea-scan.md
+  s_b991e4ff93e87f::t_a0ed16bb64811e 1-111
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "9c5748dac1ee4e834de0d7b4acd10b1f5621fbb6",
+  "prompts": {},
+  "sessions": {
+    "s_b991e4ff93e87f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd60c-817e-7cf2-aadd-448c400c6b83",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}

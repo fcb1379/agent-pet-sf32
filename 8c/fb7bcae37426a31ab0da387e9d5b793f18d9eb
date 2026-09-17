@@ -1,0 +1,19 @@
+docs/2026-08-21-evening-lvgl-pet-watch-idea-scan.md
+  s_b991e4ff93e87f::t_dd3f3e438e26e4 1-148
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "8cfb7bcae37426a31ab0da387e9d5b793f18d9eb",
+  "prompts": {},
+  "sessions": {
+    "s_b991e4ff93e87f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd60c-817e-7cf2-aadd-448c400c6b83",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}

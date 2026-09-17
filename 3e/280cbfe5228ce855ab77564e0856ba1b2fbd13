@@ -1,0 +1,19 @@
+docs/2026-08-21-momo-voice-postcard-design.md
+  s_b991e4ff93e87f::t_eed1078afde062 1-431
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "3e280cbfe5228ce855ab77564e0856ba1b2fbd13",
+  "prompts": {},
+  "sessions": {
+    "s_b991e4ff93e87f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd60c-817e-7cf2-aadd-448c400c6b83",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}

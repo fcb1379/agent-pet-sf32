@@ -1,0 +1,39 @@
+work/watch_bt_audio_template/src/gui_apps/pet/app_pet.c
+  s_b1b1f20baf4330::t_d7822d012a9143 6,31,1247-1249
+  s_abbb2bd46b4afc::t_1837d3da0ac5d1 1250-1251
+work/watch_bt_audio_template/src/app_utils/local_music_player.c
+  s_b1b1f20baf4330::t_64c214e5c4e3ea 132-144,146-151,158-162,172-178,182,189-193
+  s_b1b1f20baf4330::t_fe08ae296273c9 46,51,57-58,145,152-157,179-181,183-188,250,256-257,261-262,268,276,371,374-377,383-384,386,388
+  s_b1b1f20baf4330::t_7a89b115d3027e 360-370,372-373,378-382,385,387,389-394
+  s_b1b1f20baf4330::t_2926de7b6eb98f 35-36
+  s_b1b1f20baf4330::t_cf29fc3f203d84 247-249,251-255,258-260,263-267,269-275,277-281
+work/watch_bt_audio_template/src/app_utils/pc_simulator_services.c
+  s_b1b1f20baf4330::t_d7822d012a9143 357-367
+  s_abbb2bd46b4afc::t_42dc6fb135075d 368-372
+work/watch_bt_audio_template/src/app_utils/local_music_player.h
+  s_b1b1f20baf4330::t_d7822d012a9143 27
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "be0c50734322168e9a5dd38950fc20925b14a82b",
+  "prompts": {},
+  "sessions": {
+    "s_abbb2bd46b4afc": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc6ed-063f-7a23-889d-19eb899eb590",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    },
+    "s_b1b1f20baf4330": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd14d-7128-7d72-8f60-89b41fda9bd7",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}

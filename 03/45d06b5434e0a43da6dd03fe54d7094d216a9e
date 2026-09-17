@@ -1,0 +1,79 @@
+work/watch_bt_audio_template/project/pc_hcpu/proj.conf
+  s_b991e4ff93e87f::t_2c5ba4003469aa 27-28
+docs/test-results-pet-behavior-v1.md
+  s_b991e4ff93e87f::t_2ea0e9e120210a 56-74
+work/watch_bt_audio_template/src/app_utils/SConscript
+  s_b991e4ff93e87f::t_15aa1f33f41b6d 14-15,47-59
+build.ps1
+  s_b991e4ff93e87f::t_d43a2b5dbb55a4 85-86,89,92
+work/watch_bt_audio_template/src/gui_apps/pet/app_pet.c
+  s_b991e4ff93e87f::t_b1fa853d07ff95 9,36,49-63,150-153,182,191-192,205-207,782,1007-1017,1024,1033,1572,1582,1590,1601,1613,1748-1758,1766-1767,1778-1782,1813-1824,2023-2024,2049-2050,2056-2059,2061-2117,2768-2772,2961-2964,3018-3123,3251,3253-3254,3260
+  s_b991e4ff93e87f::t_f2a9791995f964 786-788,797,803,986
+  s_b991e4ff93e87f::t_467dc38e4e09ce 1606
+  s_b991e4ff93e87f::t_6bfed2bd8c89bc 1476-1478,1863,2034-2036,2038-2039,2046
+  s_b991e4ff93e87f::t_f76b0d68695444 3258-3259
+  s_b991e4ff93e87f::t_d6f88afa56d49e 1759-1765,1768-1777,1783-1812
+docs/prd-pet-behavior-v1.md
+  s_b991e4ff93e87f::t_383ee9ca3e077a 23-34,86-89
+docs/design-pet-behavior-v1.md
+  s_b991e4ff93e87f::t_a9a0aefa86fdb8 22-25,28-41
+work/watch_bt_audio_template/src/app_utils/pc_simulator_services.c
+  s_b991e4ff93e87f::t_cd9cd39e54c2a4 89-98,497-561
+  s_285146986cdcdb::t_c1e20e05bbf98c 562-563
+sdk
+  s_cf3d962977cbc6::t_f110dc9b7038c4 1
+AGENTS.md
+  s_b991e4ff93e87f::t_97919d1b793d68 1-7
+tests/agent_pet_protocol_host_test.c
+  s_b991e4ff93e87f::t_5c834fdbf6de22 167-230,274-278
+work/watch_bt_audio_template/project/proj.conf
+  s_b991e4ff93e87f::t_ee6c7b87df5dbe 22-27
+work/watch_bt_audio_template/src/app_utils/agent_pet_ble_service.c
+  s_b991e4ff93e87f::t_a427f9db70e496 237,268-270,291,453,469,503-537
+work/watch_bt_audio_template/src/app_utils/agent_pet_image_transfer.c
+  s_b991e4ff93e87f::t_5f460dd3d147ee 26-27,66,72-86,120-159,163-219,238,428,430,895-896,905-906,922-923,925,1007-1008,1019-1020,1036,1041,1046-1048,1052,1054,1057,1064-1066,1074,1078-1081,1083,1085-1086,1090-1091,1095-1096,1100-1101,1120-1121,1168,1181-1218,1323,1327,1360-1361,1372-1373,1386-1387,1398-1405,1414-1415,1453-1485,1492-1493,1531-1573,1584,1593,1595-1596,1600-1664
+work/watch_bt_audio_template/src/app_utils/agent_pet_image_transfer.h
+  s_b991e4ff93e87f::t_1f6338028bf59c 13-14,54,64-66,68-71
+work/watch_bt_audio_template/src/app_utils/agent_pet_protocol.c
+  s_b991e4ff93e87f::t_680377af8e0212 11,15-16,72-77,206-208,299-300,390-429,550-575
+work/watch_bt_audio_template/src/app_utils/agent_pet_protocol.h
+  s_b991e4ff93e87f::t_b51298258c88d6 31,40-41,44-61,118-120
+work/watch_bt_audio_template/src/app_utils/audio_diagnostics.c
+  s_b991e4ff93e87f::t_77a6f71c7773c6 1-440
+work/watch_bt_audio_template/src/app_utils/audio_diagnostics.h
+  s_b991e4ff93e87f::t_680d93134e36d9 1-45
+work/watch_bt_audio_template/src/app_utils/local_music_player.c
+  s_b991e4ff93e87f::t_625a050cf7601a 20,32-38,62-63,137-145,147,149-150,152,154,156-157,159,162-168,170-178,182-185,187,189-219,221-224,226-292,294-295,297-340,342-345,347-368,426,428-429,431-433,516,525,535-538,541,543-544,546,548-551,553-560,562,620,633-641
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "0345d06b5434e0a43da6dd03fe54d7094d216a9e",
+  "prompts": {},
+  "sessions": {
+    "s_285146986cdcdb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd167-97e3-7830-af9f-4e8a198f25b3",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    },
+    "s_b991e4ff93e87f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd60c-817e-7cf2-aadd-448c400c6b83",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    },
+    "s_cf3d962977cbc6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc6f1-466d-7dd3-a11f-a9c9a40e0923",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}

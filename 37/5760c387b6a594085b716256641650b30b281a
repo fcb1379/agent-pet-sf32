@@ -1,0 +1,67 @@
+work/watch_bt_audio_template/src/app_utils/agent_pet_ble_service.c
+  s_285146986cdcdb::t_bf5a4aa65c5ac2 71,122,130,150-154,162-171,492,524-528
+  s_51f5d0a4b5d4d7::t_5aec8ebce45840 529-530
+work/watch_bt_audio_template/project/proj.conf
+  s_285146986cdcdb::t_b60fbe0f9b745d 42
+work/watch_bt_audio_template/src/app_utils/agent_pet_image_transfer.c
+  s_285146986cdcdb::t_283517a54e5c55 680-683
+  s_285146986cdcdb::t_45e8502a4fe4bf 27,552,599-600
+  s_285146986cdcdb::t_4771b53118c63c 33,36,82-83
+  s_285146986cdcdb::t_2f0288f0d0253c 99
+  s_285146986cdcdb::t_bf5a4aa65c5ac2 1303-1304,1310,1313-1317,1326,1343-1344,1350,1353-1357,1361
+  s_285146986cdcdb::t_a0e202d087ea5d 25-26
+  s_285146986cdcdb::t_b60fbe0f9b745d 28,48,62,100,343,747
+  s_285146986cdcdb::t_de337f5de5f0f8 29
+  s_285146986cdcdb::t_132b082717855a 334-342,501-551,553-598,601-679,684-746,757-758,791,867,887,915-916
+  s_285146986cdcdb::t_40538b071ed6bb 944-948,957,1021-1025,1033-1035,1038-1040,1042,1045,1156-1158,1325
+  s_285146986cdcdb::t_88c87665e7c1a3 284-286
+work/watch_bt_audio_template/src/gui_apps/pet/app_pet.c
+  s_285146986cdcdb::t_45e8502a4fe4bf 29
+  s_285146986cdcdb::t_fa48812c77d342 99-100,586-654,662-666,671-675,766-773,785-790,793-795,797-803,809,815-818,820-824
+  s_285146986cdcdb::t_8c616152b6d996 1813-1816,1824-1827
+  s_285146986cdcdb::t_929d923970c074 1065,1266,1288-1295,1358-1369,1375-1393
+  s_285146986cdcdb::t_ad897dd544214c 774-784
+  s_285146986cdcdb::t_a0e202d087ea5d 913,916-919,921-933,935-937
+  s_285146986cdcdb::t_3b266d9b3c280c 1048-1054
+  s_285146986cdcdb::t_0361d73abaa8d5 97-98,101,138-141,584-585,655-661,667-670,676-765,791-792,796,804-808,810-814,819,825-832,1011,1035-1037,1040,1044-1046,1056,1058-1064,1948-1950
+  s_285146986cdcdb::t_7a1d81ca8430ef 39-40,52-54,1787,1789,1832,1859
+  s_285146986cdcdb::t_ace668d84c7161 26,914-915,920,934,1039,1055,1057,1066,1069,1761-1762
+  s_285146986cdcdb::t_88c87665e7c1a3 155
+  s_285146986cdcdb::t_a7f4358d637036 480,549-550,564-565,1743-1744,1802-1803,1817-1818,1828-1829,1853-1854
+  s_abbb2bd46b4afc::t_84a830fd003fc6 833
+work/watch_bt_audio_template/src/app_utils/agent_pet_image_transfer.h
+  s_285146986cdcdb::t_b60fbe0f9b745d 12-18,51
+  s_285146986cdcdb::t_bf5a4aa65c5ac2 9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "375760c387b6a594085b716256641650b30b281a",
+  "prompts": {},
+  "sessions": {
+    "s_285146986cdcdb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd167-97e3-7830-af9f-4e8a198f25b3",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    },
+    "s_51f5d0a4b5d4d7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd07c-648e-7430-a76c-80e86c08144d",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    },
+    "s_abbb2bd46b4afc": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc6ed-063f-7a23-889d-19eb899eb590",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}

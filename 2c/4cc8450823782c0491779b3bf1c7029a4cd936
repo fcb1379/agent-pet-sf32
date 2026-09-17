@@ -1,0 +1,132 @@
+work/watch_bt_audio_template/src/app_utils/SConscript
+  s_b991e4ff93e87f::t_10622dfe3e945a 9-11
+work/watch_bt_audio_template/src/gui_apps/watch_demo.c
+  s_b991e4ff93e87f::t_156118df199208 16,132-140,548,567
+phone_app/android/app/src/test/java/com/huangshan/badge/FindMomoStateTest.java
+  s_b991e4ff93e87f::t_3dc4ee5e5481a7 57-69
+  s_b991e4ff93e87f::t_620c8e5cc93fa2 1-56,70
+work/watch_bt_audio_template/project/Kconfig.proj
+  s_b991e4ff93e87f::t_10622dfe3e945a 41-47
+tests/momo_find_me_host_test.c
+  s_b991e4ff93e87f::t_acd89d6fb244e5 1-92,94-135,144-159
+  s_b991e4ff93e87f::t_b7cfa45e48f591 136-143
+  s_b991e4ff93e87f::t_76d1bad931ea43 93
+work/watch_bt_audio_template/src/app_utils/agent_pet_image_transfer.h
+  s_b991e4ff93e87f::t_649e7377b3ce17 64
+work/watch_bt_audio_template/src/app_utils/ble_watch_link.h
+  s_b991e4ff93e87f::t_97f7fc4bfbaf53 4-6,8-9
+phone_app/android/app/src/main/java/com/huangshan/badge/MainActivity.java
+  s_b991e4ff93e87f::t_5a34f37a706126 293-294
+  s_b991e4ff93e87f::t_80b7482c9f249d 43,54,147-155,273-278,301-306
+  s_cf3d962977cbc6::t_18fb57ac90fd96 279-280
+tests/watch_protocol_host/include/rtthread.h
+  s_b991e4ff93e87f::t_b0f481d06c09ce 13-21
+work/watch_bt_audio_template/project/proj.conf
+  s_b991e4ff93e87f::t_10622dfe3e945a 12
+work/watch_bt_audio_template/src/app_utils/badge_transfer.c
+  s_b991e4ff93e87f::t_649e7377b3ce17 2,339-350
+tests/watch_protocol_host/watch_protocol_host_test.c
+  s_b991e4ff93e87f::t_e65f6be3df60b0 7-9,25-61,150,201-239
+  s_b991e4ff93e87f::t_0643aaf9a17a1d 4
+  s_b991e4ff93e87f::t_87115a3e853c5b 196-200
+phone_app/android/app/src/main/java/com/huangshan/badge/FindMomoState.java
+  s_b991e4ff93e87f::t_9ebd4175b7a527 1-40,42-54,56-113
+  s_b991e4ff93e87f::t_3dc4ee5e5481a7 41,55
+docs/huangshan-watch-protocol-v1.md
+  s_b991e4ff93e87f::t_e5f70b2deffc49 77,81,87-96,117-119
+tests/run_watch_protocol_host_test.sh
+  s_b991e4ff93e87f::t_b0f481d06c09ce 11,13,16
+work/watch_bt_audio_template/src/app_utils/watch_alarm_service.h
+  s_b991e4ff93e87f::t_6f516fb53271b2 4,28
+work/watch_bt_audio_template/src/app_utils/watch_alarm_service.c
+  s_b991e4ff93e87f::t_6f516fb53271b2 2,10-12,44-46,54-66
+work/watch_bt_audio_template/src/app_utils/watch_protocol.c
+  s_b991e4ff93e87f::t_b0f481d06c09ce 228-230
+  s_b991e4ff93e87f::t_97f7fc4bfbaf53 11-15,26-27,169-171,173,185-227,232-257,363,454-471
+  s_c60c24ac31a1b9::t_aa334e9f1a8d8c 231
+work/watch_bt_audio_template/src/app_utils/ble_watch_link.c
+  s_b991e4ff93e87f::t_288956153e041d 32-34,700,706
+  s_b991e4ff93e87f::t_5a34f37a706126 703-705
+  s_b991e4ff93e87f::t_fc336c62b96624 11,30-31,35,42-43,78-82,246-304,697-698,701-702,708-725,735-737
+  s_cf3d962977cbc6::t_b00a677c662933 699,707
+tests/momo_find_me_host/include/rthw.h
+  s_b991e4ff93e87f::t_acd89d6fb244e5 1-16
+tests/android_find_momo_state_host/FindMomoStateHostTest.java
+  s_b991e4ff93e87f::t_69559064787e89 1-27,30-34
+  s_b991e4ff93e87f::t_f7b8e4965cb1f2 28-29
+docs/2026-08-11-momo-find-me-test-results.md
+  s_b991e4ff93e87f::t_f7b8e4965cb1f2 5
+  s_b991e4ff93e87f::t_e5f70b2deffc49 1-4,6-42,45-56,59-65,67-82
+  s_b991e4ff93e87f::t_f78118826852f8 43-44,57-58
+  s_b991e4ff93e87f::t_a88c8cf9d58441 66
+tests/run_momo_find_me_host_test.ps1
+  s_b991e4ff93e87f::t_84d73338fc0be3 4
+  s_b991e4ff93e87f::t_acd89d6fb244e5 1-3,5-9,23-33
+  s_b991e4ff93e87f::t_8bc3e100c0da11 10-22
+tests/run_android_find_momo_state_host_test.ps1
+  s_b991e4ff93e87f::t_69559064787e89 1-21
+work/watch_bt_audio_template/project/pc_hcpu/proj.conf
+  s_b991e4ff93e87f::t_10622dfe3e945a 2
+work/watch_bt_audio_template/src/app_utils/agent_pet_image_transfer.c
+  s_b991e4ff93e87f::t_649e7377b3ce17 111-112,1151-1160,1298-1299,1315-1324,1327-1338,1353-1359,1573-1585
+work/watch_bt_audio_template/src/app_utils/momo_find_me.c
+  s_b991e4ff93e87f::t_b7cfa45e48f591 31-32
+  s_b991e4ff93e87f::t_d10cca87b81c56 1-30,33-95,101-204,225-313,316-378
+  s_b991e4ff93e87f::t_8768f0a03b013c 96-100,314-315
+  s_b991e4ff93e87f::t_b0f481d06c09ce 205-224
+work/watch_bt_audio_template/src/app_utils/momo_find_me.h
+  s_b991e4ff93e87f::t_d10cca87b81c56 1-68,72-85
+  s_b991e4ff93e87f::t_b0f481d06c09ce 69-71
+work/watch_bt_audio_template/src/gui_apps/momo_find_me_ui.h
+  s_b991e4ff93e87f::t_156118df199208 1-10
+work/watch_bt_audio_template/src/app_utils/badge_transfer.h
+  s_b991e4ff93e87f::t_649e7377b3ce17 4,29
+phone_app/android/app/build.gradle
+  s_b991e4ff93e87f::t_620c8e5cc93fa2 30-32
+  s_cf3d962977cbc6::t_72b373769977c3 29
+phone_app/android/app/src/main/java/com/huangshan/badge/WatchBleClient.java
+  s_b991e4ff93e87f::t_4a35d845a7279c 529,534-537,650-657
+  s_b991e4ff93e87f::t_5a34f37a706126 250-252
+  s_b991e4ff93e87f::t_c395492650b637 530-533
+  s_b991e4ff93e87f::t_3968634e7235d3 573-576
+  s_b991e4ff93e87f::t_9516b9a217d8e5 437,442-446
+  s_b991e4ff93e87f::t_e38f3d997f73a2 450-460
+  s_b991e4ff93e87f::t_bb56fc6d4d52f1 43-44,69,87,105-109,232,296-297,447
+  s_b991e4ff93e87f::t_5f3aa5c0880da3 254,279-282
+  s_b991e4ff93e87f::t_90fe8128d4997f 193,199-231
+  s_b991e4ff93e87f::t_b68d1f18ccfa0f 167-168,323-324
+work/watch_bt_audio_template/src/gui_apps/momo_find_me_ui.c
+  s_b991e4ff93e87f::t_156118df199208 1-175
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "2c4cc8450823782c0491779b3bf1c7029a4cd936",
+  "prompts": {},
+  "sessions": {
+    "s_b991e4ff93e87f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd60c-817e-7cf2-aadd-448c400c6b83",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    },
+    "s_c60c24ac31a1b9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd614-87fb-78e1-9670-ac384154591f",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    },
+    "s_cf3d962977cbc6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc6f1-466d-7dd3-a11f-a9c9a40e0923",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}

@@ -1,0 +1,77 @@
+docs/2026-08-08-momo-weather-moments-test-results.md
+  s_b991e4ff93e87f::t_2daba8eccb4afd 1-59
+work/watch_bt_audio_template/src/app_utils/SConscript
+  s_b991e4ff93e87f::t_fcf8a1dee1dd71 9-11
+  s_b991e4ff93e87f::t_af170e354ee3b9 58-62
+tests/agent_pet_weather_host_test.c
+  s_b991e4ff93e87f::t_c16425b35503a7 1-157,159-388
+  s_b991e4ff93e87f::t_25c8010c940534 158
+work/watch_bt_audio_template/src/gui_apps/pet/app_pet.c
+  s_b991e4ff93e87f::t_42545ca640f870 2717-2718,2720-2722,2724-2734,2736-2738
+  s_b991e4ff93e87f::t_9c55205a3ab489 63-68,150-155,202-207,220-224,964-965,968,1725-1727,2918-2921,2938-2940,2942
+  s_b991e4ff93e87f::t_7bbab91e308249 16
+  s_b991e4ff93e87f::t_27148cba300365 1364-1608,1610-1612,1614-1651,1653,1656-1658,1660,1678-1684
+  s_b991e4ff93e87f::t_7f76c135686b01 1609,1613,2699-2716,2719,2723,2735,2739-2839
+  s_b991e4ff93e87f::t_769316d3e7e664 1652,1654-1655,1659,1661-1677
+  s_b991e4ff93e87f::t_c0635129092083 966
+work/watch_bt_audio_template/project/pc_hcpu/proj.conf
+  s_b991e4ff93e87f::t_fcf8a1dee1dd71 31
+  s_b991e4ff93e87f::t_456aa60e234b82 27-29
+  s_b991e4ff93e87f::t_02b9492a066601 30
+work/watch_bt_audio_template/src/app_utils/agent_pet_weather.h
+  s_b991e4ff93e87f::t_81a7a2a6481ade 59,70,110,120-121,127-128,131-132
+  s_b991e4ff93e87f::t_22826fecd04d92 1-58,60-69,71-109,111-119,122-126,129-130,133-134
+work/watch_bt_audio_template/src/app_utils/pc_simulator_services.c
+  s_b991e4ff93e87f::t_1c3bd8ae71bb0a 19-21,91-177,536-540,578-583,588-609
+  s_b991e4ff93e87f::t_02b9492a066601 615-665
+work/watch_bt_audio_template/src/app_utils/agent_pet_protocol.c
+  s_b991e4ff93e87f::t_72613736599f41 284,460,473
+  s_b991e4ff93e87f::t_a86448c2e34644 5-8,16,214-216,281-283,311-315,445-459,461-472,474,512-522
+  s_b991e4ff93e87f::t_8cf838aa94fc59 523-524
+build.ps1
+  s_b991e4ff93e87f::t_f48334c3ffe08f 85-87
+tests/run_agent_pet_weather_host_test.ps1
+  s_b991e4ff93e87f::t_c16425b35503a7 1-32
+work/watch_bt_audio_template/project/Kconfig.proj
+  s_b991e4ff93e87f::t_fcf8a1dee1dd71 41-47
+  s_c60c24ac31a1b9::t_4cf0e5487c0bd0 48
+work/watch_bt_audio_template/src/app_utils/agent_pet_ble_service.c
+  s_b991e4ff93e87f::t_82735f1832e25d 800-824
+  s_b991e4ff93e87f::t_5cd1f328de3e22 452,464-467,474-476,507-512,516-517,524-525,745-749,762-766,779-786,798-799,825-847
+work/watch_bt_audio_template/src/app_utils/agent_pet_weather.c
+  s_b991e4ff93e87f::t_22826fecd04d92 1-21,23-78,80-112,114-119,121-180,182-221,224-229,232-233,235,237-238,240-259,265-305,308-311,314-315,318,320-334,339,341-352,355-358,361-365,368-372,374-378
+  s_b991e4ff93e87f::t_81a7a2a6481ade 22,79,113,120,181,222-223,230-231,234,236,239,260-264,306-307,312-313,316-317,319,335-338,340,353-354,359-360,366-367,373
+work/watch_bt_audio_template/src/app_utils/agent_pet_protocol.h
+  s_b991e4ff93e87f::t_a86448c2e34644 32,42-43,117-119
+  s_b991e4ff93e87f::t_72613736599f41 120
+work/watch_bt_audio_template/src/app_utils/agent_pet_ble_service.h
+  s_b991e4ff93e87f::t_82735f1832e25d 46-48
+  s_b991e4ff93e87f::t_5cd1f328de3e22 10-12,35-39,42-45,49-50
+  s_b991e4ff93e87f::t_475cfd7f634560 4
+work/watch_bt_audio_template/project/proj.conf
+  s_b991e4ff93e87f::t_8e97a69d341b6c 62
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "795e4d1de083f8738943f3d190c6d0ac6a09c8a8",
+  "prompts": {},
+  "sessions": {
+    "s_b991e4ff93e87f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd60c-817e-7cf2-aadd-448c400c6b83",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    },
+    "s_c60c24ac31a1b9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd614-87fb-78e1-9670-ac384154591f",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}

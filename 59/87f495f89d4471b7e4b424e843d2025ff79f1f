@@ -1,0 +1,26 @@
+docs/design-pet-behavior-v1.md
+  s_b991e4ff93e87f::t_6d5d90e1a907a2 1-33,36-97
+  s_b991e4ff93e87f::t_69e0fa77fbd6c5 34-35
+docs/prd-pet-behavior-v1.md
+  s_b991e4ff93e87f::t_6d5d90e1a907a2 1-46,48-75
+  s_b991e4ff93e87f::t_d52f3b2ea1410a 47
+docs/test-results-pet-behavior-v1.md
+  s_b991e4ff93e87f::t_07b6a440d77847 30-31
+  s_b991e4ff93e87f::t_5d1b36103c711d 1-29,32-55
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "5987f495f89d4471b7e4b424e843d2025ff79f1f",
+  "prompts": {},
+  "sessions": {
+    "s_b991e4ff93e87f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd60c-817e-7cf2-aadd-448c400c6b83",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}

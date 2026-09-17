@@ -1,0 +1,42 @@
+work/watch_bt_audio_template/src/app_utils/agent_pet_protocol.c
+  s_285146986cdcdb::t_cce7dbd6a385b5 407-410,412-414
+work/watch_bt_audio_template/src/gui_apps/pet/app_pet.c
+  s_285146986cdcdb::t_0ac5159adf1421 51,139,186-187,1244,1250-1265,1318-1320,1489,1492-1493,1499,1509-1512,1514,1517-1523,1526,1530,1532,1534,1536-1537,1539,1562-1570,2495
+  s_285146986cdcdb::t_722074b5412ab1 1515,1560,2338-2341,2399-2401,2404-2442,2444-2494
+  s_285146986cdcdb::t_6e19c340144211 2390-2398,2402-2403,2443,2629-2630
+  s_285146986cdcdb::t_16ab8b5ad2c7b3 47-50,52-61,140-142
+  s_285146986cdcdb::t_3fdb3f2a1f3254 1478-1479,1490-1491,1502-1503,1516,1524-1525,1527-1529,1531,1533,1535,1538,1540-1558
+  s_285146986cdcdb::t_651091bbe5e51b 1559
+  s_285146986cdcdb::t_d55aaeed02d36e 1561
+work/watch_bt_audio_template/src/app_utils/agent_pet_protocol.h
+  s_285146986cdcdb::t_cce7dbd6a385b5 46-47
+tests/agent_pet_protocol_host_test.c
+  s_285146986cdcdb::t_4e85dff321ed3d 206-226
+  s_abbb2bd46b4afc::t_826ad0b96fd503 227
+AGENTS.md
+  s_285146986cdcdb::t_8019fdd4e12a60 1-7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "9d94611a98b44ed3f19a717cdddbba3e390e1c43",
+  "prompts": {},
+  "sessions": {
+    "s_285146986cdcdb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd167-97e3-7830-af9f-4e8a198f25b3",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    },
+    "s_abbb2bd46b4afc": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc6ed-063f-7a23-889d-19eb899eb590",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}

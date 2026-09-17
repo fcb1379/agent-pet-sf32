@@ -1,0 +1,43 @@
+work/watch_bt_audio_template/src/app_utils/ble_ios_services.c
+  s_abbb2bd46b4afc::t_9da0a988cc7cc1 41-42,100-101,112-113,258-261,276-279
+work/watch_bt_audio_template/src/app_utils/ble_ios_services.h
+  s_abbb2bd46b4afc::t_0baf03eb000221 25-26
+work/watch_bt_audio_template/src/app_utils/local_music_player.c
+  s_abbb2bd46b4afc::t_99796da8b9526a 44,50-51,54,236-253
+work/watch_bt_audio_template/src/app_utils/local_music_player.h
+  s_1d2c1a9df4a2e7::t_60cd3f53979e4b 6-25
+work/watch_bt_audio_template/src/gui_apps/music/app_music.c
+  s_0cae25f1f0e614::t_63bab1affe1bf0 3-4,19,21,24,26-33,35-52,54-59,61-77,79-104,106-107,109,111-116,119-126,128-130,132,134-147,150-157,159-164,166-167,169,171-181,184,186,188-404,406-490,492-495,498-504,506-508,510-520,524-560,562,564-565,567,569-593,595,598,600-604,606-634,637,639-760,763,765-766,768-818,820-842,844-845,847-852,854-871,873,876,878-891,893-895,897-900,902-918,920-921,924,926-931,933-978,980-1051,1054,1056-1177,1182-1186
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "3ea74e0098720f5d60e15eafd227b2a8844be77e",
+  "prompts": {},
+  "sessions": {
+    "s_0cae25f1f0e614": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fcbdb-e66c-79d0-9709-e23b899f5dd2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    },
+    "s_1d2c1a9df4a2e7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc647-59e5-7810-b4a2-5c92f96cf60c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    },
+    "s_abbb2bd46b4afc": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc6ed-063f-7a23-889d-19eb899eb590",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}

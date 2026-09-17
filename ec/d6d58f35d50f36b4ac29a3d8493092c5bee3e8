@@ -1,0 +1,28 @@
+work/watch_bt_audio_template/project/rtconfig_project.h
+  s_c60c24ac31a1b9::t_2d691459f9fe14 10-11
+  s_cf3d962977cbc6::t_bf9af76b8fbb75 9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "ecd6d58f35d50f36b4ac29a3d8493092c5bee3e8",
+  "prompts": {},
+  "sessions": {
+    "s_c60c24ac31a1b9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd614-87fb-78e1-9670-ac384154591f",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    },
+    "s_cf3d962977cbc6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc6f1-466d-7dd3-a11f-a9c9a40e0923",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}

@@ -1,0 +1,45 @@
+work/watch_bt_audio_template/src/gui_apps/pet/app_pet.c
+  s_b991e4ff93e87f::t_bea869bb7efce3 2,10-11,84-85,95-101,165,177,180,188,191-192,208-210,222-225,228-230,448-449,479-486,490-494,1043-1044,1062-1126,1245-1612,1714-1715,1728-1730,1748-1812,1892,1894,1900-1904,1906,1916-1917,1922-1923,1928,1933,1937-1941,1971,1989,1994-1996,2147-2149,2168,2175,2262-2310,3017-3045,3098-3099,3108-3118,3144-3145,3362,3389,3396,3426-3439,3471-3550
+build.ps1
+  s_b991e4ff93e87f::t_263b876470c09f 85-86,89,92
+docs/design-pet-behavior-v1.md
+  s_b991e4ff93e87f::t_32225fd5dcc16f 1-112
+docs/prd-pet-behavior-v1.md
+  s_b991e4ff93e87f::t_4de5ed4be142e6 1-91
+docs/test-results-pet-behavior-v1.md
+  s_b991e4ff93e87f::t_5cf90d9c9a55de 1-74
+tests/pet_behavior_host_test.c
+  s_b991e4ff93e87f::t_24d0e1456331a9 1-301
+tests/run_pet_behavior_host_test.ps1
+  s_b991e4ff93e87f::t_0d764c2313e43e 1-71
+work/watch_bt_audio_template/project/pc_hcpu/proj.conf
+  s_b991e4ff93e87f::t_5261fdbe867d7c 27-28
+work/watch_bt_audio_template/src/app_utils/SConscript
+  s_b991e4ff93e87f::t_bff1478504364e 8,67-72
+work/watch_bt_audio_template/src/app_utils/pc_simulator_services.c
+  s_b991e4ff93e87f::t_9e19bd165a78be 93-102,526-592
+work/watch_bt_audio_template/src/app_utils/pet_behavior.c
+  s_b991e4ff93e87f::t_42785f71c826c9 1-619
+work/watch_bt_audio_template/src/app_utils/pet_behavior.h
+  s_b991e4ff93e87f::t_6a66712d860f87 1-144
+work/watch_bt_audio_template/src/gui_apps/pet/pet_state_assets.c
+  s_b991e4ff93e87f::t_737759d3e93e24 1-35
+work/watch_bt_audio_template/src/gui_apps/pet/pet_state_assets.h
+  s_b991e4ff93e87f::t_06234b66e3fac1 1-20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "b52a52813dd239abd407e2cc7c09fc64bfeb2ab4",
+  "prompts": {},
+  "sessions": {
+    "s_b991e4ff93e87f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd60c-817e-7cf2-aadd-448c400c6b83",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}
