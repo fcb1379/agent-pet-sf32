@@ -64,6 +64,8 @@ gcc -std=c11 -Wall -Wextra -Werror ... -lm -o /tmp/bike_core_test
 bike_core_test: PASS
 gcc -fsanitize=address,undefined -fno-omit-frame-pointer ...
 bike_core_test: PASS
+gcc -Wall -Wextra -Werror -fanalyzer -c ...
+无告警
 ```
 
 覆盖内容：
@@ -152,7 +154,7 @@ HCPU ELF 链接结果：
 
 ## 5. 验证边界
 
-本轮已确认：源码静态检查、核心算法 `-Werror` 主机测试、ASan/UBSan 回归、SF32 HCPU 完整链接和镜像生成。
+本轮已确认：X-TRACK 主线功能逐项对照、源码静态检查、核心算法 `-Werror` 主机测试、ASan/UBSan 回归、GCC `-fanalyzer` 零告警、SF32 HCPU 完整链接和镜像生成。至此代码移植和代码侧检查完成，后续验证项均需要真实开发板、GPS 转接板或外部传感器，不再把实机结果与代码完成状态混为一项。
 
 本轮未确认：
 
