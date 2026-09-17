@@ -4,6 +4,8 @@
 
 数据手册：DX-GP10 GPS 模块技术手册 V2.0，2024-06-18。
 
+板载资源依据：[黄山派开发板官方 Wiki](https://wiki.sifli.com/board/sf32lb52x/SF32LB52-%E9%BB%84%E5%B1%B1%E6%B4%BE.html) 与 [SiFli 传感器适配说明](https://docs.sifli.com/projects/solution/7.FAQ/peripheral/sensor.html)。
+
 ## 1. 模组接口
 
 | DX-GP10 引脚 | 名称 | 方向 | 首版用途 |
@@ -38,11 +40,14 @@
 | 调试日志 | UART1，PA18/PA19 | 现有板级配置，保留 |
 | GNSS | UART2，PA20(RX)/PA27(TX) | SiFli SF32LB52 UART 示例映射；当前板级配置未占用 |
 | TF 卡 | SPI1，PA24/PA25/PA28/PA29 | 不与 GNSS 复用 |
+| 板载 IMU | I2C2，PA39(SDA)/PA40(SCL) | 当前 QADSPI 屏幕不占用；LSM6DS3TR-C 地址 0x6A |
 | 1PPS | 未分配 | 等转接板网表后选择空闲 GPIO/中断 |
 | WAKE_UP | 未分配 | 等转接板网表后选择空闲 GPIO |
 | RESET | 未分配 | 等转接板网表后选择空闲 GPIO |
 
 TF 卡软件侧已启用 SDK SPI-MSD：PA24 为 DIO/MOSI、PA25 为 DI/MISO、PA28 为 CLK、PA29 为 CS，块设备名为 `sd0`。应用只尝试把已有 FAT 文件系统挂载到 `/sd`，失败时回退内部存储，不会自动格式化卡片；真实卡座焊接、供电和异常拔卡仍需最终实机阶段确认。
+
+板载 LSM6DS3TR-C 软件侧使用 SiFli SDK 的 LSM6DSL 兼容驱动，仅注册 step 设备。初始化前校验 0x0F WHO_AM_I 为 0x6A，开启后回读 0x10 ODR 与 0x19 功能/计步使能位；应用再以独立、可检查返回值的 I2C 事务读取 0x4B/0x4C 步数。PA39/PA40 只在当前 QADSPI LCD 配置下复用，若改用 8080 DBI 屏，计步初始化会直接报错以避免引脚冲突。
 
 软件把 UART 设备名、波特率和 PA20/PA27 映射集中在 GNSS 端口层。当前映射可用于编译和初步接线，但只有转接板导出资料确认后，才能视为硬件连接结论。
 

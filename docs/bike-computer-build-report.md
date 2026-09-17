@@ -4,7 +4,7 @@
 
 分支：`codex/feature-bike-computer`
 
-目标：在 `sf32lb52-lchspi-ulp` 开发板上建立 X-TRACK 功能移植的可构建基线，包括 DX-GP10 NMEA 输入、骑行数据模型、GPX/BLE 传感器、TF 存储和 LVGL 四页骑行界面。
+目标：在 `sf32lb52-lchspi-ulp` 开发板上建立 X-TRACK 功能移植的可构建基线，包括 DX-GP10 NMEA 输入、骑行数据模型、GPX/BLE 传感器、TF 存储、板载计步和 LVGL 四页骑行界面。
 
 ## 1. 已实现范围
 
@@ -12,7 +12,7 @@
 - 固定长度 NMEA 接收缓冲，支持 GGA/RMC/VTG、异或校验、超长语句丢弃和错误计数；VTG 可使用 km/h 或节字段，`mode=N` 时清零速度且不会延长坐标定位有效期。
 - 使用定点数保存经纬度、速度、航向、海拔和 UTC 时间，避免在串口接收路径中使用浮点运算。
 - 骑行模型支持开始、暂停、停止、里程、当前/平均/最大速度、移动/总时间和卡路里估算。
-- LVGL 使用横向 TileView 提供主数据、GNSS 详情和骑行总结三页；主数据和总结页均可开始/暂停/停止骑行。
+- LVGL 使用横向 TileView 提供主数据、GNSS 详情、离线地图和骑行总结四页；主数据和总结页均可开始/暂停/停止骑行。
 - GNSS 详情页显示经纬度、海拔、航向、UTC、卫星数、定位质量、RTC 同步状态和 NMEA 统计；未定位时不伪造零坐标。
 - GNSS 接收线程只持有静态栈和静态缓冲；串口回调只释放信号量，共享快照使用互斥锁保护。
 - `bikedemo on/off/status` 提供无 GPS 模组演示模式，每秒生成单调 UTC、坐标、海拔、航向和速度；UART2 不存在或初始化失败时，工作线程仍启动以保留演示能力，真实串口数据在演示期间只解析不提交。
@@ -46,10 +46,13 @@
 - FlashDB 写入由 1,536 bytes 静态工作线程和固定消息队列顺序执行，GNSS 线程和 LVGL 回调仅非阻塞投递快照。
 - 已启用黄山派 SPI1 与 SDK SPI-MSD 驱动，使用板级既有 PA24/DIO、PA25/DI、PA28/CLK、PA29/CS 映射探测 `sd0`。
 - TF 卡仅挂载到独立 `/sd`，不替换内部根文件系统且不自动格式化；挂载成功时轨迹与地图分别使用 `/sd/tracks`、`/sd/MAP`，无卡、无文件系统或挂载失败时回退 `/tracks`、`/MAP`。
+- 黄山派板载 LSM6DS3TR-C 使用 SDK 的 LSM6DSL 兼容计步驱动；QADSPI 屏幕配置下将空闲 PA39/PA40 复用为 I2C2 SDA/SCL，先校验 WHO_AM_I，再注册并开启仅计步传感器。
+- 计步线程使用 2,048 bytes 静态栈，每秒以带返回值检查的 I2C 事务读取 16 位步数；启动后回读 ODR、功能引擎和计步使能位，扩展处理硬件回绕/复位并过滤异常跳变。
+- GNSS 详情和总结页显示累计步数、IMU 状态与 I2C 错误计数；若未来切换到占用 PA39/PA40 的 8080 LCD 接口，代码会拒绝计步初始化而不是破坏显示总线。
 
 ## 2. 主机测试
 
-测试对象：NMEA、骑行模型、GPX、时间/自动暂停、BLE 广播与 HR/CSC/Cycling Power Measurement 解析和 CSC 派生算法。
+测试对象：NMEA、骑行模型、GPX、时间/自动暂停、计步累计、BLE 广播与 HR/CSC/Cycling Power Measurement 解析和 CSC 派生算法。
 
 ```text
 gcc -std=c11 -Wall -Wextra -Werror ... -lm -o /tmp/bike_core_test
@@ -78,6 +81,7 @@ bike_core_test: PASS
 - 地图投影覆盖零点、北京坐标、经纬度/缩放边界、瓦片索引与路径穿越/截断拒绝。
 - 历史累计模型覆盖空记录、多次骑行合并、最高速度保留、校验和损坏以及 A/B 槽选择/全损坏回退。
 - 存储路径选择覆盖 TF 优先和内部文件系统回退；主机测试不执行目标板挂载操作。
+- 计步累计覆盖首帧基线、正常递增、异常跳变重同步、传感器计数复位、16 位自然回绕、32 位饱和和空指针保护；主机测试不访问 I2C。
 
 目标编译同时验证了设置写入的事务顺序修正：单字段在持久化成功后才更新运行态，双字段第二次写入失败时回滚首字段。摘要页字号与行距也已按当前 390 px 可用高度收紧，不以此替代最终屏幕实机验收。
 
@@ -94,10 +98,12 @@ scons: done building targets.
 
 | 产物 | 大小 |
 |---|---:|
-| `main.bin` | 3,431,268 bytes |
+| `main.bin` | 3,442,460 bytes |
 | `fs_root.bin` | 4,194,304 bytes |
 
-完整重构建输出 SDK 既有的 FlashDB/LVGL/音频等静态告警，以及 `dfu` 分区未定义和 ftab 入口符号警告；新增 `bike_*` 模块在 `-Werror` 主机测试中无告警，且目标编译成功。生成配置已确认 `CONFIG_BSP_USING_SPI1=y` 与 `CONFIG_RT_USING_SPI_MSD=y`。
+完整重构建输出 SDK 既有的 FlashDB/LVGL/音频等静态告警，以及 `dfu` 分区未定义和 ftab 入口符号警告；新增 `bike_*` 模块在 `-Werror` 主机测试中无告警，且目标编译成功。生成配置已确认 `CONFIG_BSP_USING_SPI1=y`、`CONFIG_RT_USING_SPI_MSD=y`、`CONFIG_RT_USING_SENSOR=y`、`CONFIG_ACC_USING_LSM6DSL=y` 和仅 `CONFIG_PKG_USING_LSM6DSL_STEP=y`，加速度/陀螺仪 RT-Thread 设备未启用。
+
+HCPU ELF 汇总为 `.text=3,434,201 bytes`、`.data=8,228 bytes`、`.bss=2,966,424 bytes`。目标编译已实际生成 `lsm6dsl.o`、`lsm6dsl_reg.o`、`st_lsm6dsl_sensor_v1.o`、`sensor.o` 和 `bike_pedometer.o`。
 
 ## 4. 资源占用
 
@@ -105,7 +111,7 @@ HCPU ELF 链接结果：
 
 | 区域 | 当前占用 | 链接容量 | 余量 |
 |---|---:|---:|---:|
-| 片上 SRAM 地址范围 | 350,492 bytes | 523,264 bytes | 172,772 bytes |
+| 片上 SRAM 地址范围 | 352,840 bytes | 523,264 bytes | 170,424 bytes |
 | PSRAM 可写段 | 2,649,000 bytes | 8,388,608 bytes | 5,739,608 bytes |
 
 码表新增对象文件在链接前的直接占用：
@@ -124,15 +130,16 @@ HCPU ELF 链接结果：
 | `bike_gpx.o` | 2,966 bytes | 0 bytes |
 | `bike_history.o` | 2,157 bytes | 2,189 bytes |
 | `bike_map.o` | 708 bytes | 0 bytes |
+| `bike_pedometer.o` | 1,309 bytes | 2,253 bytes |
 | `bike_storage.o` | 573 bytes | 2 bytes |
 | `bike_recorder.o` | 1,349 bytes | 3,865 bytes |
 | `bike_settings.o` | 1,924 bytes | 53 bytes |
 | `bike_sensor_ble.o` | 5,927 bytes | 2,545 bytes |
-| `bike_service.o` | 3,732 bytes | 3,857 bytes |
-| `app_bike.o` | 7,007 bytes | 4,564 bytes |
-| 合计 | 33,366 bytes | 17,204 bytes |
+| `bike_service.o` | 3,790 bytes | 3,873 bytes |
+| `app_bike.o` | 7,138 bytes | 4,564 bytes |
+| 合计 | 34,864 bytes | 19,473 bytes |
 
-`bike_service.o` 和 `bike_recorder.o` 分别包含 3,072 bytes 静态线程栈，`bike_sensor_ble.o` 包含 2,048 bytes 静态线程栈，`bike_history.o` 包含 1,536 bytes 静态线程栈与固定队列。对象文件合计只用于描述新增模块的直接体积，不等同于最终镜像增量；最终镜像还受链接消除、库引用和资源打包影响。
+`bike_service.o` 和 `bike_recorder.o` 分别包含 3,072 bytes 静态线程栈，`bike_sensor_ble.o` 与 `bike_pedometer.o` 分别包含 2,048 bytes 静态线程栈，`bike_history.o` 包含 1,536 bytes 静态线程栈与固定队列。对象文件合计只用于描述新增模块的直接体积，不等同于最终镜像增量；最终镜像还包含本轮启用的 SDK LSM6DSL 与 RT-Thread sensor 驱动，并受链接消除、库引用和资源打包影响。
 
 ## 5. 验证边界
 
@@ -140,7 +147,7 @@ HCPU ELF 链接结果：
 
 本轮未确认：
 
-- 未烧录开发板，不能声明三页滑动、页面布局、触摸、UART2 或休眠唤醒已通过实机验证。
+- 未烧录开发板，不能声明四页滑动、页面布局、触摸、UART2 或休眠唤醒已通过实机验证。
 - 未取得转接板导出网表，PA20/PA27、3V3、GND 以及 PPS/WAKE/RESET 的实际网络仍需硬件复核。
 - 未接 DX-GP10，尚未验证真实 NMEA 连续输入、首次定位时间、丢星恢复、天线性能和整机功耗。
 - RTC 校时和 KEY2 控制已通过代码与目标构建验证，尚未做实板按键电平、长按阈值和 RTC 走时验证。
@@ -151,4 +158,5 @@ HCPU ELF 链接结果：
 - X-TRACK 离线地图和实时轨迹已完成源码、主机测试与目标构建，尚未导入实际 `.bin` 瓦片并验证 LVGL 文件解码、页面布局、缩放和长距离轨迹显示。
 - 掉电累计记录已通过纯模型测试和目标构建，但尚未对真实 FlashDB 执行 A/B 槽交替、写入中复位、60 秒检查点精度和丢弃回滚实机测试。
 - X-TRACK 的 Micro SD 存储已完成 SPI1 驱动、独立挂载和路径回退的源码与目标构建；尚未用真实 TF 卡验证 FAT 兼容性、启动时无卡、异常拔卡、满盘和断电行为。
-- X-TRACK 计步仍缺少板载 IMU 型号/总线证据，尚未完成目标驱动绑定。FIT 与路线导航属于其他参考工程扩展，不是 X-TRACK 主线必备项。
+- X-TRACK 计步已完成板载 LSM6DS3TR-C、I2C2 PA39/PA40、SDK LSM6DSL 兼容驱动、寄存器回读和 UI 状态的源码/测试/目标构建；尚未实机确认 WHO_AM_I、走动计数准确率、16 位回绕、长时间稳定性和功耗。
+- FIT 与路线导航属于其他参考工程扩展，不是 X-TRACK 主线必备项。

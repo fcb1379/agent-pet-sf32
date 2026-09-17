@@ -724,6 +724,7 @@ static void BikeUi_Update(void)
     const char *pGpsState;
     const char *pRecordState;
     const char *pRideState;
+    const char *pStepState;
     const char *pSpeedSource;
     const char *pFileName;
     const char *pStartText;
@@ -810,6 +811,26 @@ static void BikeUi_Update(void)
         break;
     }
 
+    switch (tSnapshot.tPedometer.eStatus)
+    {
+    case BIKE_PEDOMETER_STATUS_READY:
+        pStepState = "READY";
+        break;
+
+    case BIKE_PEDOMETER_STATUS_SEARCHING:
+        pStepState = "WAIT";
+        break;
+
+    case BIKE_PEDOMETER_STATUS_ERROR:
+        pStepState = "ERROR";
+        break;
+
+    case BIKE_PEDOMETER_STATUS_DISABLED:
+    default:
+        pStepState = "OFF";
+        break;
+    }
+
     ulAgeMs = 0U;
     if (0U != tSnapshot.ulLastUpdateMs)
     {
@@ -876,6 +897,7 @@ static void BikeUi_Update(void)
                           "LAT  %s\nLON  %s\nALT  %s%lu.%02lu m\n"
                           "COURSE  %u.%01u deg\nUTC  %04u-%02u-%02u %02u:%02u:%02u\n"
                           "SAT  %u   FIX  %u   RTC  %s\nNMEA  %lu   CRC ERR  %lu   OVF  %lu\n"
+                          "STEPS  %lu   IMU  %s   I2C ERR  %lu\n"
                           "LIFE  %llu.%02llu km   %llu h\nRIDES  %lu   MAX  %u.%02u km/h",
                           aLatitude, aLongitude, pAltitudeSign,
                           (unsigned long)(ulAltitudeAbsoluteCm / 100U),
@@ -890,6 +912,9 @@ static void BikeUi_Update(void)
                           (unsigned long)tSnapshot.ulAcceptedCount,
                           (unsigned long)tSnapshot.ulChecksumErrorCount,
                           (unsigned long)tSnapshot.ulOverflowCount,
+                          (unsigned long)tSnapshot.tPedometer.ulStepCount,
+                          pStepState,
+                          (unsigned long)tSnapshot.tPedometer.ulReadErrorCount,
                           (unsigned long long)(udHistoryCentiKm / 100ULL),
                           (unsigned long long)(udHistoryCentiKm % 100ULL),
                           (unsigned long long)udHistoryHours,
@@ -951,6 +976,7 @@ static void BikeUi_Update(void)
                           "AVG  %u.%02u km/h\nMAX  %u.%02u km/h\n"
                            "CAL  %lu.%03lu kcal\nHR  %s  HB  %s\n"
                            "CAD  %s  CB  %s\nCSC  %s\nPWR  %s  PB  %s\n"
+                           "STEP  %lu  IMU  %s\n"
                            "TRACK  %s / %lu pt\nFILE  %s",
                           pRideState,
                           (unsigned long)(ulDistanceCentiKm / 100U),
@@ -965,6 +991,8 @@ static void BikeUi_Update(void)
                            aHeartRate, aHeartRateBattery,
                            aCadence, aCscBattery, aCscSpeed,
                            aPower, aPowerBattery,
+                          (unsigned long)tSnapshot.tPedometer.ulStepCount,
+                          pStepState,
                           pRecordState,
                           (unsigned long)tSnapshot.tRecorder.ulPointCount,
                           pFileName);

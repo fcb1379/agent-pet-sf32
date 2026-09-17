@@ -15,12 +15,50 @@
 #include "bike_ble_measurement.h"
 #include "bike_csc.h"
 #include "bike_nmea.h"
+#include "bike_pedometer.h"
 #include "bike_ride_model.h"
 #include "bike_speed_source.h"
 #include "bike_storage.h"
 #include "bike_time.h"
 
 #define TEST_GPX_DIRECTORY "/tmp/sf32_bike_gpx_test"
+
+/* Test_PedometerAccumulator: 覆盖初始值、正常递增、异常跳变、硬件复位、
+ * 16 位回绕和 32 位饱和保护。
+ * 返回值：无
+ */
+static void Test_PedometerAccumulator(void)
+{
+    BIKE_PEDOMETER_ACCUMULATOR tAccumulator;
+
+    BIKE_PEDOMETER_ResetAccumulator(&tAccumulator);
+    assert(!tAccumulator.bInitialized);
+    assert(BIKE_PEDOMETER_UpdateAccumulator(&tAccumulator, 120U, 100U));
+    assert(120U == tAccumulator.ulTotalSteps);
+    assert(BIKE_PEDOMETER_UpdateAccumulator(&tAccumulator, 125U, 100U));
+    assert(125U == tAccumulator.ulTotalSteps);
+    assert(!BIKE_PEDOMETER_UpdateAccumulator(&tAccumulator, 1000U, 100U));
+    assert(125U == tAccumulator.ulTotalSteps);
+    assert(BIKE_PEDOMETER_UpdateAccumulator(&tAccumulator, 1005U, 100U));
+    assert(130U == tAccumulator.ulTotalSteps);
+    assert(BIKE_PEDOMETER_UpdateAccumulator(&tAccumulator, 2U, 100U));
+    assert(132U == tAccumulator.ulTotalSteps);
+
+    BIKE_PEDOMETER_ResetAccumulator(&tAccumulator);
+    assert(BIKE_PEDOMETER_UpdateAccumulator(&tAccumulator, 65534U, 100U));
+    assert(BIKE_PEDOMETER_UpdateAccumulator(&tAccumulator, 2U, 100U));
+    assert(65538U == tAccumulator.ulTotalSteps);
+
+    tAccumulator.bInitialized = true;
+    tAccumulator.usPreviousRaw = 10U;
+    tAccumulator.ulTotalSteps = UINT32_MAX - 1U;
+    assert(BIKE_PEDOMETER_UpdateAccumulator(&tAccumulator, 20U, 100U));
+    assert(UINT32_MAX == tAccumulator.ulTotalSteps);
+    assert(!BIKE_PEDOMETER_UpdateAccumulator(NULL, 0U, 100U));
+    BIKE_PEDOMETER_ResetAccumulator(NULL);
+
+    return;
+}
 
 /* Test_StoragePaths: 覆盖 TF 优先与内部文件系统回退路径。
  * 返回值：无
@@ -973,6 +1011,7 @@ static void Test_HistoryRecord(void)
 
 int main(void)
 {
+    Test_PedometerAccumulator();
     Test_StoragePaths();
     Test_NmeaParser();
     Test_RideModel();
