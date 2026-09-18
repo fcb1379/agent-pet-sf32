@@ -1,0 +1,23 @@
+work/watch_bt_audio_template/src/gui_apps/bike/app_bike.c
+  s_8e23440d3d99c8::t_703547442cadf0 105,154,826-871,886,888-912,950-952,964,1039,1063-1066,2491-2492,2501-2504
+docs/bike-computer-implementation-plan.md
+  s_8e23440d3d99c8::t_d5f936b2073656 124-125
+docs/bike-computer-build-report.md
+  s_8e23440d3d99c8::t_d5f936b2073656 46
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f070a9e177572250d371ff53ac507276fa81ad83",
+  "prompts": {},
+  "sessions": {
+    "s_8e23440d3d99c8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ad75-ee73-78f0-b559-493bc936de00",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}

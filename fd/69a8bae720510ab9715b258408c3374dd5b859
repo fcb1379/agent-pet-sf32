@@ -1,0 +1,27 @@
+work/watch_bt_audio_template/tools/generate_osm_tiles.py
+  s_8e23440d3d99c8::t_4d64d5a5e7c6a4 1-319
+work/watch_bt_audio_template/src/gui_apps/bike/app_bike.c
+  s_8e23440d3d99c8::t_42d04e7fb18d56 74,103,557-586,618,679-693,791-807,2029-2048
+  s_8e23440d3d99c8::t_3f908fe7f44c37 1854,2064-2076
+  s_8e23440d3d99c8::t_4cef3738ba3a92 2049
+work/watch_bt_audio_template/disk/MAP/NOTICE.txt
+  s_8e23440d3d99c8::t_4d64d5a5e7c6a4 1-8
+work/watch_bt_audio_template/tools/README.md
+  s_8e23440d3d99c8::t_4d64d5a5e7c6a4 1-21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "fd69a8bae720510ab9715b258408c3374dd5b859",
+  "prompts": {},
+  "sessions": {
+    "s_8e23440d3d99c8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ad75-ee73-78f0-b559-493bc936de00",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}

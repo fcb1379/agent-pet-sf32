@@ -1,0 +1,21 @@
+work/watch_bt_audio_template/src/gui_apps/bike/app_bike.c
+  s_8e23440d3d99c8::t_18b6bd33a40c6d 504-654,668,699,713-726,728,730-742,744-745,747-753,780-781,787-800
+  s_8e23440d3d99c8::t_a50877b6875c60 1827,1951-1972,1976
+  s_8e23440d3d99c8::t_58835ca58b540b 31-35,73,76,101,106,121-122
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "04b1a13897c1d43f33ef1f47fa6737a073d32e15",
+  "prompts": {},
+  "sessions": {
+    "s_8e23440d3d99c8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ad75-ee73-78f0-b559-493bc936de00",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}
