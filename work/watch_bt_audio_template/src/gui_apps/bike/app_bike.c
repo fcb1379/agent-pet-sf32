@@ -16,7 +16,6 @@
 
 #define APP_ID "Bike"
 #define BIKE_UI_REFRESH_PERIOD_MS (500U)
-#define BIKE_UI_SIDE_MARGIN (16)
 #define BIKE_UI_PANEL_RADIUS (16)
 #define BIKE_UI_MAP_TILE_COUNT (9U)
 #define BIKE_UI_MAP_TRACK_POINT_MAX (128U)
@@ -33,6 +32,14 @@
 #define BIKE_UI_MAP_PAN_EDGE_WIDTH_PX (24)
 #define BIKE_UI_MAP_SHENZHEN_LATITUDE_E7 (225430960)
 #define BIKE_UI_MAP_SHENZHEN_LONGITUDE_E7 (1140578650)
+#define BIKE_UI_XTRACK_REFERENCE_WIDTH_PX (240)
+#define BIKE_UI_XTRACK_REFERENCE_HEIGHT_PX (240)
+#define BIKE_UI_XTRACK_TOP_Y (-36)
+#define BIKE_UI_XTRACK_TOP_HEIGHT (142)
+#define BIKE_UI_XTRACK_METRIC_Y (106)
+#define BIKE_UI_XTRACK_METRIC_HEIGHT (90)
+#define BIKE_UI_XTRACK_CONTROL_Y (196)
+#define BIKE_UI_XTRACK_CONTROL_HEIGHT (40)
 
 #if 16 != LV_COLOR_DEPTH
 #error "Bike map tiles require LVGL RGB565 color depth"
@@ -65,13 +72,14 @@ typedef struct _BIKE_UI_MAP_TRACK_POINT
  *   - pDistanceLabel: 本次里程标签
  *   - pAverageLabel: 平均速度标签
  *   - pTimeLabel: 移动时间标签
- *   - pAltitudeLabel: 海拔标签
+ *   - pCaloriesLabel: 卡路里标签
  *   - pStartLabel: 开始/暂停按钮文字
  *   - pLocationLabel: 定位详情页文本
  *   - pSummaryLabel: 骑行总结页文本
  *   - pMapContainer/apMapTiles: 离线地图瓦片容器和 3 x 3 固定瓦片
  *   - pMapTrackLine/pMapMarker/pMapTouchArea: 实时轨迹、当前位置和浏览触摸区
  *   - pMapEmptyLabel: 未找到离线瓦片时显示的路径提示
+ *   - pMapSpeedLabel/pMapDistanceLabel/pMapTimeLabel: 地图页骑行数据叠层
  *   - aMapTrackPoints/aMapLinePoints: 固定级别轨迹点和可见线段点
  *   - atMapTileImages: 由 PSRAM 像素缓冲支撑的 LVGL 变量图像描述符
  *   - tMapViewPoint: 无定位时可拖动的离线地图中心点
@@ -91,7 +99,7 @@ typedef struct _BIKE_UI_CONTEXT
     lv_obj_t *pDistanceLabel;
     lv_obj_t *pAverageLabel;
     lv_obj_t *pTimeLabel;
-    lv_obj_t *pAltitudeLabel;
+    lv_obj_t *pCaloriesLabel;
     lv_obj_t *pStartLabel;
     lv_obj_t *pLocationLabel;
     lv_obj_t *pSummaryLabel;
@@ -102,6 +110,9 @@ typedef struct _BIKE_UI_CONTEXT
     lv_obj_t *pMapTouchArea;
     lv_obj_t *pMapEmptyLabel;
     lv_obj_t *pMapStatusLabel;
+    lv_obj_t *pMapSpeedLabel;
+    lv_obj_t *pMapDistanceLabel;
+    lv_obj_t *pMapTimeLabel;
     BIKE_UI_MAP_TRACK_POINT aMapTrackPoints[BIKE_UI_MAP_TRACK_POINT_MAX];
     lv_point_t aMapLinePoints[BIKE_UI_MAP_TRACK_POINT_MAX];
     lv_img_dsc_t atMapTileImages[BIKE_UI_MAP_TILE_COUNT];
@@ -127,6 +138,36 @@ typedef struct _BIKE_UI_CONTEXT
 
 /* l_tBikeUi: 仅由 LVGL GUI 线程访问的码表页面上下文。 */
 static BIKE_UI_CONTEXT l_tBikeUi;
+
+/* BikeUi_ScaleX: 将 X-TRACK 240 像素参考画布的横向坐标映射到当前屏幕。
+ * 参数：
+ *   - sReferenceValue: X-TRACK 参考横向坐标或尺寸
+ * 返回值：当前屏幕横向坐标或尺寸
+ */
+static lv_coord_t BikeUi_ScaleX(int16_t sReferenceValue)
+{
+    int32_t lScaledValue;
+
+    lScaledValue = ((int32_t)sReferenceValue * (int32_t)LV_HOR_RES) /
+                   BIKE_UI_XTRACK_REFERENCE_WIDTH_PX;
+
+    return (lv_coord_t)lScaledValue;
+}
+
+/* BikeUi_ScaleY: 将 X-TRACK 240 像素参考画布的纵向坐标映射到当前屏幕。
+ * 参数：
+ *   - sReferenceValue: X-TRACK 参考纵向坐标或尺寸
+ * 返回值：当前屏幕纵向坐标或尺寸
+ */
+static lv_coord_t BikeUi_ScaleY(int16_t sReferenceValue)
+{
+    int32_t lScaledValue;
+
+    lScaledValue = ((int32_t)sReferenceValue * (int32_t)LV_VER_RES) /
+                   BIKE_UI_XTRACK_REFERENCE_HEIGHT_PX;
+
+    return (lv_coord_t)lScaledValue;
+}
 
 /* l_aBikeMapMarkerAlpha: 16 x 20 单色向上箭头的 1-bit Alpha 蒙版。
  * 取值范围 0x00~0xFF；仅在编译期固定，主题颜色由 LVGL recolor 设置。
@@ -912,7 +953,7 @@ static void BikeUi_MapZoomOutEvent(lv_event_t *pEvent)
     return;
 }
 
-/* BikeUi_SetPanelStyle: 设置深色高对比数据卡片样式。
+/* BikeUi_SetPanelStyle: 设置 X-TRACK 指标单元的无边框样式。
  * 参数：
  *   - pObject: LVGL 对象
  * 返回值：无
@@ -921,18 +962,18 @@ static void BikeUi_SetPanelStyle(lv_obj_t *pObject)
 {
     if (NULL != pObject)
     {
-        lv_obj_set_style_bg_color(pObject, lv_color_hex(0x17212B), LV_PART_MAIN);
-        lv_obj_set_style_bg_opa(pObject, LV_OPA_COVER, LV_PART_MAIN);
+        lv_obj_set_style_bg_color(pObject, lv_color_black(), LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(pObject, LV_OPA_TRANSP, LV_PART_MAIN);
         lv_obj_set_style_border_width(pObject, 0, LV_PART_MAIN);
-        lv_obj_set_style_radius(pObject, BIKE_UI_PANEL_RADIUS, LV_PART_MAIN);
-        lv_obj_set_style_pad_all(pObject, 10, LV_PART_MAIN);
+        lv_obj_set_style_radius(pObject, 0, LV_PART_MAIN);
+        lv_obj_set_style_pad_all(pObject, 0, LV_PART_MAIN);
         lv_obj_clear_flag(pObject, LV_OBJ_FLAG_SCROLLABLE);
     }
 
     return;
 }
 
-/* BikeUi_CreateMetric: 创建一张指标卡片。
+/* BikeUi_CreateMetric: 创建 X-TRACK 风格的数值和标题指标单元。
  * 参数：
  *   - pParent: 父对象
  *   - pTitle: 指标标题
@@ -969,11 +1010,14 @@ static lv_obj_t *BikeUi_CreateMetric(lv_obj_t *pParent, const char *pTitle,
     }
 
     lv_label_set_text(pTitleLabel, pTitle);
-    lv_obj_set_style_text_color(pTitleLabel, lv_color_hex(0x8FA3B8), LV_PART_MAIN);
-    lv_obj_align(pTitleLabel, LV_ALIGN_TOP_LEFT, 0, 0);
+    lv_ext_set_local_font(pTitleLabel, FONT_SMALL, lv_color_hex(0xB3B3B3));
+    lv_obj_align(pTitleLabel, LV_ALIGN_BOTTOM_MID, 0, 0);
     lv_label_set_text(pValueLabel, "--");
-    lv_obj_set_style_text_color(pValueLabel, lv_color_hex(0xF5F7FA), LV_PART_MAIN);
-    lv_obj_align(pValueLabel, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+    lv_ext_set_local_font(pValueLabel, FONT_TITLE, lv_color_white());
+    lv_obj_set_width(pValueLabel, lWidth);
+    lv_obj_set_style_text_align(pValueLabel, LV_TEXT_ALIGN_CENTER,
+                                LV_PART_MAIN);
+    lv_obj_align(pValueLabel, LV_ALIGN_TOP_MID, 0, 0);
 
     return pValueLabel;
 }
@@ -1483,9 +1527,9 @@ static void BikeUi_Update(void)
                               pPowerState);
     }
 
-    lv_label_set_text_fmt(l_tBikeUi.pSpeedLabel, "%u.%02u",
-                          (unsigned int)(tSnapshot.tRide.usSpeedCentiKph / 100U),
-                           (unsigned int)(tSnapshot.tRide.usSpeedCentiKph % 100U));
+    lv_label_set_text_fmt(l_tBikeUi.pSpeedLabel, "%02u",
+                          (unsigned int)(
+                              (tSnapshot.tRide.usSpeedCentiKph + 50U) / 100U));
     lv_label_set_text_fmt(l_tBikeUi.pSpeedUnit, "km/h %s", pSpeedSource);
 
     ulDistanceCentiKm = tSnapshot.tRide.ulDistanceMm / 10000U;
@@ -1496,28 +1540,46 @@ static void BikeUi_Update(void)
                           (unsigned int)(tSnapshot.tRide.usAverageSpeedCentiKph / 100U),
                           (unsigned int)(tSnapshot.tRide.usAverageSpeedCentiKph % 100U));
     BikeUi_FormatTime(l_tBikeUi.pTimeLabel, tSnapshot.tRide.ulMovingTimeMs);
+    lv_label_set_text_fmt(l_tBikeUi.pCaloriesLabel, "%lu.%01lu kcal",
+                          (unsigned long)(
+                              tSnapshot.tRide.ulCaloriesMilliKcal / 1000U),
+                          (unsigned long)(
+                              (tSnapshot.tRide.ulCaloriesMilliKcal % 1000U) /
+                              100U));
     pAltitudeSign = (0 > tSnapshot.tRide.lAltitudeCm) ? "-" : "";
     ulAltitudeAbsoluteCm = (uint32_t)((0 > tSnapshot.tRide.lAltitudeCm) ?
                                       -(int64_t)tSnapshot.tRide.lAltitudeCm :
                                       (int64_t)tSnapshot.tRide.lAltitudeCm);
-    lv_label_set_text_fmt(l_tBikeUi.pAltitudeLabel, "%s%lu.%01lu m",
-                          pAltitudeSign,
-                          (unsigned long)(ulAltitudeAbsoluteCm / 100U),
-                          (unsigned long)((ulAltitudeAbsoluteCm % 100U) / 10U));
 
     if (BIKE_RIDE_MODE_RUNNING == tSnapshot.tRide.eMode)
     {
-        pStartText = "PAUSE";
+        pStartText = LV_SYMBOL_PAUSE;
     }
     else if (BIKE_RIDE_MODE_PAUSED == tSnapshot.tRide.eMode)
     {
-        pStartText = "RESUME";
+        pStartText = LV_SYMBOL_PLAY;
     }
     else
     {
-        pStartText = "START";
+        pStartText = LV_SYMBOL_PLAY;
     }
     lv_label_set_text(l_tBikeUi.pStartLabel, pStartText);
+
+    if (NULL != l_tBikeUi.pMapSpeedLabel)
+    {
+        lv_label_set_text_fmt(l_tBikeUi.pMapSpeedLabel, "%02u",
+                              (unsigned int)(
+                                  (tSnapshot.tRide.usSpeedCentiKph + 50U) /
+                                  100U));
+    }
+    if (NULL != l_tBikeUi.pMapDistanceLabel)
+    {
+        lv_label_set_text_fmt(l_tBikeUi.pMapDistanceLabel, "%lu.%02lu km",
+                              (unsigned long)(ulDistanceCentiKm / 100U),
+                              (unsigned long)(ulDistanceCentiKm % 100U));
+    }
+    BikeUi_FormatTime(l_tBikeUi.pMapTimeLabel,
+                      tSnapshot.tRide.ulMovingTimeMs);
 
     if ((!tSnapshot.tGnss.bFixValid) ||
         (!BikeUi_FormatCoordinate(tSnapshot.tGnss.lLatitudeE7,
@@ -1673,8 +1735,15 @@ static void BikeUi_TimerCallback(lv_timer_t *pTimer)
 static void BikeUi_StartEvent(lv_event_t *pEvent)
 {
     BIKE_SERVICE_SNAPSHOT tSnapshot;
+    lv_event_code_t eEventCode;
 
-    if ((NULL == pEvent) || (LV_EVENT_CLICKED != lv_event_get_code(pEvent)))
+    if (NULL == pEvent)
+    {
+        return;
+    }
+    eEventCode = lv_event_get_code(pEvent);
+    if ((LV_EVENT_CLICKED != eEventCode) &&
+        (LV_EVENT_SHORT_CLICKED != eEventCode))
     {
         return;
     }
@@ -1702,7 +1771,15 @@ static void BikeUi_StartEvent(lv_event_t *pEvent)
  */
 static void BikeUi_StopEvent(lv_event_t *pEvent)
 {
-    if ((NULL != pEvent) && (LV_EVENT_CLICKED == lv_event_get_code(pEvent)))
+    lv_event_code_t eEventCode;
+
+    if (NULL == pEvent)
+    {
+        return;
+    }
+    eEventCode = lv_event_get_code(pEvent);
+    if ((LV_EVENT_CLICKED == eEventCode) ||
+        (LV_EVENT_LONG_PRESSED == eEventCode))
     {
         (void)BIKE_SERVICE_StopRide();
         BikeUi_Update();
@@ -1725,6 +1802,100 @@ static void BikeUi_DiscardEvent(lv_event_t *pEvent)
     }
 
     return;
+}
+
+/* BikeUi_OpenMapEvent: 从主码表进入离线地图页。
+ * 参数：
+ *   - pEvent: LVGL 点击事件
+ * 返回值：无
+ */
+static void BikeUi_OpenMapEvent(lv_event_t *pEvent)
+{
+    if ((NULL != pEvent) &&
+        (LV_EVENT_CLICKED == lv_event_get_code(pEvent)) &&
+        (NULL != l_tBikeUi.pRoot))
+    {
+        lv_obj_set_tile_id(l_tBikeUi.pRoot, 2U, 0U, LV_ANIM_ON);
+    }
+
+    return;
+}
+
+/* BikeUi_OpenInfoEvent: 从主码表进入定位和系统信息页。
+ * 参数：
+ *   - pEvent: LVGL 点击事件
+ * 返回值：无
+ */
+static void BikeUi_OpenInfoEvent(lv_event_t *pEvent)
+{
+    if ((NULL != pEvent) &&
+        (LV_EVENT_CLICKED == lv_event_get_code(pEvent)) &&
+        (NULL != l_tBikeUi.pRoot))
+    {
+        lv_obj_set_tile_id(l_tBikeUi.pRoot, 1U, 0U, LV_ANIM_ON);
+    }
+
+    return;
+}
+
+/* BikeUi_CreateDialButton: 按 X-TRACK 占屏比例创建主码表操作按钮。
+ * 参数：
+ *   - pParent: 底部操作区
+ *   - pText: 按钮符号或文字
+ *   - sReferenceCenterX: 240 像素参考画布中的按钮中心 X
+ *   - pCallback: 事件回调
+ *   - eEventCode: 需要投递的事件类型
+ * 返回值：按钮文字标签，失败返回 NULL
+ */
+static lv_obj_t *BikeUi_CreateDialButton(lv_obj_t *pParent,
+                                         const char *pText,
+                                         int16_t sReferenceCenterX,
+                                         lv_event_cb_t pCallback,
+                                         lv_event_code_t eEventCode)
+{
+    lv_obj_t *pButton;
+    lv_obj_t *pLabel;
+    lv_coord_t lButtonWidth;
+    lv_coord_t lButtonHeight;
+    lv_coord_t lControlHeight;
+
+    if ((NULL == pParent) || (NULL == pText) || (NULL == pCallback))
+    {
+        return NULL;
+    }
+
+    lButtonWidth = BikeUi_ScaleX(40);
+    lButtonHeight = BikeUi_ScaleY(31);
+    lControlHeight = BikeUi_ScaleY(BIKE_UI_XTRACK_CONTROL_HEIGHT);
+    pButton = lv_btn_create(pParent);
+    if (NULL == pButton)
+    {
+        return NULL;
+    }
+    lv_obj_set_pos(pButton,
+                   BikeUi_ScaleX(sReferenceCenterX) - (lButtonWidth / 2),
+                   (lControlHeight - lButtonHeight) / 2);
+    lv_obj_set_size(pButton, lButtonWidth, lButtonHeight);
+    lv_obj_set_style_bg_color(pButton, lv_color_hex(0x666666), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(pButton, lv_color_hex(0xBBBBBB),
+                              LV_PART_MAIN | LV_STATE_PRESSED);
+    lv_obj_set_style_bg_color(pButton, lv_color_hex(0xFF931E),
+                              LV_PART_MAIN | LV_STATE_FOCUSED);
+    lv_obj_set_style_bg_opa(pButton, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_radius(pButton, BikeUi_ScaleX(9), LV_PART_MAIN);
+    lv_obj_set_style_pad_all(pButton, 0, LV_PART_MAIN);
+    lv_obj_add_event_cb(pButton, pCallback, eEventCode, NULL);
+
+    pLabel = lv_label_create(pButton);
+    if (NULL == pLabel)
+    {
+        return NULL;
+    }
+    lv_label_set_text(pLabel, pText);
+    lv_obj_set_style_text_color(pLabel, lv_color_white(), LV_PART_MAIN);
+    lv_obj_center(pLabel);
+
+    return pLabel;
 }
 
 /* BikeUi_CreateButton: 创建底部大触控按钮。
@@ -1772,12 +1943,12 @@ static lv_obj_t *BikeUi_CreateButton(lv_obj_t *pParent, const char *pText, lv_co
  * 参数：
  *   - pParent: 地图页对象
  *   - pText: 按钮文字
- *   - lX: X 坐标
+ *   - lX/lY: 按钮坐标
  *   - pCallback: 点击回调
  * 返回值：按钮对象，失败返回 NULL
  */
 static lv_obj_t *BikeUi_CreateMapButton(lv_obj_t *pParent, const char *pText,
-                                        lv_coord_t lX,
+                                        lv_coord_t lX, lv_coord_t lY,
                                         lv_event_cb_t pCallback)
 {
     lv_obj_t *pButton;
@@ -1792,7 +1963,7 @@ static lv_obj_t *BikeUi_CreateMapButton(lv_obj_t *pParent, const char *pText,
     {
         return NULL;
     }
-    lv_obj_set_pos(pButton, lX, 384);
+    lv_obj_set_pos(pButton, lX, lY);
     lv_obj_set_size(pButton, 52, 52);
     lv_obj_set_style_bg_color(pButton, lv_color_hex(0x17212B), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(pButton, LV_OPA_90, LV_PART_MAIN);
@@ -1872,6 +2043,12 @@ static void BikeUi_OnStart(void)
     lv_obj_t *pLocationPage;
     lv_obj_t *pMapPage;
     lv_obj_t *pMapAttribution;
+    lv_obj_t *pSpeedPanel;
+    lv_obj_t *pMetricPanel;
+    lv_obj_t *pControlPanel;
+    lv_obj_t *pRecordButton;
+    lv_obj_t *pMapSportPanel;
+    lv_obj_t *pMapSpeedUnit;
     lv_obj_t *pSummaryPage;
     lv_obj_t *pTile;
     uint8_t ucIndex;
@@ -1924,54 +2101,110 @@ static void BikeUi_OnStart(void)
     BikeUi_SetPageStyle(pLocationPage);
     BikeUi_SetPageStyle(pMapPage);
     BikeUi_SetPageStyle(pSummaryPage);
+    lv_obj_set_style_bg_color(pDashboardPage, lv_color_black(), LV_PART_MAIN);
+
+    pSpeedPanel = lv_obj_create(pDashboardPage);
+    RT_ASSERT(NULL != pSpeedPanel);
+    lv_obj_remove_style_all(pSpeedPanel);
+    lv_obj_set_pos(pSpeedPanel, 0, BikeUi_ScaleY(BIKE_UI_XTRACK_TOP_Y));
+    lv_obj_set_size(pSpeedPanel, LV_HOR_RES,
+                    BikeUi_ScaleY(BIKE_UI_XTRACK_TOP_HEIGHT));
+    lv_obj_set_style_bg_color(pSpeedPanel, lv_color_hex(0x333333),
+                              LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(pSpeedPanel, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_radius(pSpeedPanel, BikeUi_ScaleX(27), LV_PART_MAIN);
+    lv_obj_clear_flag(pSpeedPanel, LV_OBJ_FLAG_SCROLLABLE);
+
+    l_tBikeUi.pSpeedLabel = lv_label_create(pSpeedPanel);
+    RT_ASSERT(NULL != l_tBikeUi.pSpeedLabel);
+    lv_label_set_text(l_tBikeUi.pSpeedLabel, "00");
+    lv_ext_set_local_font(l_tBikeUi.pSpeedLabel, FONT_SUPER,
+                          lv_color_white());
+    lv_obj_align(l_tBikeUi.pSpeedLabel, LV_ALIGN_TOP_MID, 0,
+                 BikeUi_ScaleY(63));
+
+    l_tBikeUi.pSpeedUnit = lv_label_create(pSpeedPanel);
+    RT_ASSERT(NULL != l_tBikeUi.pSpeedUnit);
+    lv_label_set_text(l_tBikeUi.pSpeedUnit, "km/h --");
+    lv_ext_set_local_font(l_tBikeUi.pSpeedUnit, FONT_NORMAL,
+                          lv_color_white());
+    lv_obj_align_to(l_tBikeUi.pSpeedUnit, l_tBikeUi.pSpeedLabel,
+                    LV_ALIGN_OUT_BOTTOM_MID, 0, BikeUi_ScaleY(4));
 
     l_tBikeUi.pGpsLabel = lv_label_create(pDashboardPage);
+    RT_ASSERT(NULL != l_tBikeUi.pGpsLabel);
     lv_label_set_text(l_tBikeUi.pGpsLabel, "SEARCHING S0 A0s");
-    lv_obj_set_width(l_tBikeUi.pGpsLabel, 176);
+    lv_obj_set_width(l_tBikeUi.pGpsLabel, BikeUi_ScaleX(108));
     lv_label_set_long_mode(l_tBikeUi.pGpsLabel, LV_LABEL_LONG_DOT);
-    lv_obj_set_style_text_color(l_tBikeUi.pGpsLabel, lv_color_hex(0x45D483), LV_PART_MAIN);
-    lv_obj_align(l_tBikeUi.pGpsLabel, LV_ALIGN_TOP_LEFT, 16, 14);
+    lv_ext_set_local_font(l_tBikeUi.pGpsLabel, FONT_SMALL,
+                          lv_color_hex(0x45D483));
+    lv_obj_align(l_tBikeUi.pGpsLabel, LV_ALIGN_TOP_LEFT,
+                 BikeUi_ScaleX(10), BikeUi_ScaleY(5));
 
     l_tBikeUi.pPowerLabel = lv_label_create(pDashboardPage);
     RT_ASSERT(NULL != l_tBikeUi.pPowerLabel);
     lv_label_set_text(l_tBikeUi.pPowerLabel, "IDLE 0 | PWR --");
-    lv_obj_set_width(l_tBikeUi.pPowerLabel, 176);
+    lv_obj_set_width(l_tBikeUi.pPowerLabel, BikeUi_ScaleX(108));
     lv_label_set_long_mode(l_tBikeUi.pPowerLabel, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_align(l_tBikeUi.pPowerLabel, LV_TEXT_ALIGN_RIGHT,
                                 LV_PART_MAIN);
-    lv_obj_set_style_text_color(l_tBikeUi.pPowerLabel,
-                                lv_color_hex(0x8FA3B8), LV_PART_MAIN);
-    lv_obj_align(l_tBikeUi.pPowerLabel, LV_ALIGN_TOP_RIGHT, -16, 14);
+    lv_ext_set_local_font(l_tBikeUi.pPowerLabel, FONT_SMALL,
+                          lv_color_hex(0xB3B3B3));
+    lv_obj_align(l_tBikeUi.pPowerLabel, LV_ALIGN_TOP_RIGHT,
+                 -BikeUi_ScaleX(10), BikeUi_ScaleY(5));
 
-    l_tBikeUi.pSpeedLabel = lv_label_create(pDashboardPage);
-    lv_label_set_text(l_tBikeUi.pSpeedLabel, "0.00");
-    lv_obj_set_style_text_color(l_tBikeUi.pSpeedLabel, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
-    lv_obj_align(l_tBikeUi.pSpeedLabel, LV_ALIGN_TOP_MID, -18, 54);
+    pMetricPanel = lv_obj_create(pDashboardPage);
+    RT_ASSERT(NULL != pMetricPanel);
+    lv_obj_remove_style_all(pMetricPanel);
+    lv_obj_set_pos(pMetricPanel, 0, BikeUi_ScaleY(BIKE_UI_XTRACK_METRIC_Y));
+    lv_obj_set_size(pMetricPanel, LV_HOR_RES,
+                    BikeUi_ScaleY(BIKE_UI_XTRACK_METRIC_HEIGHT));
+    lv_obj_set_style_bg_color(pMetricPanel, lv_color_black(), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(pMetricPanel, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_clear_flag(pMetricPanel, LV_OBJ_FLAG_SCROLLABLE);
 
-    l_tBikeUi.pSpeedUnit = lv_label_create(pDashboardPage);
-    RT_ASSERT(NULL != l_tBikeUi.pSpeedUnit);
-    lv_label_set_text(l_tBikeUi.pSpeedUnit, "km/h --");
-    lv_obj_set_style_text_color(l_tBikeUi.pSpeedUnit, lv_color_hex(0x8FA3B8),
-                                LV_PART_MAIN);
-    lv_obj_align_to(l_tBikeUi.pSpeedUnit, l_tBikeUi.pSpeedLabel,
-                    LV_ALIGN_OUT_RIGHT_BOTTOM, 8, -4);
+    l_tBikeUi.pAverageLabel = BikeUi_CreateMetric(
+        pMetricPanel, "AVG", BikeUi_ScaleX(18), BikeUi_ScaleY(4),
+        BikeUi_ScaleX(93), BikeUi_ScaleY(39));
+    l_tBikeUi.pTimeLabel = BikeUi_CreateMetric(
+        pMetricPanel, "TIME", BikeUi_ScaleX(129), BikeUi_ScaleY(4),
+        BikeUi_ScaleX(93), BikeUi_ScaleY(39));
+    l_tBikeUi.pDistanceLabel = BikeUi_CreateMetric(
+        pMetricPanel, "TRIP", BikeUi_ScaleX(18), BikeUi_ScaleY(47),
+        BikeUi_ScaleX(93), BikeUi_ScaleY(39));
+    l_tBikeUi.pCaloriesLabel = BikeUi_CreateMetric(
+        pMetricPanel, "CALORIE", BikeUi_ScaleX(129), BikeUi_ScaleY(47),
+        BikeUi_ScaleX(93), BikeUi_ScaleY(39));
+    RT_ASSERT((NULL != l_tBikeUi.pDistanceLabel) &&
+              (NULL != l_tBikeUi.pAverageLabel) &&
+              (NULL != l_tBikeUi.pTimeLabel) &&
+              (NULL != l_tBikeUi.pCaloriesLabel));
 
-    l_tBikeUi.pDistanceLabel = BikeUi_CreateMetric(pDashboardPage, "DISTANCE",
-                                                   BIKE_UI_SIDE_MARGIN, 126, 171, 96);
-    l_tBikeUi.pAverageLabel = BikeUi_CreateMetric(pDashboardPage, "AVERAGE",
-                                                  203, 126, 171, 96);
-    l_tBikeUi.pTimeLabel = BikeUi_CreateMetric(pDashboardPage, "MOVING TIME",
-                                               BIKE_UI_SIDE_MARGIN, 238, 171, 96);
-    l_tBikeUi.pAltitudeLabel = BikeUi_CreateMetric(pDashboardPage, "ALTITUDE",
-                                                   203, 238, 171, 96);
-    RT_ASSERT((NULL != l_tBikeUi.pDistanceLabel) && (NULL != l_tBikeUi.pAverageLabel) &&
-              (NULL != l_tBikeUi.pTimeLabel) && (NULL != l_tBikeUi.pAltitudeLabel));
+    pControlPanel = lv_obj_create(pDashboardPage);
+    RT_ASSERT(NULL != pControlPanel);
+    lv_obj_remove_style_all(pControlPanel);
+    lv_obj_set_pos(pControlPanel, 0,
+                   BikeUi_ScaleY(BIKE_UI_XTRACK_CONTROL_Y));
+    lv_obj_set_size(pControlPanel, LV_HOR_RES,
+                    BikeUi_ScaleY(BIKE_UI_XTRACK_CONTROL_HEIGHT));
+    lv_obj_set_style_bg_color(pControlPanel, lv_color_black(), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(pControlPanel, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_clear_flag(pControlPanel, LV_OBJ_FLAG_SCROLLABLE);
 
-    l_tBikeUi.pStartLabel = BikeUi_CreateButton(pDashboardPage, "START", 16,
-                                                lv_color_hex(0x168B4D), BikeUi_StartEvent);
-    (void)BikeUi_CreateButton(pDashboardPage, "STOP", 204,
-                              lv_color_hex(0xA9323A), BikeUi_StopEvent);
+    RT_ASSERT(NULL != BikeUi_CreateDialButton(
+                          pControlPanel, LV_SYMBOL_GPS, 40,
+                          BikeUi_OpenMapEvent, LV_EVENT_CLICKED));
+    l_tBikeUi.pStartLabel = BikeUi_CreateDialButton(
+        pControlPanel, LV_SYMBOL_PLAY, 120, BikeUi_StartEvent,
+        LV_EVENT_SHORT_CLICKED);
     RT_ASSERT(NULL != l_tBikeUi.pStartLabel);
+    pRecordButton = lv_obj_get_parent(l_tBikeUi.pStartLabel);
+    RT_ASSERT(NULL != pRecordButton);
+    lv_obj_add_event_cb(pRecordButton, BikeUi_StopEvent,
+                        LV_EVENT_LONG_PRESSED, NULL);
+    RT_ASSERT(NULL != BikeUi_CreateDialButton(
+                          pControlPanel, LV_SYMBOL_LIST, 200,
+                          BikeUi_OpenInfoEvent, LV_EVENT_CLICKED));
 
     BikeUi_CreatePageTitle(pLocationPage, "GNSS", "<  SWIPE  >");
     l_tBikeUi.pLocationLabel = lv_label_create(pLocationPage);
@@ -2082,6 +2315,49 @@ static void BikeUi_OnStart(void)
     lv_obj_set_style_radius(l_tBikeUi.pMapStatusLabel, 8, LV_PART_MAIN);
     lv_obj_align(l_tBikeUi.pMapStatusLabel, LV_ALIGN_TOP_MID, 0, 12);
 
+    pMapSportPanel = lv_obj_create(pMapPage);
+    RT_ASSERT(NULL != pMapSportPanel);
+    lv_obj_remove_style_all(pMapSportPanel);
+    lv_obj_set_size(pMapSportPanel, BikeUi_ScaleX(159),
+                    BikeUi_ScaleY(66));
+    lv_obj_align(pMapSportPanel, LV_ALIGN_BOTTOM_LEFT,
+                 BikeUi_ScaleX(-10), BikeUi_ScaleY(10));
+    lv_obj_set_style_bg_color(pMapSportPanel, lv_color_black(), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(pMapSportPanel, LV_OPA_70, LV_PART_MAIN);
+    lv_obj_set_style_radius(pMapSportPanel, BikeUi_ScaleX(10), LV_PART_MAIN);
+    lv_obj_clear_flag(pMapSportPanel, LV_OBJ_FLAG_SCROLLABLE);
+
+    l_tBikeUi.pMapSpeedLabel = lv_label_create(pMapSportPanel);
+    RT_ASSERT(NULL != l_tBikeUi.pMapSpeedLabel);
+    lv_label_set_text(l_tBikeUi.pMapSpeedLabel, "00");
+    lv_ext_set_local_font(l_tBikeUi.pMapSpeedLabel, FONT_HUGE,
+                          lv_color_white());
+    lv_obj_align(l_tBikeUi.pMapSpeedLabel, LV_ALIGN_LEFT_MID,
+                 BikeUi_ScaleX(20), BikeUi_ScaleY(-10));
+
+    pMapSpeedUnit = lv_label_create(pMapSportPanel);
+    RT_ASSERT(NULL != pMapSpeedUnit);
+    lv_label_set_text(pMapSpeedUnit, "km/h");
+    lv_ext_set_local_font(pMapSpeedUnit, FONT_SMALL, lv_color_white());
+    lv_obj_align_to(pMapSpeedUnit, l_tBikeUi.pMapSpeedLabel,
+                    LV_ALIGN_OUT_BOTTOM_MID, 0, BikeUi_ScaleY(2));
+
+    l_tBikeUi.pMapDistanceLabel = lv_label_create(pMapSportPanel);
+    RT_ASSERT(NULL != l_tBikeUi.pMapDistanceLabel);
+    lv_label_set_text(l_tBikeUi.pMapDistanceLabel, "0.00 km");
+    lv_ext_set_local_font(l_tBikeUi.pMapDistanceLabel, FONT_NORMAL,
+                          lv_color_white());
+    lv_obj_align(l_tBikeUi.pMapDistanceLabel, LV_ALIGN_TOP_RIGHT,
+                 -BikeUi_ScaleX(8), BikeUi_ScaleY(10));
+
+    l_tBikeUi.pMapTimeLabel = lv_label_create(pMapSportPanel);
+    RT_ASSERT(NULL != l_tBikeUi.pMapTimeLabel);
+    lv_label_set_text(l_tBikeUi.pMapTimeLabel, "00:00:00");
+    lv_ext_set_local_font(l_tBikeUi.pMapTimeLabel, FONT_NORMAL,
+                          lv_color_white());
+    lv_obj_align(l_tBikeUi.pMapTimeLabel, LV_ALIGN_TOP_RIGHT,
+                 -BikeUi_ScaleX(8), BikeUi_ScaleY(34));
+
     pMapAttribution = lv_label_create(pMapPage);
     RT_ASSERT(NULL != pMapAttribution);
     lv_label_set_text(pMapAttribution, "Map data: OpenStreetMap");
@@ -2094,9 +2370,9 @@ static void BikeUi_OnStart(void)
     lv_obj_set_style_radius(pMapAttribution, 4, LV_PART_MAIN);
     lv_obj_align(pMapAttribution, LV_ALIGN_BOTTOM_MID, 0, -8);
 
-    RT_ASSERT(NULL != BikeUi_CreateMapButton(pMapPage, "-", 16,
+    RT_ASSERT(NULL != BikeUi_CreateMapButton(pMapPage, "-", 322, 122,
                                               BikeUi_MapZoomOutEvent));
-    RT_ASSERT(NULL != BikeUi_CreateMapButton(pMapPage, "+", 322,
+    RT_ASSERT(NULL != BikeUi_CreateMapButton(pMapPage, "+", 322, 188,
                                               BikeUi_MapZoomInEvent));
 
     BikeUi_CreatePageTitle(pSummaryPage, "RIDE SUMMARY", NULL);
