@@ -28,6 +28,11 @@
 #define BIKE_UI_MAP_MARKER_HEIGHT_PX (20U)
 #define BIKE_UI_MAP_MARKER_X (187)
 #define BIKE_UI_MAP_MARKER_Y (215)
+#define BIKE_UI_MAP_PAGE_CENTER_X (195)
+#define BIKE_UI_MAP_PAGE_CENTER_Y (225)
+#define BIKE_UI_MAP_PAN_EDGE_WIDTH_PX (24)
+#define BIKE_UI_MAP_SHENZHEN_LATITUDE_E7 (225430960)
+#define BIKE_UI_MAP_SHENZHEN_LONGITUDE_E7 (1140578650)
 
 #if 16 != LV_COLOR_DEPTH
 #error "Bike map tiles require LVGL RGB565 color depth"
@@ -65,9 +70,10 @@ typedef struct _BIKE_UI_MAP_TRACK_POINT
  *   - pLocationLabel: 定位详情页文本
  *   - pSummaryLabel: 骑行总结页文本
  *   - pMapContainer/apMapTiles: 离线地图瓦片容器和 3 x 3 固定瓦片
- *   - pMapTrackLine/pMapMarker: 实时轨迹线和当前位置标记
+ *   - pMapTrackLine/pMapMarker/pMapTouchArea: 实时轨迹、当前位置和浏览触摸区
  *   - aMapTrackPoints/aMapLinePoints: 固定级别轨迹点和可见线段点
  *   - atMapTileImages: 由 PSRAM 像素缓冲支撑的 LVGL 变量图像描述符
+ *   - tMapViewPoint: 无定位时可拖动的离线地图中心点
  *   - aMapDirectory/aMapRoot/aMapExtension: 地图目录、实际路径和扩展名
  *   - ucMapZoomMin/ucMapZoomMax: 当前地图介质实际可用的缩放范围
  *   - bMapUseWgs84: 当前离线瓦片坐标系选择
@@ -92,10 +98,12 @@ typedef struct _BIKE_UI_CONTEXT
     lv_obj_t *apMapTiles[BIKE_UI_MAP_TILE_COUNT];
     lv_obj_t *pMapTrackLine;
     lv_obj_t *pMapMarker;
+    lv_obj_t *pMapTouchArea;
     lv_obj_t *pMapStatusLabel;
     BIKE_UI_MAP_TRACK_POINT aMapTrackPoints[BIKE_UI_MAP_TRACK_POINT_MAX];
     lv_point_t aMapLinePoints[BIKE_UI_MAP_TRACK_POINT_MAX];
     lv_img_dsc_t atMapTileImages[BIKE_UI_MAP_TILE_COUNT];
+    BIKE_MAP_POINT tMapViewPoint;
     char aMapDirectory[BIKE_STORAGE_MAP_DIRECTORY_MAX];
     char aMapRoot[BIKE_STORAGE_MAP_ROOT_MAX];
     char aMapExtension[BIKE_MAP_EXTENSION_MAX];
@@ -110,6 +118,8 @@ typedef struct _BIKE_UI_CONTEXT
     BIKE_MAP_ARROW_THEME eMapArrowTheme;
     bool bMapTilesLoaded;
     bool bMapUseWgs84;
+    bool bMapViewValid;
+    bool bMapGnssFixValid;
     lv_timer_t *pTimer;
 } BIKE_UI_CONTEXT;
 
@@ -491,6 +501,157 @@ static void BikeUi_MapAppendTrack(const BIKE_MAP_POINT *pPoint)
     return;
 }
 
+/* BikeUi_MapSetPointPixels: 由全局像素坐标构造完整地图点。
+ * 参数：
+ *   - ulPixelX/ulPixelY: 当前缩放级别的全局像素坐标
+ *   - ucZoom: 地图缩放级别
+ *   - pPoint: 输出地图点
+ * 返回值：参数有效返回 true，否则返回 false
+ */
+static bool BikeUi_MapSetPointPixels(uint32_t ulPixelX, uint32_t ulPixelY,
+                                     uint8_t ucZoom,
+                                     BIKE_MAP_POINT *pPoint)
+{
+    uint32_t ulMapSize;
+
+    if ((NULL == pPoint) || (BIKE_MAP_ZOOM_MAX < ucZoom))
+    {
+        return false;
+    }
+    ulMapSize = BIKE_MAP_TILE_SIZE_PX << ucZoom;
+    if ((ulMapSize <= ulPixelX) || (ulMapSize <= ulPixelY))
+    {
+        return false;
+    }
+    pPoint->ulPixelX = ulPixelX;
+    pPoint->ulPixelY = ulPixelY;
+    pPoint->ulTileX = ulPixelX / BIKE_MAP_TILE_SIZE_PX;
+    pPoint->ulTileY = ulPixelY / BIKE_MAP_TILE_SIZE_PX;
+    pPoint->usOffsetX = (uint16_t)(ulPixelX % BIKE_MAP_TILE_SIZE_PX);
+    pPoint->usOffsetY = (uint16_t)(ulPixelY % BIKE_MAP_TILE_SIZE_PX);
+    pPoint->ucZoom = ucZoom;
+
+    return true;
+}
+
+/* BikeUi_MapResetDefaultView: 将无定位地图中心恢复到深圳市民中心。
+ * 返回值：投影成功返回 true，否则返回 false
+ */
+static bool BikeUi_MapResetDefaultView(void)
+{
+    BIKE_MAP_COORDINATE_SYSTEM eCoordinateSystem;
+
+    eCoordinateSystem = l_tBikeUi.bMapUseWgs84 ?
+                        BIKE_MAP_COORDINATE_WGS84 :
+                        BIKE_MAP_COORDINATE_GCJ02;
+    l_tBikeUi.bMapViewValid = BIKE_MAP_ProjectCoordinate(
+        BIKE_UI_MAP_SHENZHEN_LATITUDE_E7,
+        BIKE_UI_MAP_SHENZHEN_LONGITUDE_E7, l_tBikeUi.ucMapZoom,
+        eCoordinateSystem, &l_tBikeUi.tMapViewPoint);
+
+    return l_tBikeUi.bMapViewValid;
+}
+
+/* BikeUi_MapRenderPoint: 按指定中心点加载并摆放 3 x 3 离线瓦片。
+ * 参数：
+ *   - pPoint: 当前地图视图中心
+ * 返回值：成功加载的瓦片数量
+ */
+static uint8_t BikeUi_MapRenderPoint(const BIKE_MAP_POINT *pPoint)
+{
+    uint8_t ucLoadedCount;
+
+    if ((NULL == pPoint) || (NULL == l_tBikeUi.pMapContainer))
+    {
+        return 0U;
+    }
+    if ((!l_tBikeUi.bMapTilesLoaded) ||
+        (l_tBikeUi.ulMapCenterTileX != pPoint->ulTileX) ||
+        (l_tBikeUi.ulMapCenterTileY != pPoint->ulTileY))
+    {
+        ucLoadedCount = BikeUi_MapReloadTiles(pPoint);
+    }
+    else
+    {
+        ucLoadedCount = l_tBikeUi.ucMapLoadedCount;
+    }
+    lv_obj_set_pos(l_tBikeUi.pMapContainer,
+                   (lv_coord_t)(BIKE_UI_MAP_PAGE_CENTER_X -
+                                (int32_t)BIKE_MAP_TILE_SIZE_PX -
+                                pPoint->usOffsetX),
+                   (lv_coord_t)(BIKE_UI_MAP_PAGE_CENTER_Y -
+                                (int32_t)BIKE_MAP_TILE_SIZE_PX -
+                                pPoint->usOffsetY));
+    BikeUi_MapRebuildLine(pPoint);
+
+    return ucLoadedCount;
+}
+
+/* BikeUi_MapPanEvent: 无 GNSS 定位时按拖动向量浏览离线地图。
+ * 参数：
+ *   - pEvent: LVGL 触摸事件
+ * 返回值：无
+ */
+static void BikeUi_MapPanEvent(lv_event_t *pEvent)
+{
+    lv_indev_t *pInputDevice;
+    lv_point_t tVector;
+    int64_t dPixelX;
+    int64_t dPixelY;
+    int64_t dMapSize;
+    const char *pCoordinateName;
+    uint8_t ucLoadedCount;
+
+    if ((NULL == pEvent) ||
+        (LV_EVENT_PRESSING != lv_event_get_code(pEvent)) ||
+        l_tBikeUi.bMapGnssFixValid || (!l_tBikeUi.bMapViewValid))
+    {
+        return;
+    }
+    pInputDevice = lv_indev_get_act();
+    if (NULL == pInputDevice)
+    {
+        return;
+    }
+    lv_indev_get_vect(pInputDevice, &tVector);
+    if ((0 == tVector.x) && (0 == tVector.y))
+    {
+        return;
+    }
+
+    dMapSize = (int64_t)BIKE_MAP_TILE_SIZE_PX << l_tBikeUi.ucMapZoom;
+    dPixelX = (int64_t)l_tBikeUi.tMapViewPoint.ulPixelX - tVector.x;
+    dPixelY = (int64_t)l_tBikeUi.tMapViewPoint.ulPixelY - tVector.y;
+    dPixelX %= dMapSize;
+    if (0LL > dPixelX)
+    {
+        dPixelX += dMapSize;
+    }
+    if (0LL > dPixelY)
+    {
+        dPixelY = 0LL;
+    }
+    else if (dMapSize <= dPixelY)
+    {
+        dPixelY = dMapSize - 1LL;
+    }
+    if (!BikeUi_MapSetPointPixels((uint32_t)dPixelX, (uint32_t)dPixelY,
+                                  l_tBikeUi.ucMapZoom,
+                                  &l_tBikeUi.tMapViewPoint))
+    {
+        return;
+    }
+    ucLoadedCount = BikeUi_MapRenderPoint(&l_tBikeUi.tMapViewPoint);
+    pCoordinateName = l_tBikeUi.bMapUseWgs84 ? "WGS" : "GCJ";
+    lv_label_set_text_fmt(l_tBikeUi.pMapStatusLabel,
+                          "MAP %s Z%u  %u/%u  BROWSE", pCoordinateName,
+                          (unsigned int)l_tBikeUi.ucMapZoom,
+                          (unsigned int)ucLoadedCount,
+                          (unsigned int)BIKE_UI_MAP_TILE_COUNT);
+
+    return;
+}
+
 /* BikeUi_MapUpdate: 更新离线瓦片、当前位置和实时轨迹。
  * 参数：
  *   - pSnapshot: 骑行服务一致性快照
@@ -504,6 +665,7 @@ static void BikeUi_MapUpdate(const BIKE_SERVICE_SNAPSHOT *pSnapshot)
     BIKE_MAP_ARROW_THEME eArrowTheme;
     const char *pCoordinateName;
     uint8_t ucLoadedCount;
+    bool bFixValid;
 
     if ((NULL == pSnapshot) || (NULL == l_tBikeUi.pMapStatusLabel) ||
         (NULL == l_tBikeUi.pMapContainer) ||
@@ -534,6 +696,7 @@ static void BikeUi_MapUpdate(const BIKE_SERVICE_SNAPSHOT *pSnapshot)
                                   tSettings.aMapExtension))
         {
             l_tBikeUi.bMapUseWgs84 = tSettings.bMapUseWgs84;
+            l_tBikeUi.bMapViewValid = false;
             BikeUi_MapClearTrack();
         }
     }
@@ -547,32 +710,48 @@ static void BikeUi_MapUpdate(const BIKE_SERVICE_SNAPSHOT *pSnapshot)
         eCoordinateSystem = BIKE_MAP_COORDINATE_GCJ02;
         pCoordinateName = "GCJ";
     }
-    if ((!pSnapshot->tGnss.bFixValid) ||
-        (!BIKE_MAP_ProjectCoordinate(pSnapshot->tGnss.lLatitudeE7,
-                                     pSnapshot->tGnss.lLongitudeE7,
-                                     l_tBikeUi.ucMapZoom, eCoordinateSystem,
-                                     &tPoint)))
+    bFixValid = pSnapshot->tGnss.bFixValid &&
+                BIKE_MAP_ProjectCoordinate(pSnapshot->tGnss.lLatitudeE7,
+                                           pSnapshot->tGnss.lLongitudeE7,
+                                           l_tBikeUi.ucMapZoom,
+                                           eCoordinateSystem, &tPoint);
+    l_tBikeUi.bMapGnssFixValid = bFixValid;
+    if (bFixValid)
     {
-        lv_obj_add_flag(l_tBikeUi.pMapMarker, LV_OBJ_FLAG_HIDDEN);
-        lv_label_set_text_fmt(l_tBikeUi.pMapStatusLabel,
-                              "MAP %s Z%u  WAIT FIX", pCoordinateName,
-                              (unsigned int)l_tBikeUi.ucMapZoom);
-        return;
-    }
-    ucLoadedCount = 0U;
-    if ((!l_tBikeUi.bMapTilesLoaded) ||
-        (l_tBikeUi.ulMapCenterTileX != tPoint.ulTileX) ||
-        (l_tBikeUi.ulMapCenterTileY != tPoint.ulTileY))
-    {
-        ucLoadedCount = BikeUi_MapReloadTiles(&tPoint);
+        l_tBikeUi.tMapViewPoint = tPoint;
+        l_tBikeUi.bMapViewValid = true;
+        if (NULL != l_tBikeUi.pMapTouchArea)
+        {
+            lv_obj_add_flag(l_tBikeUi.pMapTouchArea, LV_OBJ_FLAG_HIDDEN);
+        }
     }
     else
     {
-        ucLoadedCount = l_tBikeUi.ucMapLoadedCount;
+        if ((!l_tBikeUi.bMapViewValid) && (!BikeUi_MapResetDefaultView()))
+        {
+            lv_obj_add_flag(l_tBikeUi.pMapMarker, LV_OBJ_FLAG_HIDDEN);
+            lv_label_set_text_fmt(l_tBikeUi.pMapStatusLabel,
+                                  "MAP %s Z%u  NO CENTER", pCoordinateName,
+                                  (unsigned int)l_tBikeUi.ucMapZoom);
+            return;
+        }
+        tPoint = l_tBikeUi.tMapViewPoint;
+        if (NULL != l_tBikeUi.pMapTouchArea)
+        {
+            lv_obj_clear_flag(l_tBikeUi.pMapTouchArea, LV_OBJ_FLAG_HIDDEN);
+        }
     }
-    lv_obj_set_pos(l_tBikeUi.pMapContainer,
-                   (lv_coord_t)(195 - 256 - tPoint.usOffsetX),
-                   (lv_coord_t)(225 - 256 - tPoint.usOffsetY));
+    ucLoadedCount = BikeUi_MapRenderPoint(&tPoint);
+    if (!bFixValid)
+    {
+        lv_obj_add_flag(l_tBikeUi.pMapMarker, LV_OBJ_FLAG_HIDDEN);
+        lv_label_set_text_fmt(l_tBikeUi.pMapStatusLabel,
+                              "MAP %s Z%u  %u/%u  BROWSE", pCoordinateName,
+                              (unsigned int)l_tBikeUi.ucMapZoom,
+                              (unsigned int)ucLoadedCount,
+                              (unsigned int)BIKE_UI_MAP_TILE_COUNT);
+        return;
+    }
     lv_img_set_angle(l_tBikeUi.pMapMarker,
                      (int16_t)pSnapshot->tGnss.usCourseDeg10);
     lv_obj_clear_flag(l_tBikeUi.pMapMarker, LV_OBJ_FLAG_HIDDEN);
@@ -580,7 +759,6 @@ static void BikeUi_MapUpdate(const BIKE_SERVICE_SNAPSHOT *pSnapshot)
     {
         BikeUi_MapAppendTrack(&tPoint);
     }
-    BikeUi_MapRebuildLine(&tPoint);
     lv_label_set_text_fmt(l_tBikeUi.pMapStatusLabel,
                           "MAP %s Z%u  %lu/%lu  T%lu", pCoordinateName,
                           (unsigned int)l_tBikeUi.ucMapZoom,
@@ -599,11 +777,27 @@ static void BikeUi_MapUpdate(const BIKE_SERVICE_SNAPSHOT *pSnapshot)
 static void BikeUi_MapChangeZoom(int8_t cDelta)
 {
     int16_t sNewZoom;
+    uint32_t ulPixelX;
+    uint32_t ulPixelY;
 
     sNewZoom = (int16_t)l_tBikeUi.ucMapZoom + cDelta;
     if (((int16_t)l_tBikeUi.ucMapZoomMin <= sNewZoom) &&
         ((int16_t)l_tBikeUi.ucMapZoomMax >= sNewZoom))
     {
+        if (l_tBikeUi.bMapViewValid &&
+            BIKE_MAP_ConvertPixelLevel(
+                l_tBikeUi.tMapViewPoint.ulPixelX,
+                l_tBikeUi.tMapViewPoint.ulPixelY, l_tBikeUi.ucMapZoom,
+                (uint8_t)sNewZoom, &ulPixelX, &ulPixelY))
+        {
+            l_tBikeUi.bMapViewValid = BikeUi_MapSetPointPixels(
+                ulPixelX, ulPixelY, (uint8_t)sNewZoom,
+                &l_tBikeUi.tMapViewPoint);
+        }
+        else
+        {
+            l_tBikeUi.bMapViewValid = false;
+        }
         l_tBikeUi.ucMapZoom = (uint8_t)sNewZoom;
         l_tBikeUi.bMapTilesLoaded = false;
         l_tBikeUi.ucMapLoadedCount = 0U;
@@ -1630,6 +1824,7 @@ static void BikeUi_OnStart(void)
         (void)BikeUi_MapApplySource(BIKE_SETTINGS_DEFAULT_MAP_DIRECTORY,
                                     BIKE_SETTINGS_DEFAULT_MAP_EXTENSION);
     }
+    (void)BikeUi_MapResetDefaultView();
     l_tBikeUi.ePreviousRideMode = BIKE_RIDE_MODE_STOPPED;
     l_tBikeUi.pRoot = lv_tileview_create(lv_scr_act());
     RT_ASSERT(NULL != l_tBikeUi.pRoot);
@@ -1753,10 +1948,32 @@ static void BikeUi_OnStart(void)
     (void)BikeUi_MapApplyArrowTheme(l_tBikeUi.eMapArrowTheme);
     lv_obj_add_flag(l_tBikeUi.pMapMarker, LV_OBJ_FLAG_HIDDEN);
 
+    l_tBikeUi.pMapTouchArea = lv_obj_create(pMapPage);
+    RT_ASSERT(NULL != l_tBikeUi.pMapTouchArea);
+    lv_obj_set_size(l_tBikeUi.pMapTouchArea,
+                    LV_HOR_RES - (2 * BIKE_UI_MAP_PAN_EDGE_WIDTH_PX),
+                    LV_VER_RES);
+    lv_obj_set_pos(l_tBikeUi.pMapTouchArea,
+                   BIKE_UI_MAP_PAN_EDGE_WIDTH_PX, 0);
+    lv_obj_set_style_bg_opa(l_tBikeUi.pMapTouchArea, LV_OPA_TRANSP,
+                            LV_PART_MAIN);
+    lv_obj_set_style_border_width(l_tBikeUi.pMapTouchArea, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(l_tBikeUi.pMapTouchArea, 0, LV_PART_MAIN);
+    lv_obj_add_flag(l_tBikeUi.pMapTouchArea,
+                    LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(l_tBikeUi.pMapTouchArea,
+                      LV_OBJ_FLAG_SCROLL_ELASTIC |
+                      LV_OBJ_FLAG_SCROLL_MOMENTUM |
+                      LV_OBJ_FLAG_SCROLL_CHAIN |
+                      LV_OBJ_FLAG_GESTURE_BUBBLE);
+    lv_obj_set_scroll_dir(l_tBikeUi.pMapTouchArea, LV_DIR_ALL);
+    lv_obj_add_event_cb(l_tBikeUi.pMapTouchArea, BikeUi_MapPanEvent,
+                        LV_EVENT_PRESSING, NULL);
+
     l_tBikeUi.pMapStatusLabel = lv_label_create(pMapPage);
     RT_ASSERT(NULL != l_tBikeUi.pMapStatusLabel);
     lv_label_set_text_fmt(l_tBikeUi.pMapStatusLabel,
-                          "MAP GCJ Z%u  WAIT FIX",
+                          "MAP GCJ Z%u  BROWSE",
                           (unsigned int)l_tBikeUi.ucMapZoom);
     lv_obj_set_style_text_color(l_tBikeUi.pMapStatusLabel,
                                 lv_color_hex(0xFFFFFF), LV_PART_MAIN);
