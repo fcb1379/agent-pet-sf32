@@ -71,6 +71,7 @@ typedef struct _BIKE_UI_MAP_TRACK_POINT
  *   - pSummaryLabel: 骑行总结页文本
  *   - pMapContainer/apMapTiles: 离线地图瓦片容器和 3 x 3 固定瓦片
  *   - pMapTrackLine/pMapMarker/pMapTouchArea: 实时轨迹、当前位置和浏览触摸区
+ *   - pMapEmptyLabel: 未找到离线瓦片时显示的路径提示
  *   - aMapTrackPoints/aMapLinePoints: 固定级别轨迹点和可见线段点
  *   - atMapTileImages: 由 PSRAM 像素缓冲支撑的 LVGL 变量图像描述符
  *   - tMapViewPoint: 无定位时可拖动的离线地图中心点
@@ -99,6 +100,7 @@ typedef struct _BIKE_UI_CONTEXT
     lv_obj_t *pMapTrackLine;
     lv_obj_t *pMapMarker;
     lv_obj_t *pMapTouchArea;
+    lv_obj_t *pMapEmptyLabel;
     lv_obj_t *pMapStatusLabel;
     BIKE_UI_MAP_TRACK_POINT aMapTrackPoints[BIKE_UI_MAP_TRACK_POINT_MAX];
     lv_point_t aMapLinePoints[BIKE_UI_MAP_TRACK_POINT_MAX];
@@ -552,6 +554,36 @@ static bool BikeUi_MapResetDefaultView(void)
     return l_tBikeUi.bMapViewValid;
 }
 
+/* BikeUi_MapUpdateEmptyState: 根据瓦片加载结果更新空地图提示。
+ * 参数：
+ *   - pPoint: 当前地图视图中心
+ *   - ucLoadedCount: 成功加载的瓦片数量
+ * 返回值：无
+ */
+static void BikeUi_MapUpdateEmptyState(const BIKE_MAP_POINT *pPoint,
+                                       uint8_t ucLoadedCount)
+{
+    if ((NULL == pPoint) || (NULL == l_tBikeUi.pMapEmptyLabel))
+    {
+        return;
+    }
+    if (0U == ucLoadedCount)
+    {
+        lv_label_set_text_fmt(l_tBikeUi.pMapEmptyLabel,
+                              "NO OFFLINE TILES\n%s/%u/x/y.%s",
+                              l_tBikeUi.aMapRoot,
+                              (unsigned int)pPoint->ucZoom,
+                              l_tBikeUi.aMapExtension);
+        lv_obj_clear_flag(l_tBikeUi.pMapEmptyLabel, LV_OBJ_FLAG_HIDDEN);
+    }
+    else
+    {
+        lv_obj_add_flag(l_tBikeUi.pMapEmptyLabel, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    return;
+}
+
 /* BikeUi_MapRenderPoint: 按指定中心点加载并摆放 3 x 3 离线瓦片。
  * 参数：
  *   - pPoint: 当前地图视图中心
@@ -583,6 +615,7 @@ static uint8_t BikeUi_MapRenderPoint(const BIKE_MAP_POINT *pPoint)
                                 (int32_t)BIKE_MAP_TILE_SIZE_PX -
                                 pPoint->usOffsetY));
     BikeUi_MapRebuildLine(pPoint);
+    BikeUi_MapUpdateEmptyState(pPoint, ucLoadedCount);
 
     return ucLoadedCount;
 }
@@ -643,11 +676,21 @@ static void BikeUi_MapPanEvent(lv_event_t *pEvent)
     }
     ucLoadedCount = BikeUi_MapRenderPoint(&l_tBikeUi.tMapViewPoint);
     pCoordinateName = l_tBikeUi.bMapUseWgs84 ? "WGS" : "GCJ";
-    lv_label_set_text_fmt(l_tBikeUi.pMapStatusLabel,
-                          "MAP %s Z%u  %u/%u  BROWSE", pCoordinateName,
-                          (unsigned int)l_tBikeUi.ucMapZoom,
-                          (unsigned int)ucLoadedCount,
-                          (unsigned int)BIKE_UI_MAP_TILE_COUNT);
+    if (0U == ucLoadedCount)
+    {
+        lv_label_set_text_fmt(l_tBikeUi.pMapStatusLabel,
+                              "MAP %s Z%u  0/%u  NO TILES", pCoordinateName,
+                              (unsigned int)l_tBikeUi.ucMapZoom,
+                              (unsigned int)BIKE_UI_MAP_TILE_COUNT);
+    }
+    else
+    {
+        lv_label_set_text_fmt(l_tBikeUi.pMapStatusLabel,
+                              "MAP %s Z%u  %u/%u  BROWSE", pCoordinateName,
+                              (unsigned int)l_tBikeUi.ucMapZoom,
+                              (unsigned int)ucLoadedCount,
+                              (unsigned int)BIKE_UI_MAP_TILE_COUNT);
+    }
 
     return;
 }
@@ -745,11 +788,23 @@ static void BikeUi_MapUpdate(const BIKE_SERVICE_SNAPSHOT *pSnapshot)
     if (!bFixValid)
     {
         lv_obj_add_flag(l_tBikeUi.pMapMarker, LV_OBJ_FLAG_HIDDEN);
-        lv_label_set_text_fmt(l_tBikeUi.pMapStatusLabel,
-                              "MAP %s Z%u  %u/%u  BROWSE", pCoordinateName,
-                              (unsigned int)l_tBikeUi.ucMapZoom,
-                              (unsigned int)ucLoadedCount,
-                              (unsigned int)BIKE_UI_MAP_TILE_COUNT);
+        if (0U == ucLoadedCount)
+        {
+            lv_label_set_text_fmt(l_tBikeUi.pMapStatusLabel,
+                                  "MAP %s Z%u  0/%u  NO TILES",
+                                  pCoordinateName,
+                                  (unsigned int)l_tBikeUi.ucMapZoom,
+                                  (unsigned int)BIKE_UI_MAP_TILE_COUNT);
+        }
+        else
+        {
+            lv_label_set_text_fmt(l_tBikeUi.pMapStatusLabel,
+                                  "MAP %s Z%u  %u/%u  BROWSE",
+                                  pCoordinateName,
+                                  (unsigned int)l_tBikeUi.ucMapZoom,
+                                  (unsigned int)ucLoadedCount,
+                                  (unsigned int)BIKE_UI_MAP_TILE_COUNT);
+        }
         return;
     }
     lv_img_set_angle(l_tBikeUi.pMapMarker,
@@ -1796,6 +1851,7 @@ static void BikeUi_OnStart(void)
     lv_obj_t *pDashboardPage;
     lv_obj_t *pLocationPage;
     lv_obj_t *pMapPage;
+    lv_obj_t *pMapAttribution;
     lv_obj_t *pSummaryPage;
     lv_obj_t *pTile;
     uint8_t ucIndex;
@@ -1970,6 +2026,27 @@ static void BikeUi_OnStart(void)
     lv_obj_add_event_cb(l_tBikeUi.pMapTouchArea, BikeUi_MapPanEvent,
                         LV_EVENT_PRESSING, NULL);
 
+    l_tBikeUi.pMapEmptyLabel = lv_label_create(pMapPage);
+    RT_ASSERT(NULL != l_tBikeUi.pMapEmptyLabel);
+    lv_label_set_text(l_tBikeUi.pMapEmptyLabel, "NO OFFLINE TILES");
+    lv_obj_set_width(l_tBikeUi.pMapEmptyLabel, 340);
+    lv_label_set_long_mode(l_tBikeUi.pMapEmptyLabel, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_align(l_tBikeUi.pMapEmptyLabel, LV_TEXT_ALIGN_CENTER,
+                                LV_PART_MAIN);
+    lv_obj_set_style_text_color(l_tBikeUi.pMapEmptyLabel,
+                                lv_color_hex(0xDCE6F0), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(l_tBikeUi.pMapEmptyLabel,
+                              lv_color_hex(0x223241), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(l_tBikeUi.pMapEmptyLabel, LV_OPA_80,
+                            LV_PART_MAIN);
+    lv_obj_set_style_border_color(l_tBikeUi.pMapEmptyLabel,
+                                  lv_color_hex(0x526779), LV_PART_MAIN);
+    lv_obj_set_style_border_width(l_tBikeUi.pMapEmptyLabel, 1, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(l_tBikeUi.pMapEmptyLabel, 14, LV_PART_MAIN);
+    lv_obj_set_style_radius(l_tBikeUi.pMapEmptyLabel, 10, LV_PART_MAIN);
+    lv_obj_align(l_tBikeUi.pMapEmptyLabel, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_add_flag(l_tBikeUi.pMapEmptyLabel, LV_OBJ_FLAG_HIDDEN);
+
     l_tBikeUi.pMapStatusLabel = lv_label_create(pMapPage);
     RT_ASSERT(NULL != l_tBikeUi.pMapStatusLabel);
     lv_label_set_text_fmt(l_tBikeUi.pMapStatusLabel,
@@ -1984,6 +2061,19 @@ static void BikeUi_OnStart(void)
     lv_obj_set_style_pad_all(l_tBikeUi.pMapStatusLabel, 8, LV_PART_MAIN);
     lv_obj_set_style_radius(l_tBikeUi.pMapStatusLabel, 8, LV_PART_MAIN);
     lv_obj_align(l_tBikeUi.pMapStatusLabel, LV_ALIGN_TOP_MID, 0, 12);
+
+    pMapAttribution = lv_label_create(pMapPage);
+    RT_ASSERT(NULL != pMapAttribution);
+    lv_label_set_text(pMapAttribution, "Map data: OpenStreetMap");
+    lv_obj_set_style_text_color(pMapAttribution,
+                                lv_color_hex(0xDCE6F0), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(pMapAttribution,
+                              lv_color_hex(0x091017), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(pMapAttribution, LV_OPA_70, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(pMapAttribution, 4, LV_PART_MAIN);
+    lv_obj_set_style_radius(pMapAttribution, 4, LV_PART_MAIN);
+    lv_obj_align(pMapAttribution, LV_ALIGN_BOTTOM_MID, 0, -8);
+
     RT_ASSERT(NULL != BikeUi_CreateMapButton(pMapPage, "-", 16,
                                               BikeUi_MapZoomOutEvent));
     RT_ASSERT(NULL != BikeUi_CreateMapButton(pMapPage, "+", 322,
