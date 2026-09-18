@@ -28,8 +28,9 @@ typedef enum _BIKE_GNSS_PORT_STATUS
 
 /* BIKE_SERVICE_SNAPSHOT: GNSS 服务提供给 UI 的线程安全快照。
  * 成员说明：
- *   - ePortStatus: UART3 端口状态
+ *   - ePortStatus: 当前板型 GNSS UART 端口状态
  *   - ulLastUpdateMs: 最近一次通过校验的 GGA/RMC 或模拟定位时间戳
+ *   - ulRxByteCount: GNSS UART 收到的原始字节总数
  *   - ulAcceptedCount: 已接受的 GGA/RMC/VTG 语句数
  *   - ulChecksumErrorCount: 校验错误语句数
  *   - ulOverflowCount: 超长语句数
@@ -49,6 +50,7 @@ typedef struct _BIKE_SERVICE_SNAPSHOT
 {
     BIKE_GNSS_PORT_STATUS ePortStatus;
     uint32_t ulLastUpdateMs;
+    uint32_t ulRxByteCount;
     uint32_t ulAcceptedCount;
     uint32_t ulChecksumErrorCount;
     uint32_t ulOverflowCount;

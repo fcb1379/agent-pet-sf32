@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "bike_auto_pause.h"
+#include "bike_board_config.h"
 #include "bike_compass.h"
 #include "bike_power.h"
 #include "bike_history.h"
@@ -21,7 +22,6 @@
 #define LOG_LVL LOG_LVL_INFO
 #include <ulog.h>
 
-#define BIKE_GNSS_UART_NAME "uart3"
 #define BIKE_GNSS_BAUD_RATE (9600U)
 #define BIKE_GNSS_RX_BUFFER_SIZE (64U)
 #define BIKE_GNSS_THREAD_STACK_SIZE (3072U)
@@ -62,7 +62,7 @@ static struct rt_thread l_tBikeThread;
 ALIGN(RT_ALIGN_SIZE)
 static uint8_t l_aBikeThreadStack[BIKE_GNSS_THREAD_STACK_SIZE];
 
-/* l_pBikeUart: UART3 RT-Thread 设备句柄，初始化前为 NULL。 */
+/* l_pBikeUart: 当前板型 GNSS UART 设备句柄，初始化前为 NULL。 */
 static rt_device_t l_pBikeUart;
 
 /* l_bBikeServiceReady: 共享对象已经初始化的标志。 */
@@ -549,7 +549,7 @@ static void BikeService_CheckStale(uint32_t ulNowMs)
     return;
 }
 
-/* BikeService_ThreadEntry: 读取 UART3 并逐字节解析 DX-GP10 NMEA。
+/* BikeService_ThreadEntry: 读取板型对应 UART 并逐字节解析 DX-GP10 NMEA。
  * 参数：
  *   - pParameter: 未使用
  * 返回值：无
@@ -574,6 +574,11 @@ static void BikeService_ThreadEntry(void *pParameter)
             {
                 ulReadLength = rt_device_read(l_pBikeUart, 0, aBuffer,
                                               sizeof(aBuffer));
+                if ((0U < ulReadLength) && BikeService_Lock())
+                {
+                    l_tBikeSnapshot.ulRxByteCount += (uint32_t)ulReadLength;
+                    BikeService_Unlock();
+                }
                 for (ulIndex = 0U; ulIndex < ulReadLength; ulIndex++)
                 {
                     eResult = BIKE_NMEA_Feed(&l_tBikeParser,
@@ -605,21 +610,21 @@ static void BikeService_ThreadEntry(void *pParameter)
     return;
 }
 
-/* BikeService_ConfigurePins: 按 GPS 转接板网络配置 SF32LB52 UART3 引脚。
+/* BikeService_ConfigurePins: 按当前编译板型自动配置 GNSS UART 引脚。
  * 参数：无
  * 返回值：无
  */
 static void BikeService_ConfigurePins(void)
 {
 #if defined(SOC_SF32LB52X) || defined(SF32LB52X)
-    HAL_PIN_Set(PAD_PA35, USART3_TXD, PIN_PULLUP, 1);
-    HAL_PIN_Set(PAD_PA36, USART3_RXD, PIN_PULLUP, 1);
+    HAL_PIN_Set(BIKE_GNSS_TX_PAD, BIKE_GNSS_TX_FUNCTION, PIN_PULLUP, 1);
+    HAL_PIN_Set(BIKE_GNSS_RX_PAD, BIKE_GNSS_RX_FUNCTION, PIN_PULLUP, 1);
 #endif
 
     return;
 }
 
-/* BikeService_Init: 初始化固定容量状态、UART3 和 GNSS 接收线程。
+/* BikeService_Init: 初始化固定容量状态、板型对应 UART 和 GNSS 接收线程。
  * 返回值：服务对象始终可供 UI 查询；硬件错误通过端口状态报告
  */
 static int BikeService_Init(void)
@@ -670,14 +675,18 @@ static int BikeService_Init(void)
     {
         LOG_E("GPX recorder init failed");
     }
+#if BIKE_BOARD_HAS_ONBOARD_PEDOMETER
     if (!BIKE_PEDOMETER_Init())
     {
         LOG_E("onboard pedometer init failed");
     }
+#endif
+#if BIKE_BOARD_HAS_ONBOARD_COMPASS
     if (!BIKE_COMPASS_Init())
     {
         LOG_E("onboard compass init failed");
     }
+#endif
     if (!BIKE_POWER_Init())
     {
         LOG_E("battery monitor init failed");
@@ -700,12 +709,12 @@ static int BikeService_Init(void)
     }
 
     BikeService_ConfigurePins();
-    l_pBikeUart = rt_device_find(BIKE_GNSS_UART_NAME);
+    l_pBikeUart = rt_device_find(BIKE_GNSS_UART_DEVICE_NAME);
     if (NULL == l_pBikeUart)
     {
         l_tBikeSnapshot.ePortStatus = BIKE_GNSS_PORT_ERROR;
         LOG_E("%s not found; demo mode remains available",
-              BIKE_GNSS_UART_NAME);
+              BIKE_GNSS_UART_DEVICE_NAME);
     }
     else
     {
@@ -715,15 +724,11 @@ static int BikeService_Init(void)
                                     &tConfig);
         if (RT_EOK == eResult)
         {
+            /* NMEA at 9600 bps is light traffic.  Interrupt RX is reliable on
+             * both board BSPs and avoids DevKit-specific DMA receive stalls. */
             eResult = rt_device_open(l_pBikeUart,
                                      RT_DEVICE_OFLAG_RDWR |
-                                     RT_DEVICE_FLAG_DMA_RX);
-            if (-RT_EIO == eResult)
-            {
-                eResult = rt_device_open(l_pBikeUart,
-                                         RT_DEVICE_OFLAG_RDWR |
-                                         RT_DEVICE_FLAG_INT_RX);
-            }
+                                     RT_DEVICE_FLAG_INT_RX);
         }
         if (RT_EOK == eResult)
         {
@@ -771,7 +776,7 @@ static int BikeService_Init(void)
 
     if (NULL != l_pBikeUart)
     {
-        LOG_I("DX-GP10 ready on %s at %u", BIKE_GNSS_UART_NAME,
+        LOG_I("DX-GP10 ready on %s at %u", BIKE_GNSS_UART_DEVICE_NAME,
               BIKE_GNSS_BAUD_RATE);
     }
 
@@ -967,6 +972,134 @@ bool BIKE_SERVICE_DiscardRide(void)
 
     return bResult;
 }
+
+/* BikeService_StatusCommand: 输出码表各硬件服务的只读运行时快照，
+ * 用于开发板联调和生产测试，不改变骑行或持久化状态。
+ * 返回值：无
+ */
+static void BikeService_StatusCommand(void)
+{
+    BIKE_SERVICE_SNAPSHOT tSnapshot;
+    uint8_t ucMinimumZoom;
+    uint8_t ucMaximumZoom;
+    bool bHasMapZoom;
+
+    if (!BIKE_SERVICE_GetSnapshot(&tSnapshot))
+    {
+        rt_kprintf("bike status unavailable\n");
+        return;
+    }
+    bHasMapZoom = BIKE_STORAGE_GetMapZoomRange(&ucMinimumZoom,
+                                               &ucMaximumZoom);
+    rt_kprintf("gnss device=%s port=%u last=%lu bytes=%lu nmea=%lu crc=%lu ovf=%lu demo=%u\n",
+               BIKE_GNSS_UART_DEVICE_NAME,
+               (unsigned int)tSnapshot.ePortStatus,
+               (unsigned long)tSnapshot.ulLastUpdateMs,
+               (unsigned long)tSnapshot.ulRxByteCount,
+               (unsigned long)tSnapshot.ulAcceptedCount,
+               (unsigned long)tSnapshot.ulChecksumErrorCount,
+               (unsigned long)tSnapshot.ulOverflowCount,
+               (unsigned int)tSnapshot.bDemoMode);
+    rt_kprintf("fix=%u quality=%u sats=%u lat=%ld lon=%ld alt_cm=%ld speed_cms=%lu course_d10=%u\n",
+               (unsigned int)tSnapshot.tGnss.bFixValid,
+               (unsigned int)tSnapshot.tGnss.ucFixQuality,
+               (unsigned int)tSnapshot.tGnss.ucSatellites,
+               (long)tSnapshot.tGnss.lLatitudeE7,
+               (long)tSnapshot.tGnss.lLongitudeE7,
+               (long)tSnapshot.tGnss.lAltitudeCm,
+               (unsigned long)tSnapshot.tGnss.ulSpeedCmPerSec,
+               (unsigned int)tSnapshot.tGnss.usCourseDeg10);
+    rt_kprintf("utc=%04u-%02u-%02uT%02u:%02u:%02u rtc=%u\n",
+               (unsigned int)tSnapshot.tGnss.usYear,
+               (unsigned int)tSnapshot.tGnss.ucMonth,
+               (unsigned int)tSnapshot.tGnss.ucDay,
+               (unsigned int)tSnapshot.tGnss.ucHour,
+               (unsigned int)tSnapshot.tGnss.ucMinute,
+               (unsigned int)tSnapshot.tGnss.ucSecond,
+               (unsigned int)tSnapshot.bRtcSynchronized);
+    rt_kprintf("ride mode=%u source=%u speed_ckph=%u distance_mm=%lu moving_ms=%lu auto_pause=%u\n",
+               (unsigned int)tSnapshot.tRide.eMode,
+               (unsigned int)tSnapshot.tRide.eSpeedSource,
+               (unsigned int)tSnapshot.tRide.usSpeedCentiKph,
+               (unsigned long)tSnapshot.tRide.ulDistanceMm,
+               (unsigned long)tSnapshot.tRide.ulMovingTimeMs,
+               (unsigned int)tSnapshot.bAutoPaused);
+    rt_kprintf("step status=%u count=%lu raw=%u last=%lu err=%lu\n",
+               (unsigned int)tSnapshot.tPedometer.eStatus,
+               (unsigned long)tSnapshot.tPedometer.ulStepCount,
+               (unsigned int)tSnapshot.tPedometer.usRawStepCount,
+               (unsigned long)tSnapshot.tPedometer.ulLastUpdateMs,
+               (unsigned long)tSnapshot.tPedometer.ulReadErrorCount);
+    rt_kprintf("mag status=%u xyz_mg=%ld/%ld/%ld heading_d10=%u cal=%u last=%lu err=%lu\n",
+               (unsigned int)tSnapshot.tCompass.eStatus,
+               (long)tSnapshot.tCompass.lXMilliGauss,
+               (long)tSnapshot.tCompass.lYMilliGauss,
+               (long)tSnapshot.tCompass.lZMilliGauss,
+               (unsigned int)tSnapshot.tCompass.usHeadingDeg10,
+               (unsigned int)tSnapshot.tCompass.ucCalibrationPercent,
+               (unsigned long)tSnapshot.tCompass.ulLastUpdateMs,
+               (unsigned long)tSnapshot.tCompass.ulReadErrorCount);
+    rt_kprintf("power status=%u voltage_dmv=%lu percent=%u adc_err=%lu charge_err=%lu ext=%u full=%u\n",
+               (unsigned int)tSnapshot.tPower.eStatus,
+               (unsigned long)tSnapshot.tPower.ulVoltageDeciMv,
+               (unsigned int)tSnapshot.tPower.ucPercent,
+               (unsigned long)tSnapshot.tPower.ulAdcErrorCount,
+               (unsigned long)tSnapshot.tPower.ulChargeErrorCount,
+               (unsigned int)tSnapshot.tPower.bExternalPower,
+               (unsigned int)tSnapshot.tPower.bFull);
+    rt_kprintf("storage tf=%u tracks=%s map=%s zoom=%u/%u-%u recorder=%u error=%u points=%lu drop=%lu\n",
+               (unsigned int)BIKE_STORAGE_IsTfMounted(),
+               BIKE_STORAGE_GetTrackDirectory(), BIKE_STORAGE_GetMapRoot(),
+               (unsigned int)bHasMapZoom,
+               (unsigned int)(bHasMapZoom ? ucMinimumZoom : 0U),
+               (unsigned int)(bHasMapZoom ? ucMaximumZoom : 0U),
+               (unsigned int)tSnapshot.tRecorder.eStatus,
+               (unsigned int)tSnapshot.tRecorder.eError,
+               (unsigned long)tSnapshot.tRecorder.ulPointCount,
+               (unsigned long)tSnapshot.tRecorder.ulDroppedMessageCount);
+    rt_kprintf("track_file=%s\n", tSnapshot.tRecorder.aFilePath);
+}
+MSH_CMD_EXPORT_ALIAS(BikeService_StatusCommand, bikestatus,
+                     bike runtime hardware status);
+
+/* BikeService_ControlCommand: 通过 shell 驱动一次骑行状态转换，供 TF/GPX
+ * 和 FlashDB 实机验收使用。正常 UI 与该命令调用同一组服务接口。
+ * 参数：
+ *   - lArgumentCount: shell 参数数量
+ *   - pArguments: shell 参数数组
+ * 返回值：无
+ */
+static void BikeService_ControlCommand(int lArgumentCount, char **pArguments)
+{
+    bool bResult;
+
+    if (2 != lArgumentCount)
+    {
+        rt_kprintf("usage: bikectl start | pause | stop | discard\n");
+        return;
+    }
+    bResult = false;
+    if (0 == strcmp(pArguments[1], "start"))
+    {
+        bResult = BIKE_SERVICE_StartRide();
+    }
+    else if (0 == strcmp(pArguments[1], "pause"))
+    {
+        bResult = BIKE_SERVICE_PauseRide();
+    }
+    else if (0 == strcmp(pArguments[1], "stop"))
+    {
+        bResult = BIKE_SERVICE_StopRide();
+    }
+    else if (0 == strcmp(pArguments[1], "discard"))
+    {
+        bResult = BIKE_SERVICE_DiscardRide();
+    }
+    rt_kprintf("bike control %s=%u\n", pArguments[1],
+               (unsigned int)bResult);
+}
+MSH_CMD_EXPORT_ALIAS(BikeService_ControlCommand, bikectl,
+                     bike ride control for hardware test);
 
 /* BikeService_DemoCommand: 控制无 GNSS 模组时的模拟定位数据。
  * 参数：

@@ -137,6 +137,18 @@ static void local_music_close_current(void)
 {
     if (g_music_handle)
     {
+        /*
+         * The SDK WAV player can wait forever in mp3ctrl_close() while its
+         * audio client is still running.  Pause first so audio_server closes
+         * the DAC/PA stream, then let the decoder thread exit cleanly.
+         */
+        if (g_music_state == LOCAL_MUSIC_STATE_PLAYING)
+        {
+            if (mp3ctrl_pause(g_music_handle) != 0)
+            {
+                LOG_W("pause before close failed");
+            }
+        }
         mp3ctrl_close(g_music_handle);
         g_music_handle = NULL;
     }

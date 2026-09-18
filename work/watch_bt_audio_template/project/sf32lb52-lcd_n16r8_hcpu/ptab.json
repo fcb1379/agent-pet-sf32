@@ -77,6 +77,13 @@
                 "tags": [
                     "KVDB_BLE_REGION"
                 ]
+            },
+            {
+                "offset": "0x00A28000",
+                "max_size": "0x00004000",
+                "tags": [
+                    "KVDB_PREF_REGION"
+                ]
             }
         ]
     }, 

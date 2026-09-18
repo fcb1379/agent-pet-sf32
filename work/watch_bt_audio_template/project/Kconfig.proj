@@ -22,6 +22,30 @@ config BIKE_TIMEZONE_MINUTES
     default 480
     depends on BIKE_COMPUTER
 
+# Select the GNSS UART from the board chosen on the scons command line.  These
+# symbols are intentionally hidden: users select a board, not a UART wiring
+# profile.
+config BIKE_GNSS_UART2
+    bool
+    default y if BSP_USING_BOARD_SF32LB52_LCD_N16R8 || BSP_USING_BOARD_SF32LB52_LCD_52D
+    depends on BIKE_COMPUTER
+    select BSP_USING_UART
+    select BSP_USING_UART2
+
+config BIKE_GNSS_UART3
+    bool
+    default y if BSP_USING_BOARD_SF32LB52_LCHSPI_ULP
+    depends on BIKE_COMPUTER
+    select BSP_USING_UART
+    select BSP_USING_UART3
+
+config BIKE_POWER_ADC1
+    bool
+    default y if BSP_USING_BOARD_SF32LB52_LCD_N16R8 || BSP_USING_BOARD_SF32LB52_LCD_52D || BSP_USING_BOARD_SF32LB52_LCHSPI_ULP
+    depends on BIKE_COMPUTER
+    select BSP_USING_ADC
+    select BSP_USING_ADC1
+
 menu "app cache Memory configuration"   
 
 choice
@@ -95,4 +119,3 @@ config MESSAGE_CACHE_SIZE
 
 
 endmenu
-

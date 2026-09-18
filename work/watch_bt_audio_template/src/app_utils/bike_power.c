@@ -119,7 +119,13 @@ bool BIKE_POWER_UpdateFilter(BIKE_POWER_FILTER *pFilter,
 #include <rtdevice.h>
 #include <rtthread.h>
 
+#ifdef BSP_USING_CHARGER
 #include "charge.h"
+#define BIKE_POWER_HAS_CHARGER (1)
+#else
+#define BIKE_POWER_HAS_CHARGER (0)
+#endif
+
 #include "bike_sound.h"
 
 #define DBG_TAG "bike.power"
@@ -244,7 +250,6 @@ static void BikePower_SetStatus(BIKE_POWER_STATUS eStatus)
 static bool BikePower_ReadBattery(uint32_t *pVoltageDeciMv)
 {
     uint32_t ulVoltageDeciMv;
-    rt_size_t ulReadSize;
     rt_err_t eEnableResult;
     rt_err_t eDisableResult;
 
@@ -259,17 +264,13 @@ static bool BikePower_ReadBattery(uint32_t *pVoltageDeciMv)
         LOG_E("ADC enable failed: %d", eEnableResult);
         return false;
     }
-    ulVoltageDeciMv = 0U;
-    ulReadSize = rt_device_read(l_pBikePowerAdc, BIKE_POWER_ADC_CHANNEL,
-                                &ulVoltageDeciMv,
-                                sizeof(ulVoltageDeciMv));
+    ulVoltageDeciMv = rt_adc_read((rt_adc_device_t)l_pBikePowerAdc,
+                                  BIKE_POWER_ADC_CHANNEL);
     eDisableResult = rt_adc_disable((rt_adc_device_t)l_pBikePowerAdc,
                                     BIKE_POWER_ADC_CHANNEL);
-    if ((sizeof(ulVoltageDeciMv) != ulReadSize) ||
-        (RT_EOK != eDisableResult))
+    if (RT_EOK != eDisableResult)
     {
-        LOG_E("ADC read/disable failed: size=%u disable=%d",
-              (unsigned int)ulReadSize, eDisableResult);
+        LOG_E("ADC disable failed: %d", eDisableResult);
         return false;
     }
     if ((BIKE_POWER_VALID_MINIMUM_DECI_MV > ulVoltageDeciMv) ||
@@ -291,6 +292,7 @@ static bool BikePower_ReadBattery(uint32_t *pVoltageDeciMv)
  */
 static bool BikePower_ReadChargeState(bool *pExternalPower, bool *pFull)
 {
+#if BIKE_POWER_HAS_CHARGER
     uint8_t ucExternalPower;
     uint8_t ucFull;
     rt_err_t eResult;
@@ -320,6 +322,12 @@ static bool BikePower_ReadChargeState(bool *pExternalPower, bool *pFull)
     *pFull = (0U != ucFull);
 
     return true;
+#else
+    (void)pExternalPower;
+    (void)pFull;
+
+    return false;
+#endif
 }
 
 /* BikePower_UpdateChargeSound: 按外部供电边沿提交充电提示音。
@@ -385,7 +393,7 @@ static bool BikePower_PublishSample(uint32_t ulVoltageDeciMv)
             l_tBikePowerSnapshot.bExternalPower = bExternalPower;
             l_tBikePowerSnapshot.bFull = bFull;
         }
-        else
+        else if (BIKE_POWER_HAS_CHARGER)
         {
             BikePower_IncrementCounter(
                 &l_tBikePowerSnapshot.ulChargeErrorCount);
@@ -486,12 +494,14 @@ bool BIKE_POWER_Init(void)
         LOG_E("%s not found", BIKE_POWER_ADC_NAME);
         return false;
     }
+#if BIKE_POWER_HAS_CHARGER
     l_pBikePowerCharge = rt_device_find(BIKE_POWER_CHARGE_NAME);
     if (NULL == l_pBikePowerCharge)
     {
         LOG_E("%s not found; voltage remains available",
               BIKE_POWER_CHARGE_NAME);
     }
+#endif
     eResult = rt_thread_init(&l_tBikePowerThread, "bike_pwr",
                              BikePower_ThreadEntry, NULL,
                              l_aBikePowerThreadStack,
