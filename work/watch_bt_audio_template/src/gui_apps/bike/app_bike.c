@@ -63,6 +63,15 @@ typedef struct _BIKE_UI_MAP_TRACK_POINT
     uint32_t ulPixelY;
 } BIKE_UI_MAP_TRACK_POINT;
 
+/* BIKE_UI_DIAL_ICON: 主码表底部按钮的原生几何图标类型。 */
+typedef enum _BIKE_UI_DIAL_ICON
+{
+    BIKE_UI_DIAL_ICON_MAP = 0,
+    BIKE_UI_DIAL_ICON_RIDE,
+    BIKE_UI_DIAL_ICON_INFO,
+    BIKE_UI_DIAL_ICON_COUNT
+} BIKE_UI_DIAL_ICON;
+
 /* BIKE_UI_MAP_TILE_CACHE: 单个 PSRAM 瓦片槽保存的地图坐标和加载结果。
  * 成员说明：
  *   - ulTileX/ulTileY: Web Mercator 瓦片坐标
@@ -90,7 +99,7 @@ typedef struct _BIKE_UI_MAP_TILE_CACHE
  *   - pAverageLabel: 平均速度标签
  *   - pTimeLabel: 移动时间标签
  *   - pCaloriesLabel: 卡路里标签
- *   - pStartIcon: 开始/暂停按钮动态图标
+ *   - pStartIcon/pStartPlayIcon/pStartPauseIcon: 骑行按钮及状态图元
  *   - pLocationLabel: 定位详情页文本
  *   - pSummaryLabel: 骑行总结页文本
  *   - pMapContainer/apMapTiles: 离线地图瓦片容器和 3 x 3 固定瓦片
@@ -119,6 +128,8 @@ typedef struct _BIKE_UI_CONTEXT
     lv_obj_t *pTimeLabel;
     lv_obj_t *pCaloriesLabel;
     lv_obj_t *pStartIcon;
+    lv_obj_t *pStartPlayIcon;
+    lv_obj_t *pStartPauseIcon;
     lv_obj_t *pLocationLabel;
     lv_obj_t *pSummaryLabel;
     lv_obj_t *pMapContainer;
@@ -229,102 +240,18 @@ static const lv_img_dsc_t l_tBikeMapMarkerImage =
     .data = l_aBikeMapMarkerAlpha,
 };
 
-/* l_aBikeMapDialIconAlpha: 28 x 28 地图定位图标的 1-bit Alpha 蒙版。 */
-static const uint8_t l_aBikeMapDialIconAlpha[] =
+/* l_aBikeMapDialPoints: 28 x 28 地图定位针轮廓，供 LVGL 原生线条绘制。 */
+static const lv_point_t l_aBikeMapDialPoints[] =
 {
-    0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x1FU, 0x80U, 0x00U,
-    0x00U, 0x7FU, 0xE0U, 0x00U, 0x00U, 0xFFU, 0xF0U, 0x00U,
-    0x01U, 0xFFU, 0xF8U, 0x00U, 0x03U, 0xFFU, 0xFCU, 0x00U,
-    0x03U, 0xFFU, 0xFCU, 0x00U, 0x07U, 0xF0U, 0xFEU, 0x00U,
-    0x07U, 0xE0U, 0x7EU, 0x00U, 0x07U, 0xE0U, 0x7EU, 0x00U,
-    0x07U, 0xE0U, 0x7EU, 0x00U, 0x07U, 0xE0U, 0x7EU, 0x00U,
-    0x07U, 0xF0U, 0xFEU, 0x00U, 0x03U, 0xFFU, 0xFCU, 0x00U,
-    0x03U, 0xFFU, 0xFCU, 0x00U, 0x01U, 0xFFU, 0xF8U, 0x00U,
-    0x00U, 0xFFU, 0xF0U, 0x00U, 0x00U, 0x7FU, 0xE0U, 0x00U,
-    0x00U, 0x3FU, 0xC0U, 0x00U, 0x00U, 0x1FU, 0x80U, 0x00U,
-    0x00U, 0x1FU, 0x80U, 0x00U, 0x00U, 0x0FU, 0x00U, 0x00U,
-    0x00U, 0x0FU, 0x00U, 0x00U, 0x00U, 0x0FU, 0x00U, 0x00U,
-    0x00U, 0x06U, 0x00U, 0x00U, 0x00U, 0x06U, 0x00U, 0x00U,
-    0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U,
+    {14, 26}, {7, 14}, {6, 10}, {7, 6}, {10, 3},
+    {14, 2}, {18, 3}, {21, 6}, {22, 10}, {21, 14}, {14, 26},
 };
 
-/* l_aBikePlayDialIconAlpha: 28 x 28 开始骑行图标的 1-bit Alpha 蒙版。 */
-static const uint8_t l_aBikePlayDialIconAlpha[] =
+/* l_aBikePlayDialPoints: 28 x 28 开始骑行三角形轮廓。 */
+static const lv_point_t l_aBikePlayDialPoints[] =
 {
-    0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U,
-    0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U,
-    0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x80U, 0x00U, 0x00U,
-    0x00U, 0xE0U, 0x00U, 0x00U, 0x00U, 0xF0U, 0x00U, 0x00U,
-    0x00U, 0xFCU, 0x00U, 0x00U, 0x00U, 0xFFU, 0x00U, 0x00U,
-    0x00U, 0xFFU, 0x80U, 0x00U, 0x00U, 0xFFU, 0xE0U, 0x00U,
-    0x00U, 0xFFU, 0xF8U, 0x00U, 0x00U, 0xFFU, 0xFCU, 0x00U,
-    0x00U, 0xFFU, 0xFCU, 0x00U, 0x00U, 0xFFU, 0xF8U, 0x00U,
-    0x00U, 0xFFU, 0xE0U, 0x00U, 0x00U, 0xFFU, 0x80U, 0x00U,
-    0x00U, 0xFFU, 0x00U, 0x00U, 0x00U, 0xFCU, 0x00U, 0x00U,
-    0x00U, 0xF0U, 0x00U, 0x00U, 0x00U, 0xE0U, 0x00U, 0x00U,
-    0x00U, 0x80U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U,
-    0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U,
-    0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U,
+    {8, 5}, {22, 14}, {8, 23}, {8, 5},
 };
-
-/* l_aBikePauseDialIconAlpha: 28 x 28 暂停骑行图标的 1-bit Alpha 蒙版。 */
-static const uint8_t l_aBikePauseDialIconAlpha[] =
-{
-    0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U,
-    0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U,
-    0x00U, 0x00U, 0x00U, 0x00U, 0x01U, 0xF0U, 0x7CU, 0x00U,
-    0x01U, 0xF0U, 0x7CU, 0x00U, 0x01U, 0xF0U, 0x7CU, 0x00U,
-    0x01U, 0xF0U, 0x7CU, 0x00U, 0x01U, 0xF0U, 0x7CU, 0x00U,
-    0x01U, 0xF0U, 0x7CU, 0x00U, 0x01U, 0xF0U, 0x7CU, 0x00U,
-    0x01U, 0xF0U, 0x7CU, 0x00U, 0x01U, 0xF0U, 0x7CU, 0x00U,
-    0x01U, 0xF0U, 0x7CU, 0x00U, 0x01U, 0xF0U, 0x7CU, 0x00U,
-    0x01U, 0xF0U, 0x7CU, 0x00U, 0x01U, 0xF0U, 0x7CU, 0x00U,
-    0x01U, 0xF0U, 0x7CU, 0x00U, 0x01U, 0xF0U, 0x7CU, 0x00U,
-    0x01U, 0xF0U, 0x7CU, 0x00U, 0x01U, 0xF0U, 0x7CU, 0x00U,
-    0x01U, 0xF0U, 0x7CU, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U,
-    0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U,
-    0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U,
-};
-
-/* l_aBikeInfoDialIconAlpha: 28 x 28 GNSS/系统信息图标的 1-bit Alpha 蒙版。 */
-static const uint8_t l_aBikeInfoDialIconAlpha[] =
-{
-    0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U,
-    0x00U, 0x1FU, 0x80U, 0x00U, 0x00U, 0xFFU, 0xF0U, 0x00U,
-    0x01U, 0xE0U, 0x78U, 0x00U, 0x03U, 0x80U, 0x1CU, 0x00U,
-    0x06U, 0x0FU, 0x06U, 0x00U, 0x0CU, 0x0FU, 0x03U, 0x00U,
-    0x1CU, 0x0FU, 0x03U, 0x80U, 0x18U, 0x0FU, 0x01U, 0x80U,
-    0x18U, 0x00U, 0x01U, 0x80U, 0x30U, 0x00U, 0x00U, 0xC0U,
-    0x30U, 0x0FU, 0x00U, 0xC0U, 0x30U, 0x0FU, 0x00U, 0xC0U,
-    0x30U, 0x0FU, 0x00U, 0xC0U, 0x30U, 0x0FU, 0x00U, 0xC0U,
-    0x30U, 0x0FU, 0x00U, 0xC0U, 0x18U, 0x0FU, 0x01U, 0x80U,
-    0x18U, 0x0FU, 0x01U, 0x80U, 0x1CU, 0x0FU, 0x03U, 0x80U,
-    0x0CU, 0x0FU, 0x03U, 0x00U, 0x06U, 0x0FU, 0x06U, 0x00U,
-    0x03U, 0x80U, 0x1CU, 0x00U, 0x01U, 0xE0U, 0x78U, 0x00U,
-    0x00U, 0xFFU, 0xF0U, 0x00U, 0x00U, 0x1FU, 0x80U, 0x00U,
-    0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U,
-};
-
-#define BIKE_UI_DIAL_IMAGE(_data)                                           \
-    {                                                                       \
-        .header.always_zero = 0U,                                           \
-        .header.w = BIKE_UI_DIAL_ICON_SIZE_PX,                              \
-        .header.h = BIKE_UI_DIAL_ICON_SIZE_PX,                              \
-        .data_size = sizeof(_data),                                         \
-        .header.cf = LV_IMG_CF_ALPHA_1BIT,                                  \
-        .data = (_data),                                                    \
-    }
-
-static const lv_img_dsc_t l_tBikeMapDialIcon =
-    BIKE_UI_DIAL_IMAGE(l_aBikeMapDialIconAlpha);
-static const lv_img_dsc_t l_tBikePlayDialIcon =
-    BIKE_UI_DIAL_IMAGE(l_aBikePlayDialIconAlpha);
-static const lv_img_dsc_t l_tBikePauseDialIcon =
-    BIKE_UI_DIAL_IMAGE(l_aBikePauseDialIconAlpha);
-static const lv_img_dsc_t l_tBikeInfoDialIcon =
-    BIKE_UI_DIAL_IMAGE(l_aBikeInfoDialIconAlpha);
-
-#undef BIKE_UI_DIAL_IMAGE
 
 /* l_aaBikeMapTileData: 九块 256 x 256 RGB565 离线瓦片像素缓存，
  * 每块固定 131072 bytes，总计 1179648 bytes；仅由 LVGL GUI 线程读写，
@@ -1612,7 +1539,6 @@ static void BikeUi_Update(void)
     const char *pPowerState;
     const char *pSpeedSource;
     const char *pFileName;
-    const lv_img_dsc_t *pStartImage;
     const char *pStorageMedium;
 
     if (!BIKE_SERVICE_GetSnapshot(&tSnapshot))
@@ -1868,19 +1794,20 @@ static void BikeUi_Update(void)
                                       -(int64_t)tSnapshot.tRide.lAltitudeCm :
                                       (int64_t)tSnapshot.tRide.lAltitudeCm);
 
-    if (BIKE_RIDE_MODE_RUNNING == tSnapshot.tRide.eMode)
+    if ((NULL != l_tBikeUi.pStartPlayIcon) &&
+        (NULL != l_tBikeUi.pStartPauseIcon))
     {
-        pStartImage = &l_tBikePauseDialIcon;
+        if (BIKE_RIDE_MODE_RUNNING == tSnapshot.tRide.eMode)
+        {
+            lv_obj_add_flag(l_tBikeUi.pStartPlayIcon, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(l_tBikeUi.pStartPauseIcon, LV_OBJ_FLAG_HIDDEN);
+        }
+        else
+        {
+            lv_obj_clear_flag(l_tBikeUi.pStartPlayIcon, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(l_tBikeUi.pStartPauseIcon, LV_OBJ_FLAG_HIDDEN);
+        }
     }
-    else if (BIKE_RIDE_MODE_PAUSED == tSnapshot.tRide.eMode)
-    {
-        pStartImage = &l_tBikePlayDialIcon;
-    }
-    else
-    {
-        pStartImage = &l_tBikePlayDialIcon;
-    }
-    lv_img_set_src(l_tBikeUi.pStartIcon, pStartImage);
 
     if (NULL != l_tBikeUi.pMapSpeedLabel)
     {
@@ -2155,17 +2082,176 @@ static void BikeUi_OpenInfoEvent(lv_event_t *pEvent)
     return;
 }
 
+/* BikeUi_CreateDialIcon: 使用 LVGL 原生图元创建主码表按钮图标。
+ * 参数：
+ *   - pParent: 图标父对象
+ *   - eIcon: 图标类型
+ * 返回值：图标根对象，失败返回 NULL
+ */
+static lv_obj_t *BikeUi_CreateDialIcon(lv_obj_t *pParent,
+                                       BIKE_UI_DIAL_ICON eIcon)
+{
+    lv_obj_t *pIcon;
+    lv_obj_t *pPart;
+
+    if ((NULL == pParent) || (BIKE_UI_DIAL_ICON_COUNT <= eIcon))
+    {
+        return NULL;
+    }
+
+    pIcon = lv_obj_create(pParent);
+    if (NULL == pIcon)
+    {
+        return NULL;
+    }
+    lv_obj_remove_style_all(pIcon);
+    lv_obj_set_size(pIcon, BIKE_UI_DIAL_ICON_SIZE_PX,
+                    BIKE_UI_DIAL_ICON_SIZE_PX);
+    lv_obj_clear_flag(pIcon, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_clear_flag(pIcon, LV_OBJ_FLAG_SCROLLABLE);
+
+    switch (eIcon)
+    {
+    case BIKE_UI_DIAL_ICON_MAP:
+        pPart = lv_line_create(pIcon);
+        if (NULL == pPart)
+        {
+            lv_obj_del(pIcon);
+            return NULL;
+        }
+        lv_line_set_points(
+            pPart, l_aBikeMapDialPoints,
+            (uint16_t)(sizeof(l_aBikeMapDialPoints) /
+                       sizeof(l_aBikeMapDialPoints[0])));
+        lv_obj_set_style_line_color(pPart, lv_color_white(), LV_PART_MAIN);
+        lv_obj_set_style_line_width(pPart, 3, LV_PART_MAIN);
+        lv_obj_set_style_line_rounded(pPart, true, LV_PART_MAIN);
+        lv_obj_clear_flag(pPart,
+                          LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+
+        pPart = lv_obj_create(pIcon);
+        if (NULL == pPart)
+        {
+            lv_obj_del(pIcon);
+            return NULL;
+        }
+        lv_obj_remove_style_all(pPart);
+        lv_obj_clear_flag(pPart,
+                          LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_pos(pPart, 12, 7);
+        lv_obj_set_size(pPart, 5, 5);
+        lv_obj_set_style_bg_color(pPart, lv_color_white(), LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(pPart, LV_OPA_COVER, LV_PART_MAIN);
+        lv_obj_set_style_radius(pPart, LV_RADIUS_CIRCLE, LV_PART_MAIN);
+        break;
+
+    case BIKE_UI_DIAL_ICON_RIDE:
+        pPart = lv_line_create(pIcon);
+        if (NULL == pPart)
+        {
+            lv_obj_del(pIcon);
+            return NULL;
+        }
+        lv_line_set_points(
+            pPart, l_aBikePlayDialPoints,
+            (uint16_t)(sizeof(l_aBikePlayDialPoints) /
+                       sizeof(l_aBikePlayDialPoints[0])));
+        lv_obj_set_style_line_color(pPart, lv_color_white(), LV_PART_MAIN);
+        lv_obj_set_style_line_width(pPart, 4, LV_PART_MAIN);
+        lv_obj_set_style_line_rounded(pPart, true, LV_PART_MAIN);
+        lv_obj_clear_flag(pPart,
+                          LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+        l_tBikeUi.pStartPlayIcon = pPart;
+
+        pPart = lv_obj_create(pIcon);
+        if (NULL == pPart)
+        {
+            l_tBikeUi.pStartPlayIcon = NULL;
+            lv_obj_del(pIcon);
+            return NULL;
+        }
+        lv_obj_remove_style_all(pPart);
+        lv_obj_clear_flag(pPart,
+                          LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_pos(pPart, 7, 5);
+        lv_obj_set_size(pPart, 14, 18);
+        lv_obj_set_style_border_color(pPart, lv_color_white(), LV_PART_MAIN);
+        lv_obj_set_style_border_width(pPart, 4, LV_PART_MAIN);
+        lv_obj_set_style_border_side(
+            pPart, LV_BORDER_SIDE_LEFT | LV_BORDER_SIDE_RIGHT, LV_PART_MAIN);
+        lv_obj_set_style_border_opa(pPart, LV_OPA_COVER, LV_PART_MAIN);
+        lv_obj_add_flag(pPart, LV_OBJ_FLAG_HIDDEN);
+        l_tBikeUi.pStartPauseIcon = pPart;
+        break;
+
+    case BIKE_UI_DIAL_ICON_INFO:
+        pPart = lv_obj_create(pIcon);
+        if (NULL == pPart)
+        {
+            lv_obj_del(pIcon);
+            return NULL;
+        }
+        lv_obj_remove_style_all(pPart);
+        lv_obj_clear_flag(pPart,
+                          LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_pos(pPart, 2, 2);
+        lv_obj_set_size(pPart, 24, 24);
+        lv_obj_set_style_border_color(pPart, lv_color_white(), LV_PART_MAIN);
+        lv_obj_set_style_border_width(pPart, 3, LV_PART_MAIN);
+        lv_obj_set_style_border_opa(pPart, LV_OPA_COVER, LV_PART_MAIN);
+        lv_obj_set_style_radius(pPart, LV_RADIUS_CIRCLE, LV_PART_MAIN);
+
+        pPart = lv_obj_create(pIcon);
+        if (NULL == pPart)
+        {
+            lv_obj_del(pIcon);
+            return NULL;
+        }
+        lv_obj_remove_style_all(pPart);
+        lv_obj_clear_flag(pPart,
+                          LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_pos(pPart, 12, 6);
+        lv_obj_set_size(pPart, 4, 4);
+        lv_obj_set_style_bg_color(pPart, lv_color_white(), LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(pPart, LV_OPA_COVER, LV_PART_MAIN);
+        lv_obj_set_style_radius(pPart, LV_RADIUS_CIRCLE, LV_PART_MAIN);
+
+        pPart = lv_obj_create(pIcon);
+        if (NULL == pPart)
+        {
+            lv_obj_del(pIcon);
+            return NULL;
+        }
+        lv_obj_remove_style_all(pPart);
+        lv_obj_clear_flag(pPart,
+                          LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_pos(pPart, 12, 12);
+        lv_obj_set_size(pPart, 4, 10);
+        lv_obj_set_style_bg_color(pPart, lv_color_white(), LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(pPart, LV_OPA_COVER, LV_PART_MAIN);
+        lv_obj_set_style_radius(pPart, 2, LV_PART_MAIN);
+        break;
+
+    case BIKE_UI_DIAL_ICON_COUNT:
+    default:
+        lv_obj_del(pIcon);
+        return NULL;
+    }
+
+    return pIcon;
+}
+
 /* BikeUi_CreateDialButton: 按 X-TRACK 占屏比例创建主码表操作按钮。
  * 参数：
  *   - pParent: 底部操作区
- *   - pImage: 按钮的 1-bit Alpha 图标
+ *   - eIcon: 按钮的原生几何图标类型
  *   - sReferenceCenterX: 240 像素参考画布中的按钮中心 X
  *   - pCallback: 事件回调
  *   - eEventCode: 需要投递的事件类型
- * 返回值：按钮图标对象，失败返回 NULL
+ * 返回值：按钮图标根对象，失败返回 NULL
  */
 static lv_obj_t *BikeUi_CreateDialButton(lv_obj_t *pParent,
-                                         const lv_img_dsc_t *pImage,
+                                         BIKE_UI_DIAL_ICON eIcon,
                                          int16_t sReferenceCenterX,
                                          lv_event_cb_t pCallback,
                                          lv_event_code_t eEventCode)
@@ -2176,7 +2262,8 @@ static lv_obj_t *BikeUi_CreateDialButton(lv_obj_t *pParent,
     lv_coord_t lButtonHeight;
     lv_coord_t lControlHeight;
 
-    if ((NULL == pParent) || (NULL == pImage) || (NULL == pCallback))
+    if ((NULL == pParent) || (BIKE_UI_DIAL_ICON_COUNT <= eIcon) ||
+        (NULL == pCallback))
     {
         return NULL;
     }
@@ -2203,15 +2290,12 @@ static lv_obj_t *BikeUi_CreateDialButton(lv_obj_t *pParent,
     lv_obj_set_style_pad_all(pButton, 0, LV_PART_MAIN);
     lv_obj_add_event_cb(pButton, pCallback, eEventCode, NULL);
 
-    pIcon = lv_img_create(pButton);
+    pIcon = BikeUi_CreateDialIcon(pButton, eIcon);
     if (NULL == pIcon)
     {
+        lv_obj_del(pButton);
         return NULL;
     }
-    lv_img_set_src(pIcon, pImage);
-    lv_obj_set_style_img_recolor(pIcon, lv_color_white(), LV_PART_MAIN);
-    lv_obj_set_style_img_recolor_opa(pIcon, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_clear_flag(pIcon, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_center(pIcon);
 
     return pIcon;
@@ -2512,10 +2596,10 @@ static void BikeUi_OnStart(void)
     lv_obj_clear_flag(pControlPanel, LV_OBJ_FLAG_SCROLLABLE);
 
     RT_ASSERT(NULL != BikeUi_CreateDialButton(
-                          pControlPanel, &l_tBikeMapDialIcon, 40,
+                          pControlPanel, BIKE_UI_DIAL_ICON_MAP, 40,
                           BikeUi_OpenMapEvent, LV_EVENT_CLICKED));
     l_tBikeUi.pStartIcon = BikeUi_CreateDialButton(
-        pControlPanel, &l_tBikePlayDialIcon, 120, BikeUi_StartEvent,
+        pControlPanel, BIKE_UI_DIAL_ICON_RIDE, 120, BikeUi_StartEvent,
         LV_EVENT_SHORT_CLICKED);
     RT_ASSERT(NULL != l_tBikeUi.pStartIcon);
     pRecordButton = lv_obj_get_parent(l_tBikeUi.pStartIcon);
@@ -2523,7 +2607,7 @@ static void BikeUi_OnStart(void)
     lv_obj_add_event_cb(pRecordButton, BikeUi_StopEvent,
                         LV_EVENT_LONG_PRESSED, NULL);
     RT_ASSERT(NULL != BikeUi_CreateDialButton(
-                          pControlPanel, &l_tBikeInfoDialIcon, 200,
+                          pControlPanel, BIKE_UI_DIAL_ICON_INFO, 200,
                           BikeUi_OpenInfoEvent, LV_EVENT_CLICKED));
 
     BikeUi_CreatePageTitle(pLocationPage, "GNSS", "<  SWIPE  >");
