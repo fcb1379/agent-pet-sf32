@@ -62,6 +62,22 @@ typedef struct _BIKE_UI_MAP_TRACK_POINT
     uint32_t ulPixelY;
 } BIKE_UI_MAP_TRACK_POINT;
 
+/* BIKE_UI_MAP_TILE_CACHE: 单个 PSRAM 瓦片槽保存的地图坐标和加载结果。
+ * 成员说明：
+ *   - ulTileX/ulTileY: Web Mercator 瓦片坐标
+ *   - ucZoom: 缩放级别，范围 0~19
+ *   - bValid: 当前槽已解析过该瓦片路径
+ *   - bLoaded: 瓦片内容校验并加载成功
+ */
+typedef struct _BIKE_UI_MAP_TILE_CACHE
+{
+    uint32_t ulTileX;
+    uint32_t ulTileY;
+    uint8_t ucZoom;
+    bool bValid;
+    bool bLoaded;
+} BIKE_UI_MAP_TILE_CACHE;
+
 /* BIKE_UI_CONTEXT: 码表主页面的静态 LVGL 对象引用。
  * 成员说明：
  *   - pRoot: 页面根对象
@@ -81,7 +97,7 @@ typedef struct _BIKE_UI_MAP_TRACK_POINT
  *   - pMapEmptyLabel: 未找到离线瓦片时显示的路径提示
  *   - pMapSpeedLabel/pMapDistanceLabel/pMapTimeLabel: 地图页骑行数据叠层
  *   - aMapTrackPoints/aMapLinePoints: 固定级别轨迹点和可见线段点
- *   - atMapTileImages: 由 PSRAM 像素缓冲支撑的 LVGL 变量图像描述符
+ *   - atMapTileImages/atMapTileCache: LVGL 图像描述符和增量瓦片缓存键
  *   - tMapViewPoint: 无定位时可拖动的离线地图中心点
  *   - aMapDirectory/aMapRoot/aMapExtension: 地图目录、实际路径和扩展名
  *   - ucMapZoomMin/ucMapZoomMax: 当前地图介质实际可用的缩放范围
@@ -116,6 +132,7 @@ typedef struct _BIKE_UI_CONTEXT
     BIKE_UI_MAP_TRACK_POINT aMapTrackPoints[BIKE_UI_MAP_TRACK_POINT_MAX];
     lv_point_t aMapLinePoints[BIKE_UI_MAP_TRACK_POINT_MAX];
     lv_img_dsc_t atMapTileImages[BIKE_UI_MAP_TILE_COUNT];
+    BIKE_UI_MAP_TILE_CACHE atMapTileCache[BIKE_UI_MAP_TILE_COUNT];
     BIKE_MAP_POINT tMapViewPoint;
     char aMapDirectory[BIKE_STORAGE_MAP_DIRECTORY_MAX];
     char aMapRoot[BIKE_STORAGE_MAP_ROOT_MAX];
@@ -323,6 +340,8 @@ static bool BikeUi_MapApplySource(const char *pDirectory,
     }
     l_tBikeUi.bMapTilesLoaded = false;
     l_tBikeUi.ucMapLoadedCount = 0U;
+    (void)memset(l_tBikeUi.atMapTileCache, 0,
+                 sizeof(l_tBikeUi.atMapTileCache));
 
     return true;
 }
@@ -341,6 +360,54 @@ static void BikeUi_MapClearTrack(void)
     return;
 }
 
+/* BikeUi_MapTileCacheNeeded: 判断缓存槽是否属于新的 3 x 3 视口。
+ * 参数：
+ *   - pCache: 已解析的瓦片缓存键
+ *   - pPoint: 新视口中心瓦片
+ * 返回值：缓存瓦片仍在新视口内返回 true，否则返回 false
+ */
+static bool BikeUi_MapTileCacheNeeded(const BIKE_UI_MAP_TILE_CACHE *pCache,
+                                      const BIKE_MAP_POINT *pPoint)
+{
+    int64_t dTileX;
+    int64_t dTileY;
+    uint32_t ulTileCount;
+    uint32_t ulActualTileX;
+    int8_t cColumn;
+    int8_t cRow;
+
+    if ((NULL == pCache) || (NULL == pPoint) || (!pCache->bValid) ||
+        (pCache->ucZoom != pPoint->ucZoom))
+    {
+        return false;
+    }
+    ulTileCount = 1UL << pPoint->ucZoom;
+    for (cRow = -1; cRow <= 1; cRow++)
+    {
+        dTileY = (int64_t)pPoint->ulTileY + cRow;
+        if ((0LL > dTileY) || ((int64_t)ulTileCount <= dTileY))
+        {
+            continue;
+        }
+        for (cColumn = -1; cColumn <= 1; cColumn++)
+        {
+            dTileX = (int64_t)pPoint->ulTileX + cColumn;
+            while (0LL > dTileX)
+            {
+                dTileX += ulTileCount;
+            }
+            ulActualTileX = (uint32_t)dTileX % ulTileCount;
+            if ((pCache->ulTileX == ulActualTileX) &&
+                (pCache->ulTileY == (uint32_t)dTileY))
+            {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
 /* BikeUi_MapReloadTiles: 按中心瓦片重载 3 x 3 离线地图。
  * 参数：
  *   - pPoint: 当前定位的投影坐标
@@ -350,14 +417,18 @@ static uint8_t BikeUi_MapReloadTiles(const BIKE_MAP_POINT *pPoint)
 {
     BIKE_MAP_IMAGE_INFO tImageInfo;
     char aMapTilePath[BIKE_UI_MAP_PATH_MAX];
+    bool abSlotUsed[BIKE_UI_MAP_TILE_COUNT];
     int64_t dTileX;
     int64_t dTileY;
     uint32_t ulTileCount;
     uint32_t ulActualTileX;
+    uint32_t ulActualTileY;
     uint8_t ucIndex;
     uint8_t ucLoadedCount;
+    uint8_t ucSlotIndex;
     int8_t cColumn;
     int8_t cRow;
+    bool bTargetValid;
 
     if ((NULL == pPoint) || (NULL == l_tBikeUi.pMapContainer))
     {
@@ -365,7 +436,7 @@ static uint8_t BikeUi_MapReloadTiles(const BIKE_MAP_POINT *pPoint)
     }
     ulTileCount = 1UL << pPoint->ucZoom;
     ucLoadedCount = 0U;
-    ucIndex = 0U;
+    (void)memset(abSlotUsed, 0, sizeof(abSlotUsed));
     for (cRow = -1; cRow <= 1; cRow++)
     {
         for (cColumn = -1; cColumn <= 1; cColumn++)
@@ -377,45 +448,114 @@ static uint8_t BikeUi_MapReloadTiles(const BIKE_MAP_POINT *pPoint)
                 dTileX += ulTileCount;
             }
             ulActualTileX = (uint32_t)dTileX % ulTileCount;
-            lv_obj_set_pos(l_tBikeUi.apMapTiles[ucIndex],
+            bTargetValid = (0LL <= dTileY) &&
+                           ((int64_t)ulTileCount > dTileY);
+            ulActualTileY = bTargetValid ? (uint32_t)dTileY : 0U;
+            ucSlotIndex = BIKE_UI_MAP_TILE_COUNT;
+            if (bTargetValid)
+            {
+                for (ucIndex = 0U; ucIndex < BIKE_UI_MAP_TILE_COUNT;
+                     ucIndex++)
+                {
+                    if ((!abSlotUsed[ucIndex]) &&
+                        l_tBikeUi.atMapTileCache[ucIndex].bValid &&
+                        (pPoint->ucZoom ==
+                         l_tBikeUi.atMapTileCache[ucIndex].ucZoom) &&
+                        (ulActualTileX ==
+                         l_tBikeUi.atMapTileCache[ucIndex].ulTileX) &&
+                        (ulActualTileY ==
+                         l_tBikeUi.atMapTileCache[ucIndex].ulTileY))
+                    {
+                        ucSlotIndex = ucIndex;
+                        break;
+                    }
+                }
+            }
+            if (BIKE_UI_MAP_TILE_COUNT == ucSlotIndex)
+            {
+                for (ucIndex = 0U; ucIndex < BIKE_UI_MAP_TILE_COUNT;
+                     ucIndex++)
+                {
+                    if ((!abSlotUsed[ucIndex]) &&
+                        (!BikeUi_MapTileCacheNeeded(
+                            &l_tBikeUi.atMapTileCache[ucIndex], pPoint)))
+                    {
+                        ucSlotIndex = ucIndex;
+                        break;
+                    }
+                }
+                if (BIKE_UI_MAP_TILE_COUNT == ucSlotIndex)
+                {
+                    for (ucIndex = 0U; ucIndex < BIKE_UI_MAP_TILE_COUNT;
+                         ucIndex++)
+                    {
+                        if (!abSlotUsed[ucIndex])
+                        {
+                            ucSlotIndex = ucIndex;
+                            break;
+                        }
+                    }
+                }
+                if (BIKE_UI_MAP_TILE_COUNT == ucSlotIndex)
+                {
+                    continue;
+                }
+                lv_img_cache_invalidate_src(
+                    &l_tBikeUi.atMapTileImages[ucSlotIndex]);
+                l_tBikeUi.atMapTileCache[ucSlotIndex].ulTileX =
+                    ulActualTileX;
+                l_tBikeUi.atMapTileCache[ucSlotIndex].ulTileY =
+                    ulActualTileY;
+                l_tBikeUi.atMapTileCache[ucSlotIndex].ucZoom =
+                    pPoint->ucZoom;
+                l_tBikeUi.atMapTileCache[ucSlotIndex].bValid =
+                    bTargetValid;
+                l_tBikeUi.atMapTileCache[ucSlotIndex].bLoaded = false;
+                if (bTargetValid &&
+                    BIKE_MAP_FormatTilePath(
+                        l_tBikeUi.aMapRoot, pPoint->ucZoom, ulActualTileX,
+                        ulActualTileY, l_tBikeUi.aMapExtension,
+                        aMapTilePath, sizeof(aMapTilePath)) &&
+                    BIKE_MAP_IMAGE_Load(
+                        aMapTilePath, l_aaBikeMapTileData[ucSlotIndex],
+                        sizeof(l_aaBikeMapTileData[ucSlotIndex]), &tImageInfo))
+                {
+                    l_tBikeUi.atMapTileImages[ucSlotIndex].header.always_zero =
+                        0U;
+                    l_tBikeUi.atMapTileImages[ucSlotIndex].header.reserved =
+                        0U;
+                    l_tBikeUi.atMapTileImages[ucSlotIndex].header.cf =
+                        tImageInfo.ucColorFormat;
+                    l_tBikeUi.atMapTileImages[ucSlotIndex].header.w =
+                        tImageInfo.usWidth;
+                    l_tBikeUi.atMapTileImages[ucSlotIndex].header.h =
+                        tImageInfo.usHeight;
+                    l_tBikeUi.atMapTileImages[ucSlotIndex].data_size =
+                        tImageInfo.ulDataSize;
+                    l_tBikeUi.atMapTileImages[ucSlotIndex].data =
+                        l_aaBikeMapTileData[ucSlotIndex];
+                    lv_img_set_src(l_tBikeUi.apMapTiles[ucSlotIndex],
+                                   &l_tBikeUi.atMapTileImages[ucSlotIndex]);
+                    l_tBikeUi.atMapTileCache[ucSlotIndex].bLoaded = true;
+                }
+            }
+            abSlotUsed[ucSlotIndex] = true;
+            lv_obj_set_pos(l_tBikeUi.apMapTiles[ucSlotIndex],
                            (lv_coord_t)((cColumn + 1) *
                                         (int32_t)BIKE_MAP_TILE_SIZE_PX),
                            (lv_coord_t)((cRow + 1) *
                                         (int32_t)BIKE_MAP_TILE_SIZE_PX));
-            lv_img_cache_invalidate_src(&l_tBikeUi.atMapTileImages[ucIndex]);
-            if ((0LL <= dTileY) && ((int64_t)ulTileCount > dTileY) &&
-                BIKE_MAP_FormatTilePath(
-                    l_tBikeUi.aMapRoot, pPoint->ucZoom, ulActualTileX,
-                    (uint32_t)dTileY, l_tBikeUi.aMapExtension,
-                    aMapTilePath, sizeof(aMapTilePath)) &&
-                BIKE_MAP_IMAGE_Load(
-                    aMapTilePath, l_aaBikeMapTileData[ucIndex],
-                    sizeof(l_aaBikeMapTileData[ucIndex]), &tImageInfo))
+            if (l_tBikeUi.atMapTileCache[ucSlotIndex].bLoaded)
             {
-                l_tBikeUi.atMapTileImages[ucIndex].header.always_zero = 0U;
-                l_tBikeUi.atMapTileImages[ucIndex].header.reserved = 0U;
-                l_tBikeUi.atMapTileImages[ucIndex].header.cf =
-                    tImageInfo.ucColorFormat;
-                l_tBikeUi.atMapTileImages[ucIndex].header.w =
-                    tImageInfo.usWidth;
-                l_tBikeUi.atMapTileImages[ucIndex].header.h =
-                    tImageInfo.usHeight;
-                l_tBikeUi.atMapTileImages[ucIndex].data_size =
-                    tImageInfo.ulDataSize;
-                l_tBikeUi.atMapTileImages[ucIndex].data =
-                    l_aaBikeMapTileData[ucIndex];
-                lv_img_set_src(l_tBikeUi.apMapTiles[ucIndex],
-                               &l_tBikeUi.atMapTileImages[ucIndex]);
-                lv_obj_clear_flag(l_tBikeUi.apMapTiles[ucIndex],
+                lv_obj_clear_flag(l_tBikeUi.apMapTiles[ucSlotIndex],
                                   LV_OBJ_FLAG_HIDDEN);
                 ucLoadedCount++;
             }
             else
             {
-                lv_obj_add_flag(l_tBikeUi.apMapTiles[ucIndex],
+                lv_obj_add_flag(l_tBikeUi.apMapTiles[ucSlotIndex],
                                 LV_OBJ_FLAG_HIDDEN);
             }
-            ucIndex++;
         }
     }
     l_tBikeUi.ulMapCenterTileX = pPoint->ulTileX;
@@ -2055,6 +2195,7 @@ static void BikeUi_OnStart(void)
     bool bMapSourceReady;
 
     (void)memset(&l_tBikeUi, 0, sizeof(l_tBikeUi));
+    (void)BIKE_STORAGE_RetryTfMount();
     l_tBikeUi.ucMapZoom = BIKE_UI_MAP_ZOOM_DEFAULT;
     l_tBikeUi.eMapArrowTheme = BIKE_MAP_ARROW_THEME_DEFAULT;
     bMapSourceReady = false;

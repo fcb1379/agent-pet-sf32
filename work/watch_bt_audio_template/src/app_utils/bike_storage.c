@@ -10,6 +10,10 @@
 #include <rtdevice.h>
 #include <rtthread.h>
 
+#ifdef RT_USING_SPI_MSD
+extern int rt_spi_msd_init(void);
+#endif
+
 #define LOG_TAG "bike.storage"
 #define LOG_LVL LOG_LVL_INFO
 #include <ulog.h>
@@ -129,8 +133,36 @@ bool BIKE_STORAGE_Init(void)
     l_bBikeStorageMutexReady = true;
 #endif
     l_bBikeStorageInitialized = true;
+    (void)BIKE_STORAGE_RetryTfMount();
+
+    return true;
+}
+
+/* BIKE_STORAGE_RetryTfMount: 在应用进入地图页前重新探测并挂载 TF 卡。
+ * SPI-MSD 启动探测失败后允许在后续插卡时再次初始化；不格式化介质，
+ * 已挂载时直接返回，避免重复注册块设备或重复挂载。
+ * 返回值：TF 卡已挂载到 /sd 返回 true，否则返回 false
+ */
+bool BIKE_STORAGE_RetryTfMount(void)
+{
+    if (!l_bBikeStorageInitialized)
+    {
+        return false;
+    }
+    if (l_bBikeTfMounted)
+    {
+        return true;
+    }
 
 #ifndef BIKE_STORAGE_HOST_BUILD
+#ifdef RT_USING_SPI_MSD
+    if ((NULL == rt_device_find(BIKE_STORAGE_TF_DEVICE)) &&
+        (RT_EOK != rt_spi_msd_init()))
+    {
+        LOG_W("retry %s probe failed; use internal storage",
+              BIKE_STORAGE_TF_DEVICE);
+    }
+#endif /* RT_USING_SPI_MSD */
     if (NULL == rt_device_find(BIKE_STORAGE_TF_DEVICE))
     {
         LOG_W("%s unavailable; use internal storage",
@@ -157,7 +189,7 @@ bool BIKE_STORAGE_Init(void)
 
     (void)BIKE_STORAGE_RefreshInfo();
 
-    return true;
+    return l_bBikeTfMounted;
 }
 
 /* BIKE_STORAGE_IsTfMounted: 查询 TF 卡是否已成功挂载。

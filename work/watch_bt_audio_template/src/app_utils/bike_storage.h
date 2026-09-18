@@ -37,6 +37,7 @@ typedef struct _BIKE_STORAGE_INFO
 } BIKE_STORAGE_INFO;
 
 bool BIKE_STORAGE_Init(void);
+bool BIKE_STORAGE_RetryTfMount(void);
 bool BIKE_STORAGE_IsTfMounted(void);
 bool BIKE_STORAGE_RefreshInfo(void);
 bool BIKE_STORAGE_GetInfo(BIKE_STORAGE_INFO *pInfo);

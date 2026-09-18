@@ -272,6 +272,7 @@ static void Test_StoragePaths(void)
     assert(0 == strcmp("/sd/MAP", BIKE_STORAGE_SelectMapRoot(true)));
 
     assert(BIKE_STORAGE_Init());
+    assert(!BIKE_STORAGE_RetryTfMount());
     assert(!BIKE_STORAGE_IsTfMounted());
     assert(0 == strcmp("/tracks", BIKE_STORAGE_GetTrackDirectory()));
     assert(0 == strcmp("/MAP", BIKE_STORAGE_GetMapRoot()));
