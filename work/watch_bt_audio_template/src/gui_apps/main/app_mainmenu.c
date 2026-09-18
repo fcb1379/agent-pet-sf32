@@ -20,37 +20,6 @@
 #include "custom_trans_anim.h"
 
 
-LV_IMG_DECLARE(human1);
-LV_IMG_DECLARE(human2);
-LV_IMG_DECLARE(eco);
-LV_IMG_DECLARE(weather);
-LV_IMG_DECLARE(house);
-LV_IMG_DECLARE(clock_80);
-
-
-LV_IMG_DECLARE(img_activity);
-LV_IMG_DECLARE(img_alarm);
-LV_IMG_DECLARE(img_alarm_2);
-LV_IMG_DECLARE(img_calendar);
-LV_IMG_DECLARE(img_camera);
-LV_IMG_DECLARE(img_clock);
-LV_IMG_DECLARE(img_group);
-LV_IMG_DECLARE(img_itunes);
-LV_IMG_DECLARE(img_mail);
-LV_IMG_DECLARE(img_maps);
-LV_IMG_DECLARE(img_messages);
-LV_IMG_DECLARE(img_passbook);
-LV_IMG_DECLARE(img_phone);
-LV_IMG_DECLARE(img_photos);
-LV_IMG_DECLARE(img_remote);
-LV_IMG_DECLARE(img_settings);
-LV_IMG_DECLARE(img_stocks);
-LV_IMG_DECLARE(img_stopwatch);
-LV_IMG_DECLARE(img_workout);
-LV_IMG_DECLARE(img_world_clock);
-//LV_IMG_DECLARE(celluar);
-
-
 #define APP_ID "Main"
 
 //#define DEBUG_APP_MAINMENU_DISPLAY_ICON_COORDINATE
@@ -1139,7 +1108,6 @@ static inline int16_t reorder_clock_icon(int16_t idx, int16_t clock_idx, const b
 
 static void app_mainmenu_read_app_icons(lv_obj_t *page)
 {
-    uint16_t col, row;
     uint16_t idx = 1; /* As idx 0 is reserved for clock app, other apps idx start from 1*/
     uint16_t clock_idx = 0; /* 0 - reserved for clock app*/
     const builtin_app_desc_t *p_builtin_app;
@@ -1173,47 +1141,6 @@ static void app_mainmenu_read_app_icons(lv_obj_t *page)
         gui_builtin_app_list_close(p_builtin_app);
         p_builtin_app = NULL;
     }
-
-#if 1//for demo, full fill screen
-    {
-        uint16_t i;
-        const void *dummy_icons[] =
-        {
-            LV_EXT_IMG_GET(img_passbook),
-            LV_EXT_IMG_GET(img_mail), LV_EXT_IMG_GET(img_calendar), LV_EXT_IMG_GET(img_camera),
-            LV_EXT_IMG_GET(img_phone), LV_EXT_IMG_GET(img_alarm_2), LV_EXT_IMG_GET(img_maps),
-            LV_EXT_IMG_GET(img_photos), LV_EXT_IMG_GET(img_remote), LV_EXT_IMG_GET(img_workout),
-            LV_EXT_IMG_GET(img_world_clock), LV_EXT_IMG_GET(img_stocks),
-            LV_EXT_IMG_GET(img_alarm), LV_EXT_IMG_GET(img_stocks),
-            LV_EXT_IMG_GET(img_passbook),
-            LV_EXT_IMG_GET(img_mail), LV_EXT_IMG_GET(img_calendar), LV_EXT_IMG_GET(img_camera),
-            LV_EXT_IMG_GET(img_phone), LV_EXT_IMG_GET(img_alarm_2), LV_EXT_IMG_GET(img_maps),
-            LV_EXT_IMG_GET(img_photos), LV_EXT_IMG_GET(img_remote), LV_EXT_IMG_GET(img_workout),
-            LV_EXT_IMG_GET(img_world_clock), LV_EXT_IMG_GET(img_stocks),
-            LV_EXT_IMG_GET(img_alarm), LV_EXT_IMG_GET(img_stocks),
-            LV_EXT_IMG_GET(img_passbook),
-            LV_EXT_IMG_GET(img_mail), LV_EXT_IMG_GET(img_calendar), LV_EXT_IMG_GET(img_camera),
-            LV_EXT_IMG_GET(img_phone), LV_EXT_IMG_GET(img_alarm_2), LV_EXT_IMG_GET(img_maps),
-            LV_EXT_IMG_GET(img_photos), LV_EXT_IMG_GET(img_remote), LV_EXT_IMG_GET(img_workout),
-            LV_EXT_IMG_GET(img_world_clock), LV_EXT_IMG_GET(img_stocks),
-            LV_EXT_IMG_GET(img_alarm), LV_EXT_IMG_GET(img_stocks),
-            LV_EXT_IMG_GET(img_passbook),
-            LV_EXT_IMG_GET(img_mail), LV_EXT_IMG_GET(img_calendar), LV_EXT_IMG_GET(img_camera),
-            LV_EXT_IMG_GET(img_phone), LV_EXT_IMG_GET(img_alarm_2), LV_EXT_IMG_GET(img_maps),
-            LV_EXT_IMG_GET(img_photos), LV_EXT_IMG_GET(img_remote), LV_EXT_IMG_GET(img_workout),
-            LV_EXT_IMG_GET(img_world_clock), LV_EXT_IMG_GET(img_stocks),
-            LV_EXT_IMG_GET(img_alarm), LV_EXT_IMG_GET(img_stocks),
-        };
-
-        for (i = 0; i < sizeof(dummy_icons) / sizeof(dummy_icons[0]); i++, idx++)
-        {
-            layout_get_icon_col_row_by_idx(idx, &col, &row);
-            lv_obj_t *p_obj = add_app_icon(page, "none", dummy_icons[i], row, col);
-
-            lv_obj_set_style_img_opa(p_obj, LV_OPA_50, LV_PART_MAIN | LV_STATE_DEFAULT);
-        }
-    }
-#endif
 
 }
 /**

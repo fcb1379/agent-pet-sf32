@@ -43,7 +43,7 @@ typedef char BIKE_UI_MAP_COLOR_FORMAT_CHECK[
      (LV_IMG_CF_TRUE_COLOR_CHROMA_KEYED ==
       BIKE_MAP_IMAGE_CF_TRUE_COLOR_CHROMA_KEYED)) ? 1 : -1];
 
-LV_IMG_DECLARE(img_workout);
+LV_IMG_DECLARE(img_bike_computer);
 
 /* BIKE_UI_MAP_TRACK_POINT: 实时轨迹在固定缩放级别的全局像素坐标。
  * 成员说明：
@@ -2078,4 +2078,6 @@ static int BikeUi_AppMain(intent_t tIntent)
     return 0;
 }
 
-BUILTIN_APP_EXPORT(LV_EXT_STR_ID(bike_computer), LV_EXT_IMG_GET(img_workout), APP_ID, BikeUi_AppMain);
+BUILTIN_APP_EXPORT(LV_EXT_STR_ID(bike_computer),
+                   LV_EXT_IMG_GET(img_bike_computer), APP_ID,
+                   BikeUi_AppMain);

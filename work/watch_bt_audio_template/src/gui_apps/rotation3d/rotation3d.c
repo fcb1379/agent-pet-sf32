@@ -402,7 +402,7 @@ static void msg_handler(gui_app_msg_type_t msg, void *param)
     }
 }
 
-LV_IMG_DECLARE(img_passbook);
+LV_IMG_DECLARE(img_rotation3d);
 #define APP_ID "rotation3d"
 static int app_main(intent_t i)
 {
@@ -416,7 +416,8 @@ static int app_main(intent_t i)
 
 
 
-BUILTIN_APP_EXPORT(LV_EXT_STR_ID(rotation3d), LV_EXT_IMG_GET(img_passbook), APP_ID, app_main);
+BUILTIN_APP_EXPORT(LV_EXT_STR_ID(rotation3d), LV_EXT_IMG_GET(img_rotation3d),
+                   APP_ID, app_main);
 
 
 #ifdef FINSH_USING_MSH
