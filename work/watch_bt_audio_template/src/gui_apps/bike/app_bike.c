@@ -21,7 +21,7 @@
 #define BIKE_UI_MAP_TILE_COUNT (9U)
 #define BIKE_UI_MAP_TRACK_POINT_MAX (128U)
 #define BIKE_UI_MAP_PATH_MAX (96U)
-#define BIKE_UI_MAP_ZOOM_DEFAULT (16U)
+#define BIKE_UI_MAP_ZOOM_DEFAULT (15U)
 #define BIKE_UI_MAP_TRACK_LEVEL (16U)
 #define BIKE_UI_MAP_TRACK_OFFSET_THRESHOLD_PX (2U)
 #define BIKE_UI_MAP_MARKER_WIDTH_PX (16U)
@@ -227,11 +227,17 @@ static bool BikeUi_MapApplyArrowTheme(BIKE_MAP_ARROW_THEME eTheme)
 static bool BikeUi_MapApplySource(const char *pDirectory,
                                   const char *pExtension)
 {
+    char aFallbackRoot[BIKE_STORAGE_MAP_ROOT_MAX];
     size_t ulDirectoryLength;
     size_t ulExtensionLength;
+    uint8_t ucMinimumZoom;
+    uint8_t ucMaximumZoom;
+    bool bTfMounted;
+    bool bZoomRangeFound;
 
+    bTfMounted = BIKE_STORAGE_IsTfMounted();
     if ((!BIKE_MAP_IsExtensionValid(pExtension)) ||
-        (!BIKE_STORAGE_FormatMapRoot(BIKE_STORAGE_IsTfMounted(), pDirectory,
+        (!BIKE_STORAGE_FormatMapRoot(bTfMounted, pDirectory,
                                      l_tBikeUi.aMapRoot,
                                      sizeof(l_tBikeUi.aMapRoot))))
     {
@@ -247,11 +253,25 @@ static bool BikeUi_MapApplySource(const char *pDirectory,
                  sizeof(l_tBikeUi.aMapExtension));
     (void)memcpy(l_tBikeUi.aMapExtension, pExtension,
                  ulExtensionLength + 1U);
-    l_tBikeUi.ucMapZoomMin = BIKE_MAP_ZOOM_MIN;
-    l_tBikeUi.ucMapZoomMax = BIKE_MAP_ZOOM_MAX;
-    (void)BIKE_STORAGE_FindMapZoomRange(l_tBikeUi.aMapRoot,
-                                        &l_tBikeUi.ucMapZoomMin,
-                                        &l_tBikeUi.ucMapZoomMax);
+    ucMinimumZoom = BIKE_MAP_ZOOM_MIN;
+    ucMaximumZoom = BIKE_MAP_ZOOM_MAX;
+    bZoomRangeFound = BIKE_STORAGE_FindMapZoomRange(l_tBikeUi.aMapRoot,
+                                                    &ucMinimumZoom,
+                                                    &ucMaximumZoom);
+    if ((!bZoomRangeFound) && bTfMounted &&
+        BIKE_STORAGE_FormatMapRoot(false, pDirectory, aFallbackRoot,
+                                   sizeof(aFallbackRoot)) &&
+        BIKE_STORAGE_FindMapZoomRange(aFallbackRoot, &ucMinimumZoom,
+                                      &ucMaximumZoom))
+    {
+        (void)memcpy(l_tBikeUi.aMapRoot, aFallbackRoot,
+                     strlen(aFallbackRoot) + 1U);
+        bZoomRangeFound = true;
+    }
+    l_tBikeUi.ucMapZoomMin = bZoomRangeFound ? ucMinimumZoom :
+                               BIKE_MAP_ZOOM_MIN;
+    l_tBikeUi.ucMapZoomMax = bZoomRangeFound ? ucMaximumZoom :
+                               BIKE_MAP_ZOOM_MAX;
     if (l_tBikeUi.ucMapZoomMin > l_tBikeUi.ucMapZoom)
     {
         l_tBikeUi.ucMapZoom = l_tBikeUi.ucMapZoomMin;
