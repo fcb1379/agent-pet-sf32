@@ -102,6 +102,7 @@ typedef struct _BIKE_UI_MAP_TILE_CACHE
  *   - aMapDirectory/aMapRoot/aMapExtension: 地图目录、实际路径和扩展名
  *   - ucMapZoomMin/ucMapZoomMax: 当前地图介质实际可用的缩放范围
  *   - bMapUseWgs84: 当前离线瓦片坐标系选择
+ *   - bMapPanning: 无定位手势正在拖动地图，期间禁止同步瓦片 IO
  *   - eMapArrowTheme: 当前定位箭头主题
  *   - pTimer: 500 ms UI 刷新定时器
  */
@@ -150,6 +151,7 @@ typedef struct _BIKE_UI_CONTEXT
     bool bMapUseWgs84;
     bool bMapViewValid;
     bool bMapGnssFixValid;
+    bool bMapPanning;
     lv_timer_t *pTimer;
 } BIKE_UI_CONTEXT;
 
@@ -821,6 +823,52 @@ static uint8_t BikeUi_MapRenderPoint(const BIKE_MAP_POINT *pPoint)
     return ucLoadedCount;
 }
 
+/* BikeUi_MapPositionCachedView: 拖动期间仅移动已加载的 3 x 3 地图窗口。
+ * 本函数不访问文件系统，避免在 LVGL 触摸回调中同步读取 TF 卡。
+ * 参数：
+ *   - pPoint: 当前拖动后的地图中心点
+ * 返回值：当前缓存中已加载的瓦片数量
+ */
+static uint8_t BikeUi_MapPositionCachedView(const BIKE_MAP_POINT *pPoint)
+{
+    int64_t dTileDeltaX;
+    int64_t dTileDeltaY;
+    int64_t dTileCount;
+    int64_t dPositionX;
+    int64_t dPositionY;
+
+    if ((NULL == pPoint) || (NULL == l_tBikeUi.pMapContainer) ||
+        (!l_tBikeUi.bMapTilesLoaded))
+    {
+        return BikeUi_MapRenderPoint(pPoint);
+    }
+    dTileCount = 1LL << pPoint->ucZoom;
+    dTileDeltaX = (int64_t)pPoint->ulTileX -
+                  (int64_t)l_tBikeUi.ulMapCenterTileX;
+    if ((dTileCount / 2LL) < dTileDeltaX)
+    {
+        dTileDeltaX -= dTileCount;
+    }
+    else if ((0LL - (dTileCount / 2LL)) > dTileDeltaX)
+    {
+        dTileDeltaX += dTileCount;
+    }
+    dTileDeltaY = (int64_t)pPoint->ulTileY -
+                  (int64_t)l_tBikeUi.ulMapCenterTileY;
+    dPositionX = (int64_t)BIKE_UI_MAP_PAGE_CENTER_X -
+                 (int64_t)BIKE_MAP_TILE_SIZE_PX -
+                 (dTileDeltaX * (int64_t)BIKE_MAP_TILE_SIZE_PX) -
+                 pPoint->usOffsetX;
+    dPositionY = (int64_t)BIKE_UI_MAP_PAGE_CENTER_Y -
+                 (int64_t)BIKE_MAP_TILE_SIZE_PX -
+                 (dTileDeltaY * (int64_t)BIKE_MAP_TILE_SIZE_PX) -
+                 pPoint->usOffsetY;
+    lv_obj_set_pos(l_tBikeUi.pMapContainer, (lv_coord_t)dPositionX,
+                   (lv_coord_t)dPositionY);
+
+    return l_tBikeUi.ucMapLoadedCount;
+}
+
 /* BikeUi_MapPanEvent: 无 GNSS 定位时按拖动向量浏览离线地图。
  * 参数：
  *   - pEvent: LVGL 触摸事件
@@ -835,9 +883,33 @@ static void BikeUi_MapPanEvent(lv_event_t *pEvent)
     int64_t dMapSize;
     const char *pCoordinateName;
     uint8_t ucLoadedCount;
+    lv_event_code_t eEventCode;
 
-    if ((NULL == pEvent) ||
-        (LV_EVENT_PRESSING != lv_event_get_code(pEvent)) ||
+    if (NULL == pEvent)
+    {
+        return;
+    }
+    eEventCode = lv_event_get_code(pEvent);
+    if ((LV_EVENT_RELEASED == eEventCode) ||
+        (LV_EVENT_PRESS_LOST == eEventCode))
+    {
+        if (l_tBikeUi.bMapPanning && (!l_tBikeUi.bMapGnssFixValid) &&
+            l_tBikeUi.bMapViewValid)
+        {
+            l_tBikeUi.bMapPanning = false;
+            ucLoadedCount = BikeUi_MapRenderPoint(
+                &l_tBikeUi.tMapViewPoint);
+            pCoordinateName = l_tBikeUi.bMapUseWgs84 ? "WGS" : "GCJ";
+            lv_label_set_text_fmt(l_tBikeUi.pMapStatusLabel,
+                                  "MAP %s Z%u  %u/%u  BROWSE",
+                                  pCoordinateName,
+                                  (unsigned int)l_tBikeUi.ucMapZoom,
+                                  (unsigned int)ucLoadedCount,
+                                  (unsigned int)BIKE_UI_MAP_TILE_COUNT);
+        }
+        return;
+    }
+    if ((LV_EVENT_PRESSING != eEventCode) ||
         l_tBikeUi.bMapGnssFixValid || (!l_tBikeUi.bMapViewValid))
     {
         return;
@@ -875,7 +947,9 @@ static void BikeUi_MapPanEvent(lv_event_t *pEvent)
     {
         return;
     }
-    ucLoadedCount = BikeUi_MapRenderPoint(&l_tBikeUi.tMapViewPoint);
+    l_tBikeUi.bMapPanning = true;
+    ucLoadedCount = BikeUi_MapPositionCachedView(
+        &l_tBikeUi.tMapViewPoint);
     pCoordinateName = l_tBikeUi.bMapUseWgs84 ? "WGS" : "GCJ";
     if (0U == ucLoadedCount)
     {
@@ -887,7 +961,7 @@ static void BikeUi_MapPanEvent(lv_event_t *pEvent)
     else
     {
         lv_label_set_text_fmt(l_tBikeUi.pMapStatusLabel,
-                              "MAP %s Z%u  %u/%u  BROWSE", pCoordinateName,
+                              "MAP %s Z%u  %u/%u  DRAG", pCoordinateName,
                               (unsigned int)l_tBikeUi.ucMapZoom,
                               (unsigned int)ucLoadedCount,
                               (unsigned int)BIKE_UI_MAP_TILE_COUNT);
@@ -962,6 +1036,7 @@ static void BikeUi_MapUpdate(const BIKE_SERVICE_SNAPSHOT *pSnapshot)
     l_tBikeUi.bMapGnssFixValid = bFixValid;
     if (bFixValid)
     {
+        l_tBikeUi.bMapPanning = false;
         l_tBikeUi.tMapViewPoint = tPoint;
         l_tBikeUi.bMapViewValid = true;
         if (NULL != l_tBikeUi.pMapTouchArea)
@@ -984,6 +1059,10 @@ static void BikeUi_MapUpdate(const BIKE_SERVICE_SNAPSHOT *pSnapshot)
         {
             lv_obj_clear_flag(l_tBikeUi.pMapTouchArea, LV_OBJ_FLAG_HIDDEN);
         }
+    }
+    if (l_tBikeUi.bMapPanning)
+    {
+        return;
     }
     ucLoadedCount = BikeUi_MapRenderPoint(&tPoint);
     if (!bFixValid)
@@ -2409,8 +2488,8 @@ static void BikeUi_OnStart(void)
                             LV_PART_MAIN);
     lv_obj_set_style_border_width(l_tBikeUi.pMapTouchArea, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_all(l_tBikeUi.pMapTouchArea, 0, LV_PART_MAIN);
-    lv_obj_add_flag(l_tBikeUi.pMapTouchArea,
-                    LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(l_tBikeUi.pMapTouchArea, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_clear_flag(l_tBikeUi.pMapTouchArea, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_clear_flag(l_tBikeUi.pMapTouchArea,
                       LV_OBJ_FLAG_SCROLL_ELASTIC |
                       LV_OBJ_FLAG_SCROLL_MOMENTUM |
@@ -2419,6 +2498,10 @@ static void BikeUi_OnStart(void)
     lv_obj_set_scroll_dir(l_tBikeUi.pMapTouchArea, LV_DIR_ALL);
     lv_obj_add_event_cb(l_tBikeUi.pMapTouchArea, BikeUi_MapPanEvent,
                         LV_EVENT_PRESSING, NULL);
+    lv_obj_add_event_cb(l_tBikeUi.pMapTouchArea, BikeUi_MapPanEvent,
+                        LV_EVENT_RELEASED, NULL);
+    lv_obj_add_event_cb(l_tBikeUi.pMapTouchArea, BikeUi_MapPanEvent,
+                        LV_EVENT_PRESS_LOST, NULL);
 
     l_tBikeUi.pMapEmptyLabel = lv_label_create(pMapPage);
     RT_ASSERT(NULL != l_tBikeUi.pMapEmptyLabel);
