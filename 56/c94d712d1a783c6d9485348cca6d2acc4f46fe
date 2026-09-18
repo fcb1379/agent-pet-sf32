@@ -1,0 +1,28 @@
+work/watch_bt_audio_template/src/gui_apps/bike/app_bike.c
+  s_8e23440d3d99c8::t_f67d3620abe0a5 1738,1740-1746,1774-1782,1807-1899
+  s_8e23440d3d99c8::t_4ae4bbf20973ec 35-42,75,82,102,113-115,142-170
+  s_8e23440d3d99c8::t_04539b47fa9f6e 1946,1951,1966
+  s_8e23440d3d99c8::t_1eb19adf354c6d 2046-2051,2104-2132,2135,2137,2139-2142,2147,2151-2199,2201-2207
+  s_8e23440d3d99c8::t_05d2fff3dc8263 2318-2360,2373,2375
+  s_8e23440d3d99c8::t_34dbfa85333e1a 1530-1532,1543-1548,1556,1560,1564,1568-1582
+  s_8e23440d3d99c8::t_46e3a01f209055 956,965-966,968-969,976,1013-1014,1016-1020
+  s_8e23440d3d99c8::t_cd8e7f2904b119 171
+  s_8e23440d3d99c8::t_3eb5d116d97cbc 1583
+  s_8e23440d3d99c8::t_d0d0d16ad7c539 1900
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "56c94d712d1a783c6d9485348cca6d2acc4f46fe",
+  "prompts": {},
+  "sessions": {
+    "s_8e23440d3d99c8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ad75-ee73-78f0-b559-493bc936de00",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}
